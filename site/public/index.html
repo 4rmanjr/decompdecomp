@@ -175,6 +175,21 @@
   </div>
 </section>
 
+<section class="band" id="ask">
+  <div class="wrap">
+    <div class="head">
+      <p class="kicker">From your terminal</p>
+      <h2>Or just ask your agent.</h2>
+      <p>Connect decomp.wtf to Claude Code, Codex, Gemini CLI or opencode once. Then ask for what you want: it confirms the game is your own copy, imports it, opens the live view and works with every tool here, including helper agents running in parallel.</p>
+    </div>
+    <div class="install ask">
+      <div class="cmd"><span>$</span><code>decomp connect</code><button type="button" class="copy" data-copy="decomp connect">Copy</button></div>
+      <div class="cmd say"><span>&gt;</span><code>decompile my game at ~/roms/game.z64</code></div>
+      <small>Claude Code users can also add it as a plugin: <code>/plugin marketplace add i12bp8/decomp.wtf</code>. Gemini CLI: <code>gemini extensions install https://github.com/i12bp8/decomp.wtf</code>.</small>
+    </div>
+  </div>
+</section>
+
 <section class="band" id="local">
   <div class="wrap">
     <div class="head">
@@ -194,6 +209,7 @@
     <div class="head"><p class="kicker">FAQ</p><h2>Good to know</h2></div>
     <div class="faq">
       <details><summary>Why "decomp.wtf"?</summary><p>WTF stands for <b>What The Function</b>: what everyone says the first time they stare at a page of MIPS assembly. decomp.wtf answers it, one function at a time.</p></details>
+      <details><summary>Why not just ask a general AI agent to decompile my game?</summary><p>You can, and with decomp.wtf connected that's exactly what happens, minus the hours of setup. Matching decompilation needs the game's original compiler at the right version and flags, a splitter that finds every function, a judge that compiles each attempt and compares it with the game byte for byte, and a way to keep many agents from colliding. decomp.wtf brings all of that, pinned and ready in seconds, plus free matches from machine drafts before your agent spends a token, a live view, and an export that rebuilds the game.</p></details>
       <details><summary>Which games work?</summary><p>From scratch: Nintendo 64 (KMC GCC, IDO), PlayStation and PlayStation 2 (PSY-Q GCC, EE-GCC), GameCube and Wii (CodeWarrior, as a dtk-template project), Game Boy Advance (agbcc) and DS (CodeWarrior for DS, as a ds-decomp project). PC, Switch and more are coming. Beyond that, any public decomp whose build produces an objdiff report, which covers practically every project on decomp.dev, on every platform.</p></details>
       <details><summary>Can I use the result for a port or a mod?</summary><p>That's the idea. Export project writes a normal decompilation project, matched functions as C and the rest as assembly, that rebuilds your game byte for byte (GameCube, Wii and DS projects do that on every build). Keep going with any tool or agent until it's all C. Game code and data stay out of git and are regenerated from your own copy.</p></details>
       <details><summary>Do I need to know anything about decompilation?</summary><p>No. The agent does the work and the app shows what's going on. If you read MIPS, you can follow every attempt and jump in.</p></details>

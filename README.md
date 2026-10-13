@@ -73,6 +73,29 @@ browser. Remove it any time with `uv tool uninstall decompnet`.
 > No ROM at hand? The app ships with **Demo Quest 64**, a real N64 ROM built from public-domain code and zlib.
 > Open it from the home screen and watch your agent go.
 
+## Or just ask your agent
+
+Already living in Claude Code, Codex, Gemini CLI or opencode? Give it decomp.wtf's tools once:
+
+```
+decomp connect
+```
+
+Then ask it, in your own terminal:
+
+> decompile my game at ~/roms/game.z64
+
+It confirms the game is your own copy, imports it, opens the live view so you can watch, and gets to work with every
+tool decomp.wtf has: the original compiler, the byte-for-byte judge, the autopilot, helper agents running in
+parallel (`start_agents`) and the rebuildable export. Behind it is `decomp mcp`, an MCP server that starts the app
+when needed; you can also add it yourself (`claude mcp add decomp -- decomp mcp`).
+
+| Agent | Install it as a package instead |
+| :-- | :-- |
+| **Claude Code** | `/plugin marketplace add i12bp8/decomp.wtf`, then `/plugin install decomp-wtf@decomp-wtf` (adds a "decompile" skill) |
+| **Gemini CLI** | `gemini extensions install https://github.com/i12bp8/decomp.wtf` |
+| **Codex, opencode** | `decomp connect codex`, `decomp connect opencode` |
+
 ## How it works
 
 <p align="center">
@@ -149,6 +172,9 @@ breaks any function that already matched is undone.
 | Feature | What you get |
 | :-- | :-- |
 | **Live view** | A map of every function in the game, each agent's tool calls, scores falling to zero, all in real time. |
+| **Autopilot** | Every function's machine draft goes through the judge first: whatever already matches costs no agent time (a fifth of the demo games in seconds). |
+| **Your agent, your terminal** | `decomp connect`, then ask Claude Code, Codex or Gemini CLI to decompile your game: it imports, opens the live view and works. |
+| **Edit it yourself** | Every function has an editor: write C, press Ctrl+Enter, see the judge's diff. You count as an agent. |
 | **Byte-for-byte check** | Candidates are linked at the real address, so calls, globals, strings and jump tables are verified too. |
 | **Any agent** | Claude Code, Codex, Gemini CLI, opencode, or any model with an API key, several at once. |
 | **Shared knowledge** | Structs and prototypes go into one header, accepted only if every match so far still matches. |
@@ -170,7 +196,8 @@ breaks any function that already matched is undone.
 | **Gemini CLI** | Same, through a project-level MCP config. |
 | **opencode** | Same, with any provider you've set up: DeepSeek, Qwen, Kimi and more. |
 | **API key** | A built-in agent loop for any OpenAI-compatible API: DeepSeek, OpenRouter, Ollama, LM Studio. |
-| **Anything else** | Point any MCP client (Cursor, Claude Desktop, your own) at the app with **Connect another agent**. |
+| **The agent you talk to** | `decomp connect` (or the plugin/extension above): it drives decomp.wtf from your own terminal and can start helpers. |
+| **Anything else** | Point any MCP client (Cursor, Claude Desktop, your own) at `decomp mcp`, or at the app with **Connect another agent**. |
 
 Agents only get decomp.wtf's tools: no shell, and no access to your files beyond a fork's own source tree. The app installs missing agents for you
 and tells you how to sign in. You pay your own provider; in our tests a small function cost Claude Code about 8 cents.

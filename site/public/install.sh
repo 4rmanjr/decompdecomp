@@ -14,7 +14,7 @@
 # Options: --no-start (install only)
 set -euo pipefail
 
-VERSION="0.7.1"
+VERSION="0.8.0"
 WHEEL="${DECOMP_WHEEL:-https://decomp.wtf/dl/decompnet-${VERSION}-py3-none-any.whl}"
 START=1
 for arg in "$@"; do
@@ -62,8 +62,16 @@ step "downloading the compilers and tools"
 
 "$BIN/decomp" shortcut >/dev/null 2>&1 && step "added decomp.wtf to your apps" || true
 
+# Your AI agents with decomp.wtf's tools: only when someone is there to say yes (it changes their configs)
+if has_tty && "$BIN/decomp" connect --list 2>/dev/null | grep -q "not connected"; then
+  if ask "Give your AI agents (Claude Code, Codex, Gemini CLI, opencode) decomp.wtf's tools, so you can just ask them to decompile a game?"; then
+    "$BIN/decomp" connect | sed 's/^/  /'
+  fi
+fi
+
 bold "Done."
 echo "  Start it any time from your apps menu, or with: decomp"
+echo "  From your AI agent: run 'decomp connect' once, then ask it to decompile your game."
 if [ "$START" = 1 ]; then
   if [ "$(uname -s)" = Darwin ] || [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     nohup "$BIN/decomp" >/dev/null 2>&1 &

@@ -11,7 +11,7 @@
 # Your projects go to %USERPROFILE%\Decomp. Nothing is sent to decomp.wtf.
 # Uninstall: uv tool uninstall decompnet
 $ErrorActionPreference = "Stop"
-$Version = "0.7.1"
+$Version = "0.8.0"
 $Wheel = if ($env:DECOMP_WHEEL) { $env:DECOMP_WHEEL } else { "https://decomp.wtf/dl/decompnet-$Version-py3-none-any.whl" }
 
 function Step($text) { Write-Host "> " -ForegroundColor Green -NoNewline; Write-Host $text }
@@ -43,5 +43,6 @@ Step "added decomp.wtf to the Start menu and desktop"
 
 Write-Host "Done." -ForegroundColor White
 Write-Host "  Start it any time from the Start menu, or with: decomp"
+Write-Host "  From your AI agent: run 'decomp connect' once, then ask it to decompile your game."
 Write-Host "  Note: KMC GCC (used by many third-party games) has no Windows build yet; IDO games work."
 Start-Process -FilePath $decomp -WindowStyle Minimized

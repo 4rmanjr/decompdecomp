@@ -136,6 +136,33 @@ def stop(args) -> int:
     return 0
 
 
+def connect_agents(args) -> int:
+    """Give the AI agents you use decomp.wtf's tools: then ask them to decompile your game."""
+    from . import agents, connect
+
+    unknown = [a for a in args.agents if a not in connect.LABEL]
+    if unknown:
+        print(f"unknown agent {unknown[0]!r}: use claude, codex, gemini or opencode")
+        return 2
+    found = [a for a in agents.detect() if a["id"] in connect.LABEL and a["installed"]]
+    wanted = [a for a in found if not args.agents or a["id"] in args.agents]
+    if not found:
+        print("No agent CLI found (Claude Code, Codex, Gemini CLI or opencode). Install one, then run `decomp connect`.")
+        return 1
+    for a in wanted:
+        if args.list:
+            print(f"{a['name']}: {'connected' if connect.status(a['id']) else 'not connected'}")
+            continue
+        try:
+            connect.connect(a["id"])
+            print(f"{a['name']}: connected")
+        except (ValueError, OSError) as e:
+            print(f"{a['name']}: {e}")
+    if not args.list:
+        print('Now ask your agent, for example: "decompile my game at ~/roms/game.z64"')
+    return 0
+
+
 def shortcut(args) -> int:
     from .launcher import install_launcher
 
@@ -151,6 +178,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("setup", help="install the compilers and tools this computer needs")
     sub.add_parser("stop", help="stop the running app")
     sub.add_parser("shortcut", help="add decomp.wtf to your apps menu / desktop")
+    c = sub.add_parser("connect", help="give your AI agents (Claude Code, Codex, Gemini CLI, opencode) decomp.wtf's tools")
+    c.add_argument("agents", nargs="*", metavar="agent", help="claude, codex, gemini or opencode (default: every one installed)")
+    c.add_argument("--list", action="store_true", help="only show which are connected")
     m = sub.add_parser("mcp", help="serve decomp.wtf to the AI agent you talk to (stdio MCP; starts the app if needed)")
     m.add_argument("--name", default=os.environ.get("DECOMP_AGENT_NAME") or "chat",
                    help="how this agent shows up in the app (e.g. claude-code; or set DECOMP_AGENT_NAME)")
@@ -158,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "mcp":
         from .bridge import main as bridge
         return bridge(args.name)
-    return {"setup": setup, "stop": stop, "shortcut": shortcut}.get(args.cmd, run)(args)
+    return {"setup": setup, "stop": stop, "shortcut": shortcut, "connect": connect_agents}.get(args.cmd, run)(args)
 
 
 if __name__ == "__main__":

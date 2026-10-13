@@ -168,3 +168,8 @@ h2 { margin-top: 14px; font-size: clamp(1.75rem, 3.2vw, 2.5rem); line-height: 1.
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
 #public .chips { margin-bottom: 26px; }
+
+.ask { max-width: 640px; }
+.cmd.say { background: var(--panel, transparent); color: inherit; box-shadow: none; }
+.cmd.say span { color: var(--muted); }
+.ask small code { font: 12.5px var(--mono); }

@@ -157,6 +157,11 @@ def parse_line(kind: str, line: str) -> list[tuple[str, str]]:
             turns = obj.get("num_turns")
             bits = [f"{turns} turns" if turns else "", f"${cost:.2f}" if isinstance(cost, (int, float)) else ""]
             out.append(("info", "session finished" + (f" ({', '.join(b for b in bits if b)})" if any(bits) else "")))
+            if isinstance(cost, (int, float)):
+                out.append(("usage", json.dumps({"usd": cost})))
+            stats = obj.get("stats") if isinstance(obj.get("stats"), dict) else {}
+            if stats.get("total_tokens"):
+                out.append(("usage", json.dumps({"tokens": stats["total_tokens"]})))
     elif t in ("item.started", "item.completed") and isinstance(obj.get("item"), dict):  # Codex
         item = obj["item"]
         it = item.get("type") or item.get("item_type")
@@ -172,6 +177,10 @@ def parse_line(kind: str, line: str) -> list[tuple[str, str]]:
             out.append(("error", str(item.get("message", ""))[:400]))
     elif t == "turn.completed":
         out.append(("info", "turn finished"))
+        usage = obj.get("usage") if isinstance(obj.get("usage"), dict) else {}
+        tokens = sum(v for k, v in usage.items() if k in ("input_tokens", "output_tokens") and isinstance(v, int))
+        if tokens:
+            out.append(("usage", json.dumps({"tokens": tokens})))
     elif t in ("error", "turn.failed"):
         err = obj.get("error")
         msg = err.get("message") if isinstance(err, dict) else (obj.get("message") or err)
@@ -189,6 +198,10 @@ def parse_line(kind: str, line: str) -> list[tuple[str, str]]:
         text = obj["part"].get("text", "").strip()
         if text:
             out.append(("text", text))
+    elif t in ("step_finish", "step-finish") and isinstance(obj.get("part"), dict):  # opencode: cost per step
+        part = obj["part"]
+        if isinstance(part.get("cost"), (int, float)) and part["cost"]:
+            out.append(("usage", json.dumps({"usd": part["cost"]})))
     return [(k, v) for k, v in out if v]
 
 
@@ -210,6 +223,8 @@ class Session:
     seq: int = 0
     stop: threading.Event = field(default_factory=threading.Event)
     proc: subprocess.Popen | None = None
+    usd: float = 0.0  # what the agent's provider charged, as the agent reports it
+    tokens: int = 0
 
     def push(self, kind: str, text: str) -> None:
         self.seq += 1
@@ -218,7 +233,8 @@ class Session:
     def snapshot(self, since: int = 0) -> dict:
         return {"id": self.id, "kind": self.kind, "label": self.label, "slug": self.slug, "agent": self.agent_name,
                 "state": self.state, "runs": self.runs, "error": self.error, "started_at": self.started_at,
-                "model": self.options.get("model") or "", "feed": [f for f in self.feed if f["seq"] > since]}
+                "model": self.options.get("model") or "", "usd": round(self.usd, 4), "tokens": self.tokens,
+                "feed": [f for f in self.feed if f["seq"] > since]}
 
 
 class Manager:
@@ -284,6 +300,22 @@ class Manager:
         row = self.net.store.one("SELECT COUNT(*) AS n FROM functions WHERE project_id=? AND status='open'", proj["id"])
         return row["n"]
 
+    def _account(self, s: Session, usage: dict) -> None:
+        """Add what a session spent to the session and to the project (kept in its config across restarts)."""
+        usd, tokens = float(usage.get("usd") or 0), int(usage.get("tokens") or 0)
+        s.usd += usd
+        s.tokens += tokens
+        self.net.add_spend(s.slug, usd, tokens)
+
+    def over_budget(self, slug: str) -> float | None:
+        """The budget (USD) when the project's agents have spent it, else None."""
+        cap = self.budget()
+        spent = (self.net.spend(slug) or {}).get("usd", 0)
+        return cap if cap and spent >= cap else None
+
+    def budget(self) -> float:
+        return 0.0  # set by the server from the settings
+
     def _run(self, s: Session) -> None:
         agent, token = self.net.local_agent(s.agent_name)
         self.assignments[agent.id] = s.slug
@@ -294,6 +326,9 @@ class Manager:
         while not s.stop.is_set():
             if self._left(s.slug) == 0:
                 s.push("info", "nothing left to decompile here 🎉")
+                break
+            if (cap := self.over_budget(s.slug)) is not None:
+                s.push("info", f"stopping: the agents on this project have spent the ${cap:.2f} budget (Setup)")
                 break
             s.state = "working"
             s.runs += 1
@@ -331,6 +366,12 @@ class Manager:
             db.execute("DELETE FROM claims WHERE agent_id=?", (agent.id,))
 
     def prompt(self, s: Session) -> str:
+        text = self._prompt(s)
+        if (wish := self.net.instructions(s.slug)):
+            text += f"\nThe user's instructions for this project (they come first):\n{wish}\n"
+        return text
+
+    def _prompt(self, s: Session) -> str:
         ov = self.net.overview(s.slug)
         if ov.get("kind") == "fork":
             guides = ["fork", "objdiff", *tools.PLATFORM_GUIDES.get(ov.get("platform") or "", [])]
@@ -412,6 +453,9 @@ class Manager:
         saw_tool = False
         for line in proc.stdout:
             for kind, text in parse_line(s.kind, line):
+                if kind == "usage":
+                    self._account(s, json.loads(text))
+                    continue
                 saw_tool |= kind == "tool"
                 s.push(kind, text)
             if s.stop.is_set():
@@ -456,7 +500,11 @@ class Manager:
                     s.error = f"API error {r.status_code}: {r.text[:300]}"
                     s.push("error", s.error)
                     return False
-                msg = r.json()["choices"][0]["message"]
+                reply = r.json()
+                msg = reply["choices"][0]["message"]
+                usage = reply.get("usage") if isinstance(reply.get("usage"), dict) else {}
+                if usage.get("total_tokens"):
+                    self._account(s, {"tokens": usage["total_tokens"]})
                 if msg.get("reasoning_content"):
                     s.push("think", msg["reasoning_content"][:2000])
                 if msg.get("content"):

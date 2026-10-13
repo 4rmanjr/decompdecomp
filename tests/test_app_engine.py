@@ -159,3 +159,20 @@ def test_autopilot_matches_machine_drafts_for_free(net):
                        "WHERE a.name='autopilot'")["n"]
     assert by == st["matched"]
     assert not net.store.one("SELECT 1 FROM claims c JOIN agents a ON a.id=c.agent_id WHERE a.name='autopilot'")
+
+
+def test_steering_priority_instructions_spend(net):
+    slug = "demo-quest-64"
+    open_fn = net.store.one("SELECT name FROM functions WHERE status='open' ORDER BY n_insns DESC LIMIT 1")["name"]
+    assert net.set_priority(slug, open_fn) == [open_fn]
+    agent, _ = net.local_agent("steered")
+    assert open_fn in net.claim(agent, slug)  # the user's pick comes first, whatever the strategy
+    net.release(agent, open_fn, "testing priorities", slug)
+    net.set_priority(slug, open_fn, on=False)
+    net.set_instructions(slug, "Focus on the game's own code first.")
+    from decompnet.app import tools
+    assert "Focus on the game's own code first." in tools.project_info(net, slug)
+    net.add_spend(slug, 0.25, 0)
+    net.add_spend(slug, 0.5, 1200)
+    sp = net.overview(slug)["spend"]
+    assert round(sp["usd"], 2) == 0.75 and sp["tokens"] == 1200

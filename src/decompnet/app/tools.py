@@ -118,6 +118,12 @@ def _fork(net: RomNetwork, slug: str, what: str) -> str:
 
 
 def project_info(net: RomNetwork, slug: str) -> str:
+    wish = net.instructions(slug)
+    text = _project_info(net, slug)
+    return text + (f"\nThe user's instructions for this project (they come first):\n{wish}" if wish else "")
+
+
+def _project_info(net: RomNetwork, slug: str) -> str:
     if net.fork_slug(slug):
         return net.forks.info(slug)
     ov = net.overview(slug)

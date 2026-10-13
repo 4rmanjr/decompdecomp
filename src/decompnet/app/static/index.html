@@ -179,7 +179,8 @@
 
     <div class="side">
       <aside class="panel agents-panel">
-        <header class="panel-head"><h2>Agents</h2><button class="primary small-btn" id="addAgent" type="button">Add agent</button></header>
+        <header class="panel-head"><h2>Agents <span class="muted small" id="spendLine" title="what the helper agents spent, as they report it; per match counts only their matches"></span></h2><button class="primary small-btn" id="addAgent" type="button">Add agent</button></header>
+        <button class="instr" id="instrBtn" type="button"><b>Instructions for agents</b><span id="instrText">Tell every agent what to focus on, names you know, things to avoid…</span></button>
         <div id="sessions" class="sessions"></div>
         <div class="empty" id="noSessions">
           <p>No agent is working yet.</p>
@@ -230,6 +231,7 @@
       </div>
       <div class="row">
         <span class="badge" id="fnStatus"></span>
+        <button class="ghost small-btn pin" id="fnPin" type="button" title="Agents take this function next">★ Next</button>
         <button class="ghost icon" id="fnPrev" type="button" aria-label="Previous function" title="Previous function (K)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.3 2.7 11.4 3.8 7.2 8l4.2 4.2-1.1 1.1L5 8z"/></svg></button>
         <button class="ghost icon" id="fnNext" type="button" aria-label="Next function" title="Next function (J)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.7 2.7 4.6 3.8 8.8 8l-4.2 4.2 1.1 1.1L11 8z"/></svg></button>
         <button class="ghost icon" data-close type="button" aria-label="Close" title="Close (Esc)">✕</button>
@@ -266,6 +268,11 @@
       </div>
       <div class="xref" id="fnXref"></div>
       <div id="fnNotes"></div>
+      <div class="note-box">
+        <label class="field"><span>A note for agents on this function (they read it when they take it)</span>
+          <textarea id="noteText" rows="2" placeholder="e.g. this is the player's update loop; the struct at 0x8004AE34 is the player"></textarea></label>
+        <div class="row"><button class="ghost small-btn" id="noteAdd" type="button">Add note</button></div>
+      </div>
     </div>
   </div>
 </div>

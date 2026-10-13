@@ -498,3 +498,15 @@ button { cursor: pointer; border: 0; background: none; }
 .link-btn.inline { margin-left: 0; font-size: inherit; }
 .ask-row { border-color: color-mix(in srgb, var(--match) 25%, var(--line)); }
 .line-item .txt .mono { font: 11.5px/1.45 var(--mono); overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------------ steering */
+.instr { display: grid; gap: 3px; text-align: left; margin: 12px 14px 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line); background: var(--raise); color: var(--ink-2); }
+.instr b { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.instr span { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.instr.set { border-style: solid; border-color: color-mix(in srgb, var(--match) 35%, var(--line)); }
+.instr.set span { color: var(--ink-2); }
+.instr:hover { border-color: var(--faint); }
+.note-box { display: grid; gap: 8px; }
+.note-box textarea, .field textarea { width: 100%; border-radius: 9px; border: 1px solid var(--line); background: var(--raise); padding: 9px 11px; font: 13px/1.5 var(--sans); color: var(--ink); resize: vertical; }
+.pin.on { background: var(--work-bg); color: var(--work); border-color: transparent; }
+.fn-table .star { color: var(--work); margin-right: 5px; }

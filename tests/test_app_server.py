@@ -117,3 +117,12 @@ def test_builtin_api_agent_matches_a_function(app, monkeypatch):
     assert manager._run_api(s, agent) is True
     assert net._function("func_800007F4", slug)["status"] == "matched"
     assert "byte-identical" in seen[-1]["messages"][-1]["content"]
+
+
+def test_agent_spend_is_read_from_their_output():
+    claude = agents.parse_line("claude", json.dumps({"type": "result", "total_cost_usd": 0.42, "num_turns": 9}))
+    assert ("usage", json.dumps({"usd": 0.42})) in claude and any(k == "info" for k, _ in claude)
+    codex = agents.parse_line("codex", json.dumps({"type": "turn.completed", "usage": {"input_tokens": 900, "output_tokens": 100}}))
+    assert ("usage", json.dumps({"tokens": 1000})) in codex
+    opencode = agents.parse_line("opencode", json.dumps({"type": "step_finish", "part": {"cost": 0.01}}))
+    assert ("usage", json.dumps({"usd": 0.01})) in opencode

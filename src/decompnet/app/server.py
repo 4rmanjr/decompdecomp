@@ -83,7 +83,7 @@ class Settings:
             api["api_key"] = "•" * 8 + api["api_key"][-4:]
             api["has_key"] = True
         return {"api": api, "per_session": self.data.get("per_session", 4), "last_project": self.data.get("last_project"),
-                "autopilot": self.data.get("autopilot", True)}
+                "autopilot": self.data.get("autopilot", True), "budget_usd": self.data.get("budget_usd") or 0}
 
 
 def _static(name: str) -> bytes | None:
@@ -109,6 +109,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     manager = agents.Manager(net, home, mcp_url)
     jobs = Jobs()
     settings = Settings(home / "settings.json")
+    manager.budget = lambda: float(settings.data.get("budget_usd") or 0)
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def agent_of(ctx: Context):
@@ -341,6 +342,21 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             pass  # not yours (any more): nothing to give back
         return {"ok": True}
 
+    def p_instructions(slug, request, data):
+        net.set_instructions(slug, str(data.get("text", "")))
+        return net.overview(slug)
+
+    def p_priority(slug, request, data):
+        return {"priority": net.set_priority(slug, str(data.get("name", "")), bool(data.get("on", True)))}
+
+    def p_note(slug, request, data):
+        """A note from you on a function (or the whole project): agents read notes when they claim it."""
+        agent, _ = net.local_agent("you")
+        text = str(data.get("text", "")).strip()
+        if not text:
+            raise ValueError("write the note first")
+        return {"message": net.add_note(agent, slug, text[:2000], str(data.get("function", "")) or None)}
+
     def p_autopilot(slug, request, data):
         if data.get("action") == "stop":
             net.stop_autopilot(slug)
@@ -357,7 +373,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/compiler": (p_compiler, ["POST"]), "/api/export": (p_export, ["POST"]), "/api/open": (p_open, ["POST"]),
         "/api/delete": (p_delete, ["POST"]), "/api/agents/manual": (p_manual, ["POST"]),
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
-        "/api/autopilot": (p_autopilot, ["POST"]),
+        "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]),
+        "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))
@@ -580,6 +597,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             settings.data["per_session"] = max(1, min(int(data["per_session"]), 20))
         if "autopilot" in data:
             settings.data["autopilot"] = bool(data["autopilot"])
+        if "budget_usd" in data:
+            settings.data["budget_usd"] = max(0.0, float(data["budget_usd"] or 0))
         settings.save()
         return JSONResponse(settings.public())
 

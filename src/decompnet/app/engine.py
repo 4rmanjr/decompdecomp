@@ -867,10 +867,6 @@ class RomNetwork(Network):
                 return
             time.sleep(0.2)
 
-    def claim_row(self, agent: Agent, project: str | None = None, function: str | None = None, strategy: str = "easiest"):
-        self._yield_autopilot(function, project)
-        return super().claim_row(agent, project, function, strategy)
-
     def attempt(self, agent: Agent, function: str, source: str, project: str | None = None) -> dict:
         if (fork := self.fork_slug(project)):
             return self.forks.attempt(agent, fork, function, source)
@@ -1060,7 +1056,15 @@ class RomNetwork(Network):
     def overview(self, slug: str) -> dict:
         proj = self._project(slug)
         last = self.store.one("SELECT MAX(created_at) AS t FROM events WHERE project_id=?", proj["id"])["t"]
-        return self._overview(slug, proj) | {"last_activity": last, "autopilot": self.autopilot_status(slug)}
+        cfg = self.cfg(proj)
+        # matches by the helper agents the app runs (their spend is what `spend` counts)
+        helpers = self.store.one(
+            "SELECT COUNT(*) AS n FROM functions f JOIN agents a ON a.id=f.matched_agent_id WHERE f.project_id=? "
+            "AND f.status='matched' AND a.origin='local' AND a.name NOT IN ('you','autopilot')", proj["id"])["n"]
+        return self._overview(slug, proj) | {"last_activity": last, "autopilot": self.autopilot_status(slug),
+                                             "helper_matches": helpers,
+                                             "spend": cfg.get("spend"), "instructions": cfg.get("instructions") or "",
+                                             "priority": cfg.get("priority", [])}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -1108,6 +1112,57 @@ class RomNetwork(Network):
                  "status": r["status"] if r["status"] in ("matched", "asm") else "working" if (r["agent"] or r["vram"] in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"]),
                  "matched_at": r["matched_at"]} for r in rows]
+
+    # ------------------------------------------------------------------ what agents spend, and steering them
+
+    def _update_cfg(self, slug: str, change) -> dict:
+        """Change a project's config in one transaction (change(cfg) edits it in place)."""
+        proj = self._project(slug)
+        with self.store.tx() as db:
+            cfg = json.loads(db.execute("SELECT config FROM projects WHERE id=?", (proj["id"],)).fetchone()["config"])
+            change(cfg)
+            db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
+        return cfg
+
+    def add_spend(self, slug: str, usd: float, tokens: int) -> None:
+        if usd or tokens:
+            def change(cfg):
+                sp = cfg.setdefault("spend", {"usd": 0.0, "tokens": 0})
+                sp["usd"] = round(sp.get("usd", 0) + usd, 6)
+                sp["tokens"] = sp.get("tokens", 0) + tokens
+            self._update_cfg(slug, change)
+
+    def spend(self, slug: str) -> dict | None:
+        return self.cfg(self._project(slug)).get("spend")
+
+    def set_instructions(self, slug: str, text: str) -> None:
+        """What the user wants agents to know or focus on, given to every agent on this project."""
+        self._update_cfg(slug, lambda cfg: cfg.__setitem__("instructions", text.strip()[:4000]))
+
+    def instructions(self, slug: str) -> str:
+        return self.cfg(self._project(slug)).get("instructions") or ""
+
+    def set_priority(self, slug: str, name: str, on: bool = True) -> list[str]:
+        """Functions the user wants done next: automatic claims take these first."""
+        fn = self._function(name, slug)
+
+        def change(cfg):
+            items = [n for n in cfg.get("priority", []) if n != fn["name"]]
+            cfg["priority"] = ([fn["name"]] + items) if on else items
+        return self._update_cfg(slug, change)["priority"]
+
+    def claim_row(self, agent: Agent, project: str | None = None, function: str | None = None, strategy: str = "easiest"):
+        if function is None and project and not self.fork_slug(project):
+            proj = self._project(project)
+            for name in self.cfg(proj).get("priority", []):
+                row = self.store.one("SELECT f.id, f.status FROM functions f WHERE f.project_id=? AND f.name=?", proj["id"], name)
+                held = self.store.one("SELECT 1 FROM claims WHERE agent_id=?", agent.id)
+                if row and row["status"] == "open" and not held and not self.store.one(
+                        "SELECT 1 FROM claims WHERE function_id=?", row["id"]):
+                    function = name
+                    break
+        self._yield_autopilot(function, project)
+        return Network.claim_row(self, agent, project, function, strategy)
 
     # ------------------------------------------------------------------ autopilot
 

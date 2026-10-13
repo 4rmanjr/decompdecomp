@@ -466,6 +466,7 @@ function renderStats(ov) {
   renderRoom(ov);
   renderSource(ov);
   renderAutopilot(ov);
+  renderSteering(ov);
   if (ov.kind === "fork") { renderFork(ov); return; }
   $("forkNotice").hidden = true;
   $("compilerLabel").textContent = "Compiler";
@@ -950,7 +951,7 @@ function renderSessions(sessions) {
     const running = ["starting", "working", "waiting"].includes(s.state);
     return `<div class="session"><div class="session-top"><span class="dot ${dot}"></span><b>${esc(s.label)}</b>
         <button class="ghost" data-stop="${esc(s.id)}" data-remove="${running ? "" : "1"}" type="button">${running ? "Stop" : "Remove"}</button></div>
-      <span class="state ${s.state === "error" ? "err" : ""}">${s.state === "error" ? esc(s.error) : esc(STATE_TEXT[s.state] || s.state)}${s.model ? " · " + esc(s.model) : ""}${s.runs ? ` · session ${s.runs}` : ""}</span>
+      <span class="state ${s.state === "error" ? "err" : ""}">${s.state === "error" ? esc(s.error) : esc(STATE_TEXT[s.state] || s.state)}${s.model ? " · " + esc(s.model) : ""}${s.runs ? ` · session ${s.runs}` : ""}${s.usd ? ` · ${money(s.usd)}` : s.tokens ? ` · ${(s.tokens / 1000).toFixed(0)}k tokens` : ""}</span>
       ${claim ? `<span class="last">on ${esc(claim.name)}</span>` : ""}</div>`;
   }).join("");
   const own = new Set(sessions.map((s) => s.agent));
@@ -1157,6 +1158,28 @@ async function refreshFn(first) {
       : `${hex8(d.vram)} · ROM 0x${d.rom_offset.toString(16).toUpperCase()} · ${d.insns} instructions`;
     $("fnName").textContent = d.name;
     fnBadge(d);
+    const pinned = (S.ov.priority || []).includes(d.name);
+    $("fnPin").hidden = S.ov.kind === "fork" || d.status !== "open";
+    $("fnPin").classList.toggle("on", pinned);
+    $("fnPin").textContent = pinned ? "★ Next (on)" : "★ Next";
+    $("fnPin").onclick = async () => {
+      try {
+        const r = await api("/api/priority", { method: "POST", body: { slug: S.slug, name: d.name, on: !pinned } });
+        S.ov.priority = r.priority;
+        toast(pinned ? "No longer first in line." : `Agents take <code>${esc(d.name)}</code> next.`);
+        refreshFn(false); renderList();
+      } catch (e) { toast(esc(e.message), "err"); }
+    };
+    $("noteAdd").onclick = async () => {
+      const text = $("noteText").value.trim();
+      if (!text) return;
+      try {
+        await api("/api/note", { method: "POST", body: { slug: S.slug, function: d.name, text } });
+        $("noteText").value = "";
+        toast("Note saved: the next agent on this function reads it.");
+        refreshFn(false);
+      } catch (e) { toast(esc(e.message), "err"); }
+    };
     $("fnAsm").innerHTML = highlightAsm(d.asm);
     const kinds = { matched: "Matching C", best: "Best attempt so far", latest: S.ov.kind === "fork" ? "In the source now" : "Latest attempt", draft: "Machine draft (m2c)" };
     $("fnSrcKind").textContent = kinds[d.source_kind] || "No C yet";
@@ -1376,7 +1399,7 @@ function renderList() {
     const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "asm" ? `<span class="st" title="hand-written assembly: no C compiles to it">assembly</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
       : st === "tried" ? `<span class="st tried">tried</span>` : `<span class="st">to do</span>`;
     return `<tr data-fn="${esc(f.name)}" class="${S.fn === f.name ? "sel" : ""}" tabindex="0"><td class="mono dim">${fork ? esc(f.unit || "") : hex8(f.vram)}</td>
-      <td class="mono name">${esc(f.name)}</td><td class="r mono">${f.insns.toLocaleString()}</td><td class="r mono">${best}</td>
+      <td class="mono name">${(S.ov && (S.ov.priority || []).includes(f.name)) ? `<span class="star" title="agents take it next">★</span>` : ""}${esc(f.name)}</td><td class="r mono">${f.insns.toLocaleString()}</td><td class="r mono">${best}</td>
       <td class="r mono">${f.attempts || `<span class="dim">0</span>`}</td><td>${status}</td></tr>`;
   }).join("") || `<tr class="none"><td colspan="6">No function matches${q ? ` “${esc(L.q)}”` : ""}.</td></tr>`;
   $("fnShown").textContent = rows.length > L.limit ? `${L.limit.toLocaleString()} of ${rows.length.toLocaleString()} shown` : plural(rows.length, "function");
@@ -1537,12 +1560,14 @@ async function openSetup() {
       <div class="row"><button class="ghost small-btn" id="setupConnect" type="button">Use decomp.wtf from your agent…</button><span class="muted small">then just ask it to decompile your game</span></div></div>
     <div class="setup-group"><h3>Work rhythm</h3>
       <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
-      <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span>Autopilot after each import: try every function's machine draft first, so free matches cost no agent time.</span></label></div>
+      <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span>Autopilot after each import: try every function's machine draft first, so free matches cost no agent time.</span></label>
+      <label class="field"><span>Budget: stop helper agents when a project's agents have spent this much (US dollars, as the agents report it; 0 = no limit)</span><input id="budgetSet" type="number" min="0" step="0.5" value="${st.settings.budget_usd || 0}"></label></div>
     <div class="setup-group"><h3>About</h3><p class="muted small">decomp.wtf ${esc(st.version)} on ${esc(st.platform)}. Projects live in <code>${esc(st.home)}</code>. Nothing is sent to us. Open source (MIT).</p></div>`;
   $("setupBody").querySelectorAll("[data-tc]").forEach((b) => { b.onclick = () => installToolchain(b.dataset.tc, !!b.dataset.prop); });
   $("setupConnect").onclick = () => { $("setupSheet").hidden = true; openConnect(); };
   $("perSession").onchange = () => api("/api/settings", { method: "POST", body: { per_session: Number($("perSession").value) } }).catch(() => {});
   $("autopilotSet").onchange = () => api("/api/settings", { method: "POST", body: { autopilot: $("autopilotSet").checked } }).catch(() => {});
+  $("budgetSet").onchange = () => api("/api/settings", { method: "POST", body: { budget_usd: Number($("budgetSet").value) || 0 } }).catch(() => {});
 }
 
 /* dialogs */
@@ -1603,6 +1628,31 @@ function renderQuickStart() {
   const add = box.querySelector("#quickAdd");
   if (add) add.onclick = openAgentSheet;
 }
+/* What agents cost, and what you tell them. */
+function money(usd) { return usd >= 10 ? `$${usd.toFixed(0)}` : `$${usd.toFixed(2)}`; }
+function renderSteering(ov) {
+  const sp = ov.spend;
+  const n = ov.helper_matches || 0;
+  $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)}${n ? ` · ${money(sp.usd / n)}/match` : ""}`
+    : sp && sp.tokens ? `· ${(sp.tokens / 1000).toFixed(0)}k tokens` : "";
+  $("instrText").textContent = ov.instructions || "Tell every agent what to focus on, names you know, things to avoid…";
+  $("instrBtn").classList.toggle("set", !!ov.instructions);
+}
+$("instrBtn").onclick = () => {
+  const body = dialog("Instructions for agents", `<p class="muted">Every agent on this project gets these with its task, before anything else. Use them to steer: what to focus on, what you already know about the game, conventions to follow, things to leave alone.</p>
+    <label class="field"><span>Instructions</span><textarea id="instrEdit" rows="8" placeholder="Focus on the game's own code first; leave zlib (0x80003000-0x80006000) for later.&#10;The struct at 0x8004AE34 is the player (hp at +0x20).&#10;Name functions in snake_case."></textarea></label>
+    <div class="row"><button class="primary" id="instrSave" type="button">Save</button><button class="ghost" data-close type="button">Cancel</button></div>`);
+  body.querySelector("#instrEdit").value = (S.ov && S.ov.instructions) || "";
+  body.querySelector("#instrSave").onclick = async () => {
+    try {
+      S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });
+      renderSteering(S.ov);
+      $("dialog").hidden = true;
+      toast("Saved. Agents get them from their next task on.");
+    } catch (e) { toast(esc(e.message), "err"); }
+  };
+};
+
 /* Autopilot: every function's machine draft, tried through the judge before any agent spends a token. */
 function renderAutopilot(ov) {
   const box = $("autopilot"), ap = ov.autopilot;

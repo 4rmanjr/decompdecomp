@@ -61,9 +61,12 @@ def test_every_game_function_matches(psx):
     for name in FUNCTIONS + ["g_player", "g_entities", "g_score", "g_frame_count", "g_rng_state",
                              "__subsf3", "__mulsf3", "__addsf3", "__divsf3", "__ltsf2", "__gtsf2", "__fixsfsi", "__floatsisf"]:
         if name in syms:
-            current = table.name_at(syms[name])[0]
+            current, offset = table.name_at(syms[name])
+            if offset:  # inside a bigger data symbol (adjacent globals): name the address itself
+                current = f"D_{syms[name]:08X}"
             if current != name:
                 net.rename_symbol(agent, slug, current, name)
+                table = net.symbols(net.project_row(slug)["id"])
     source = (GAME / "game.c").read_text()
     scores = {name: net.attempt(agent, name, csource.get(source, name), slug)["score"] for name in FUNCTIONS}
     assert all(score == 0 for score in scores.values()), scores

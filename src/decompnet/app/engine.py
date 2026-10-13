@@ -26,23 +26,25 @@ from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
 from ..rom.symbols import AUTO_NAME, IDENT, Symbol, SymbolTable
 
-DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx"}
+DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx", "EEGCC": "ee-gcc-2.96"}
 COMPILERS = {
     "gcc-2.7.2-kmc": "many third-party N64 games",
     "ido-7.1": "most later first-party N64 games",
     "ido-5.3": "early N64 games (1996-97)",
     "gcc-2.7.2-psx": "PlayStation games (PSY-Q era GCC)",
     "gcc-2.8.1-psx": "later PlayStation games",
+    "ee-gcc-2.96": "PlayStation 2 games (Sony's EE GCC)",
 }
 SHORT_NAMES = {"gcc-2.7.2-kmc": "KMC GCC 2.7.2", "ido-7.1": "IDO 7.1", "ido-5.3": "IDO 5.3",
-               "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)"}
+               "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)", "ee-gcc-2.96": "EE-GCC 2.96"}
 # Tools shown in Setup besides the compilers.
 TOOLS = {
     "m2c": "machine-made first drafts (MIPS, PowerPC, ARM)",
     "objdiff-cli": "judges forks of public decomps, function by function",
     "ghidra": "drafts for PC, Switch and other platforms m2c can't read (540 MB, needs Java 21+)",
 }
-PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"]}
+PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
+                      "ps2": ["ee-gcc-2.96"]}
 _AUTO_TOKEN = re.compile(r"\b(?:func|D|B|jtbl|RO|STR|FLT|DBL)_[0-9A-F]{8}\b")
 _ADDRESS = re.compile(r"^(?:0x)?([0-9A-Fa-f]{8})$")
 
@@ -206,12 +208,13 @@ class RomNetwork(Network):
 
     # ------------------------------------------------------------------ import
 
-    def import_rom(self, data: bytes, *, toolchain: str | None = None, flags: list[str] | None = None,
-                   confirmed: bool = False, log=print) -> str:
-        """Import a ROM the user owns: split it, store every function as a target. Returns the slug."""
+    def import_rom(self, data: bytes | Path, *, toolchain: str | None = None, flags: list[str] | None = None,
+                   confirmed: bool = False, name: str = "", log=print) -> str:
+        """Import a game the user owns (ROM bytes, or a file such as a disc image): split it, store every function
+        as a target. Returns the slug."""
         if not confirmed:
             raise NetworkError("confirm that this is your own legally obtained copy of the game")
-        picked = detect.identify(data)
+        picked = detect.identify(data, name)
         rom, info = picked.data, picked.info
         for p in self.store.all("SELECT slug, config FROM projects"):
             if json.loads(p["config"]).get("rom", {}).get("sha1") == info["sha1"]:
@@ -228,15 +231,17 @@ class RomNetwork(Network):
         log(f"{detect.PLATFORMS[picked.platform]}: {info['title']} ({info['game_code'] or 'no game code'}, "
             f"{info['region']}), {size}, looks built with {info['compiler_guess']}")
         res = split.split_rom(workdir, picked.filename, log=log)
+        if res.image and res.image != picked.filename:  # splat works on a flat image made from the program
+            rom = (workdir / res.image).read_bytes()
 
         toolchain = toolchain or DEFAULT_TOOLCHAIN.get(res.compiler, DEFAULT_TOOLCHAIN[info["compiler_guess"]])
         tc = toolchains.get(toolchain)
         default_flags = tc.flags
-        if picked.platform == "psx":
+        if picked.platform in ("psx", "ps2"):
             default_flags = [f for f in tc.flags if not f.startswith("-G")] + [f"-G{8 if res.gp else 0}"]
         cfg = {
             "kind": "rom", "platform": picked.platform, "big_endian": picked.big_endian, "gp": res.gp,
-            "rom": {"file": picked.filename, **info},
+            "rom": {**info, "file": res.image or picked.filename, "program": picked.filename},
             "segments": [vars(s) for s in res.segments],
             "compiler": {"toolchain": toolchain, "flags": flags or default_flags, "timeout": 20},
             "legal": {"basis": "personal-copy", "license": "personal use only",
@@ -858,29 +863,13 @@ class RomNetwork(Network):
 
     # ------------------------------------------------------------------ export
 
-    def export_rom(self, slug: str) -> Path:
-        if self.fork_slug(slug):
-            return Path(self._project(slug)["root"])  # a fork's work is already in its source tree, committed
-        """Write the decompiled sources into the project folder, for the user to keep."""
-        proj = self._project(slug)
-        out = Path(proj["root"]) / "decompiled"
-        src = out / "src"
-        src.mkdir(parents=True, exist_ok=True)
-        (out / "include").mkdir(exist_ok=True)
-        (out / "include" / "context.h").write_text(self._context(proj["id"])["header"])
-        rows = self.store.all("SELECT f.name, f.vram, f.matched_source, f.status, f.best_source, f.best_score, a.name AS agent "
-                              "FROM functions f LEFT JOIN agents a ON a.id=f.matched_agent_id WHERE f.project_id=? "
-                              "ORDER BY f.vram", proj["id"])
-        body = ['/* Decompiled with decomp.wtf. For your personal use with your own copy of the game. */',
-                '#include "context.h"', ""]
-        for r in rows:
-            if r["status"] == "matched":
-                body += [f"/* 0x{r['vram']:08X}: matched by {r['agent']} */", r["matched_source"].strip(), ""]
-            else:
-                body += [f"/* 0x{r['vram']:08X} {self.rename_tokens(proj, r['name'])}: not matched yet"
-                         + (f" (best score {r['best_score']})" if r["best_score"] is not None else "") + " */", ""]
-        (src / "game.c").write_text("\n".join(body))
-        return out
+    def export_rom(self, slug: str, log=print) -> dict:
+        """Write a rebuildable source tree (the base for ports and mods) and prove it rebuilds the game."""
+        if self.fork_slug(slug):  # a fork's work is already in its source tree, committed
+            return {"path": self._project(slug)["root"], "identical": None}
+        from ..rom.export import export_rom
+
+        return export_rom(self, slug, Path(self._project(slug)["root"]) / "source", log=log)
 
     # ------------------------------------------------------------------ for the GUI
 

@@ -1,5 +1,6 @@
 """The local engine on Demo Quest 64: import, claim, split, match, rename, read data, export."""
 
+from pathlib import Path
 import shutil
 
 import pytest
@@ -106,8 +107,9 @@ def test_read_data_and_lists(net):
 
 
 def test_export_and_live(net):
-    out = net.export_rom("demo-quest-64")
-    assert "clamp_s32" in (out / "src" / "game.c").read_text()
+    out = net.export_rom("demo-quest-64", log=lambda *_: None)
+    assert out["identical"], out["log"]
+    assert "clamp_s32" in (Path(out["path"]) / "src" / "main" / "clamp_s32.c").read_text()
     live = net.live("demo-quest-64")
     assert live["overview"]["matched"] >= 2 and any(e["kind"] == "match" for e in live["events"])
     fmap = net.function_map("demo-quest-64")

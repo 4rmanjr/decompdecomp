@@ -265,10 +265,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         return net.overview(slug)
 
     def p_export(slug, request, data):
-        out = net.export_rom(slug)
-        if data.get("open"):
-            open_folder(out)
-        return {"path": str(out)}
+        def work(log):
+            res = net.export_rom(slug, log=log)
+            return {k: v for k, v in res.items() if k != "log"} | {"log": res.get("log", "")[-1500:]}
+        return {"job": jobs.start("export", work)}
 
     def p_open(slug, request, data):
         open_folder(Path(net.project_row(slug)["root"]))

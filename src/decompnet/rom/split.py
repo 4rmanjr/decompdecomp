@@ -92,6 +92,7 @@ class SplitResult:
     log: str
     platform: str = "n64"
     gp: int = 0  # value of $gp for $gp-relative data (PlayStation), 0 if unused
+    image: str = ""  # the flat image splat reads (the ROM itself, or one made from an ELF)
 
 
 def segments_from_config(path: Path) -> list[Segment]:
@@ -244,14 +245,46 @@ def parse_data(path: Path) -> list[DataSymbol]:
     return [s for s in syms if s.vram]
 
 
+def _gp_from_entry(image: bytes, entry: int, segments: list[Segment]) -> int:
+    """$gp as the program's start-up code sets it (`lui $gp, hi` + `addiu $gp, $gp, lo`)."""
+    import rabbitizer
+
+    seg = next((s for s in segments if s.contains(entry, 4)), None)
+    if seg is None:
+        return 0
+    at = seg.rom_start + entry - seg.vram
+    hi = None
+    for i in range(0, 0x400, 4):
+        word = int.from_bytes(image[at + i:at + i + 4], "little")
+        ins = rabbitizer.Instruction(word, entry + i)
+        name = ins.getOpcodeName()
+        if name == "lui" and ins.rt.value == 28:
+            hi = (word & 0xFFFF) << 16
+        elif hi is not None and name in ("addiu", "daddiu") and ins.rt.value == 28 and ins.rs.value == 28:
+            return (hi + ((word & 0xFFFF) ^ 0x8000) - 0x8000) & 0xFFFFFFFF
+        elif hi is not None and name == "ori" and ins.rt.value == 28 and ins.rs.value == 28:
+            return hi | (word & 0xFFFF)
+    return 0
+
+
 def split_rom(workdir: Path, rom_name: str = "rom.z64", log=print) -> SplitResult:
     """Run splat on workdir/rom_name and return every function and data symbol it found."""
+    import yaml
+
     log("finding the code segments")
-    out = _splat(["create_config", rom_name], workdir)
+    args = ["create_config", rom_name]
+    if (workdir / rom_name).read_bytes()[:4] == b"\x7fELF":  # splat flattens ELF programs with objcopy
+        from .. import toolchains
+
+        toolchains.ensure("binutils-mips", log=lambda *_: None)
+        objcopy = toolchains.binary("binutils-mips").parent / "mips-ps2-decompals-objcopy"
+        args[1:1] = ["--objcopy", str(objcopy)]
+    out = _splat(args, workdir)
     configs = sorted(p for p in workdir.glob("*.yaml"))
     if not configs:
         raise RomError("splat did not produce a config for this ROM")
     config = configs[0]
+    image = (yaml.safe_load(config.read_text()).get("options") or {}).get("target_path") or rom_name
     compiler, platform, gp = _patch_config(config)
     big_endian = platform == "n64"
     log("disassembling every function")
@@ -267,7 +300,7 @@ def split_rom(workdir: Path, rom_name: str = "rom.z64", log=print) -> SplitResul
         if fn is not None:
             functions.append(fn)
     seen, unique = set(), []
-    rom = (workdir / rom_name).read_bytes()
+    rom = (workdir / image).read_bytes()
     for fn in sorted(functions, key=lambda f: f.vram):
         if fn.name not in seen:
             seen.add(fn.name)
@@ -278,6 +311,9 @@ def split_rom(workdir: Path, rom_name: str = "rom.z64", log=print) -> SplitResul
         data += parse_data(path)
     if not unique:
         raise RomError("splat found no functions; the code may be compressed or use an unusual boot layout")
+    segments = segments_from_config(config)
+    if platform == "ps2" and not gp:
+        program = (workdir / rom_name).read_bytes()
+        gp = _gp_from_entry(rom, int.from_bytes(program[24:28], "little"), segments)
     log(f"found {len(unique)} functions and {len(data)} data symbols")
-    return SplitResult(unique, data, segments_from_config(config), named_symbols(workdir), config, compiler, out,
-                       platform, gp)
+    return SplitResult(unique, data, segments, named_symbols(workdir), config, compiler, out, platform, gp, image)

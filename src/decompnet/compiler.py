@@ -102,6 +102,12 @@ def _wrap(cfg: CompilerConfig, work: Path, argv: list[str]) -> list[str]:
     raise RuntimeError(f"unknown sandbox mode {mode!r}")
 
 
+def run_in(cfg: CompilerConfig, work: Path, argv: list[str], timeout: float = 300) -> subprocess.CompletedProcess:
+    """Run a toolchain command inside `work` (the sandbox's /work), e.g. to build a whole exported project.
+    Paths in `argv` must be relative to `work`."""
+    return subprocess.run(_wrap(cfg, Path(work), argv), cwd=work, capture_output=True, text=True, timeout=timeout)
+
+
 def compile_source(cfg: CompilerConfig, context_header: str, source: str, trusted: bool = False) -> CompileResult:
     if not trusted:
         try:

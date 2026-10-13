@@ -64,6 +64,8 @@ class LinkResult:
     candidate: FunctionObj | None  # canonical form, for the diff
     exact: bool
     problems: list[str] = field(default_factory=list)
+    # data the candidate defines itself, as placed at the game's copy: section name -> {offset: address}
+    placements: dict[str, dict[int, int]] = field(default_factory=dict)
 
 
 def encode(rtype: int, residual: int) -> int:
@@ -198,7 +200,7 @@ class _Linker:
             return None
         sym = r["symtab"].get_symbol(r["symidx"])
         shndx = sym["st_shndx"]
-        if shndx in ("SHN_UNDEF", "SHN_COMMON"):
+        if shndx in ("SHN_UNDEF", "SHN_COMMON") or shndx in (0xFF03, 0xFF04):  # + MIPS small common / small undefined
             base = self.resolve_name(_canonical(sym.name, sym["st_info"]["bind"]))
             return None if base is None else (base + residual) & 0xFFFFFFFF
         off = residual if sym["st_info"]["type"] == "STT_SECTION" else sym["st_value"] + residual
@@ -258,7 +260,7 @@ class _Linker:
                     continue
                 s = rsym.get_symbol(rel["r_info_sym"])
                 value = int.from_bytes(mine[at:at + 4], self.target.order)
-                if s["st_shndx"] in ("SHN_UNDEF", "SHN_COMMON"):
+                if s["st_shndx"] in ("SHN_UNDEF", "SHN_COMMON") or s["st_shndx"] in (0xFF03, 0xFF04):
                     base = self.resolve_name(_canonical(s.name, s["st_info"]["bind"]))
                     dest = None if base is None else base + value
                 else:
@@ -319,7 +321,11 @@ class _Linker:
             relocs.append(Reloc(r["off"], r["type"], name, encode(r["type"], residual)))
         linked = struct.pack(fmt[0] + f"{len(words)}I", *words)
         exact = not self.problems and linked == self.target.code
-        return LinkResult(FunctionObj(self.name, "mips", self.target.big_endian, code, relocs), exact, self.problems)
+        placements: dict[str, dict[int, int]] = {}
+        for (shndx, off), addr in self.local_map.items():
+            placements.setdefault(self.elf.get_section(shndx).name, {})[off] = addr
+        return LinkResult(FunctionObj(self.name, "mips", self.target.big_endian, code, relocs), exact, self.problems,
+                          placements)
 
 
 def link(obj: bytes, name: str, target: RomTarget, symbols: SymbolTable, read: ReadFn) -> LinkResult:

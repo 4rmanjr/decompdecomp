@@ -37,21 +37,45 @@ def read_exe(data: bytes, boot_name: str = "") -> tuple[bytes, dict]:
     }
 
 
+def region_of(serial: str) -> str:
+    """Region from a Sony product code (SLUS, SCES, SLPM...)."""
+    s = serial.upper()
+    if s[:4] in ("SLUS", "SCUS", "PAPX"):
+        return "North America"
+    if s[:4] in ("SLES", "SCES", "SCED"):
+        return "Europe"
+    if s[:4] in ("SLPS", "SLPM", "SCPS", "SCPM", "SIPS"):
+        return "Japan"
+    if s[:4] in ("SLKA", "SCKA", "SCAJ"):
+        return "Asia"
+    return "Unknown region"
+
+
 class _Disc:
-    def __init__(self, data: bytes):
-        self.data = data
+    """An ISO 9660 image (CD or DVD), read from bytes or from an open file, so discs of several gigabytes never
+    have to fit in memory."""
+
+    def __init__(self, src):
+        if isinstance(src, (bytes, bytearray, memoryview)):
+            self._get = lambda at, n: bytes(src[at:at + n])
+        else:
+            def get(at: int, n: int) -> bytes:
+                src.seek(at)
+                return src.read(n)
+            self._get = get
         for size, skip in ((2048, 0), (2352, 24), (2352, 16)):
             pvd = 16 * size + skip
-            if data[pvd + 1:pvd + 6] == b"CD001":
+            if self._get(pvd + 1, 5) == b"CD001":
                 self.size, self.skip = size, skip
                 return
-        raise RomError("not a CD image this app can read (expected an ISO 9660 .bin or .iso)")
+        raise RomError("not a disc image this app can read (expected an ISO 9660 .bin or .iso)")
 
     def sector(self, lba: int) -> bytes:
-        at = lba * self.size + self.skip
-        return self.data[at:at + 2048]
+        return self._get(lba * self.size + self.skip, 2048)
 
     def read(self, lba: int, length: int) -> bytes:
+        if self.size == 2048:
+            return self._get(lba * 2048, length)
         out = bytearray()
         while len(out) < length:
             out += self.sector(lba)
@@ -86,22 +110,27 @@ class _Disc:
         return None
 
 
-def from_disc(data: bytes) -> tuple[bytes, str]:
-    """(executable bytes, its file name) from a PlayStation CD image."""
-    disc = _Disc(data)
+def from_disc(src) -> tuple[bytes, str, str]:
+    """(program bytes, its file name, platform) from a PlayStation or PlayStation 2 disc image.
+    SYSTEM.CNF names the program: `BOOT2 = cdrom0:\\SLUS_200.00;1` on PS2, `BOOT = cdrom:\\...` on PS1."""
+    disc = _Disc(src)
     cnf = disc.find("SYSTEM.CNF")
-    boot = "PSX.EXE"
+    boot, platform = "PSX.EXE", "psx"
     if cnf is not None:
-        m = re.search(rb"BOOT\s*=\s*cdrom:?\\*([^\s;]+)", cnf, re.I)
+        m = re.search(rb"BOOT2\s*=\s*cdrom0?:?\\*([^\s;]+)", cnf, re.I)
+        if m:
+            platform = "ps2"
+        else:
+            m = re.search(rb"BOOT\s*=\s*cdrom:?\\*([^\s;]+)", cnf, re.I)
         if m:
             boot = m.group(1).decode("ascii", "replace")
     exe = disc.find(boot)
     if exe is None:
         raise RomError(f"the disc names {boot} as its program, but it isn't on the disc")
-    return exe, boot.replace("\\", "/").rsplit("/", 1)[-1]
+    return exe, boot.replace("\\", "/").rsplit("/", 1)[-1], platform
 
 
-def is_disc(data: bytes) -> bool:
+def is_disc(data) -> bool:
     try:
         _Disc(data)
         return True

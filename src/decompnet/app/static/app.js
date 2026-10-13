@@ -1058,11 +1058,26 @@ function dialog(title, html) {
 
 $("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
-$("exportBtn").onclick = async () => {
-  try {
-    const r = await api("/api/export", { method: "POST", body: { slug: S.slug, open: true } });
-    toast(`Exported to <code>${esc(r.path)}</code>`);
-  } catch (e) { toast(esc(e.message), "err"); }
+$("exportBtn").onclick = () => {
+  const body = dialog("Export a rebuildable project", `<p>decomp.wtf writes a complete decompilation project: the matched functions as C, everything else as assembly, a linker script and <code>build.py</code>. Then it builds it to prove it rebuilds your game <b>byte for byte</b>.</p>
+    <p class="muted small">It's the base for ports and mods: keep working on it with any tool or agent. Game code and data stay out of git (they're regenerated from your copy), so the tree is safe to put in a repository.</p>
+    <div class="row"><button class="primary" id="expGo" type="button">Export and build</button><button class="ghost" data-close type="button">Cancel</button></div>
+    <pre class="joblog" id="expLog" hidden></pre><div id="expResult"></div>`);
+  body.querySelector("#expGo").onclick = async () => {
+    $("expGo").disabled = true;
+    $("expLog").hidden = false;
+    try {
+      const { job } = await api("/api/export", { method: "POST", body: { slug: S.slug } });
+      const r = await followJob(job, $("expLog"));
+      $("expResult").innerHTML = r.identical === false
+        ? `<div class="notice bad"><span><b>Exported, but the rebuild differs.</b> ${esc(r.log.split("\n").filter(Boolean).pop() || "")}</span></div>`
+        : `<div class="notice room"><span><b>Rebuilds byte for byte.</b> ${r.matched != null ? `${r.matched} of ${r.functions} functions are C.` : ""}</span><span class="grow"></span><button class="ghost small-btn" id="expOpen" type="button">Open folder</button></div>
+           ${cmdBox(`cd "${r.path}" && python build.py`)}`;
+      wireCopies($("expResult"));
+      const open = $("expOpen");
+      if (open) open.onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch(() => {});
+    } catch (e) { toast(esc(e.message), "err"); $("expGo").disabled = false; }
+  };
 };
 $("folderBtn").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
 $("compilerBtn").onclick = async () => {

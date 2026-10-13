@@ -9,6 +9,7 @@ const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit"
 const pctOf = (best, insns) => (best == null ? null : Math.max(0, 1 - best / Math.max(1, insns * 100)));
 /* A match percentage that never reads 100% before the function really matches (99.6% stays 99.6%). */
 const pctText = (p) => (p >= 0.99 ? `${(Math.floor(p * 1000) / 10).toFixed(1)}%` : `${Math.floor(p * 100)}%`);
+const pctNum = (p) => (p < 10 ? p.toFixed(2) : p.toFixed(1));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 function since(t) {
@@ -17,7 +18,9 @@ function since(t) {
   return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago`
     : s < 172800 ? "yesterday" : `${Math.round(s / 86400)} days ago`;
 }
+function duration(h) { return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${h.toFixed(h < 10 ? 1 : 0)} h` : `${Math.round(h / 24)} days`; }
 function bytes(n) { return n >= 1 << 20 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`; }
+function money(usd) { return usd >= 10 ? `$${usd.toFixed(0)}` : `$${usd.toFixed(2)}`; }
 
 async function api(path, { method = "GET", body, raw } = {}) {
   const opts = { method, headers: {} };
@@ -58,48 +61,103 @@ function applyTheme(t) {
   colors = null;
   if (S.map.length) drawMap();
 }
-try { applyTheme(localStorage.getItem(THEME_KEY)); } catch { /* storage off */ }
-$("themeBtn").onclick = () => {
-  const dark = getComputedStyle(document.documentElement).colorScheme.includes("dark");
-  const next = dark ? "light" : "dark";
-  try { localStorage.setItem(THEME_KEY, next); } catch { /* storage off */ }
-  applyTheme(next);
-};
+function setTheme(t) {
+  try { if (t) localStorage.setItem(THEME_KEY, t); else localStorage.removeItem(THEME_KEY); } catch { /* storage off */ }
+  applyTheme(t);
+}
+function savedTheme() { try { return localStorage.getItem(THEME_KEY) || ""; } catch { return ""; } }
+$("themeBtn").onclick = () => setTheme(getComputedStyle(document.documentElement).colorScheme.includes("dark") ? "light" : "dark");
 
 /* ------------------------------------------------------------------ state + routing */
 const S = {
-  st: null, slug: null, ov: null, map: [], byName: new Map(), e: 0, a: 0, seq: {}, sessions: [],
-  scores: new Map(), claims: [], flash: new Map(), timer: null, lastMapFetch: 0, fn: null, recent: [],
+  st: null, slug: null, ov: null, map: [], byName: new Map(), e: 0, a: 0, seq: {}, sessions: [], tab: "overview",
+  scores: new Map(), claims: [], flash: new Map(), timer: null, statsTimer: null, lastMapFetch: 0, fn: null, stats: null,
+  projects: [],
 };
+const VIEWS = ["home", "catalog", "project", "agentsPage", "toolsPage", "settingsPage"];
+const TABS = ["overview", "functions", "agents", "activity", "team", "source", "settings"];
 
-async function loadState() { S.st = await api("/api/state"); return S.st; }
+async function loadState() { S.st = await api("/api/state"); $("navVersion").textContent = `v${S.st.version}`; return S.st; }
 
 function route() {
-  const m = location.hash.match(/^#\/p\/([\w-]+)/);
-  stopPolling();
+  const h = location.hash;
+  const m = h.match(/^#\/p\/([\w-]+)(?:\/(\w+))?/);
   closeAll();
-  S.slug = null;
-  if (m) openProject(m[1]);
-  else if (location.hash === "#/catalog") showCatalog();
-  else showHome();
+  closeNav();
+  hideLaunch();
+  if (m) {
+    if (S.slug === m[1] && !$("project").hidden) { setTab(m[2] || "overview"); markNav(); return; }
+    leaveProject();
+    openProject(m[1], m[2] || "overview");
+  } else {
+    leaveProject();
+    if (h === "#/catalog") showCatalog();
+    else if (h === "#/agents") showAgentsPage();
+    else if (h === "#/tools") showToolsPage();
+    else if (h === "#/settings") showSettingsPage();
+    else showHome();
+  }
+  markNav();
 }
 window.addEventListener("hashchange", route);
 
 function show(view) {
-  for (const v of ["home", "catalog", "project"]) $(v).hidden = view !== v;
+  for (const v of VIEWS) $(v).hidden = view !== v;
+  $("main").scrollTo(0, 0);
   window.scrollTo(0, 0);
 }
+function leaveProject() {
+  stopPolling();
+  S.slug = null;
+  clearInterval(teamTimer);
+}
+
+/* ------------------------------------------------------------------ sidebar */
+/* The page's CSP allows no inline style attributes: widths are set through the DOM instead. */
+function setWidths(root) { root.querySelectorAll("[data-w]").forEach((el) => { el.style.width = el.dataset.w + "%"; }); }
+
+function markNav() {
+  const h = location.hash || "#/";
+  const route = h.startsWith("#/p/") ? "project" : (h.replace("#/", "") || "home");
+  document.querySelectorAll(".nav [data-route]").forEach((a) => a.classList.toggle("on", a.dataset.route === route));
+  document.querySelectorAll(".nav-proj").forEach((a) => a.classList.toggle("on", a.dataset.slug === S.slug && route === "project"));
+}
+async function loadNav() {
+  try { S.projects = await api("/api/projects"); } catch { return; }
+  renderNav();
+}
+function renderNav() {
+  const box = $("navProjects");
+  if (!S.projects.length) { box.innerHTML = `<p class="nav-empty">None yet: drop in a game.</p>`; return; }
+  box.innerHTML = S.projects.map((p) => {
+    const pct = p.bytes ? (100 * p.matched_bytes) / p.bytes : 0;
+    const short = PLAT_SHORT[p.platform] || (p.platform_name || "").replace("Nintendo ", "") || "?";
+    const state = p.working ? `<span class="dot on" title="${p.working} agent${p.working === 1 ? "" : "s"} working"></span>`
+      : p.autopilot === "running" ? `<span class="dot work" title="autopilot running"></span>` : "";
+    return `<a class="nav-proj" href="#/p/${esc(p.slug)}" data-slug="${esc(p.slug)}" title="${esc(p.title)}">
+      <span class="np-top"><span class="np-name">${esc(p.title)}</span>${state}${p.room ? `<span class="np-room" title="${p.room === "host" ? "you share this project" : "in a team room"}">●●</span>` : ""}</span>
+      <span class="np-meta"><span>${esc(short)}</span><span class="grow"></span><span>${p.kind === "fork" && !p.ready ? "set up" : pctNum(pct) + "%"}</span></span>
+      <span class="np-bar"><i data-w="${pct.toFixed(2)}"></i></span></a>`;
+  }).join("");
+  setWidths(box);
+  markNav();
+}
+setInterval(loadNav, 5000);
+function openNav() { document.body.classList.add("nav-open"); $("navShade").hidden = false; }
+function closeNav() { document.body.classList.remove("nav-open"); $("navShade").hidden = true; }
+$("navOpen").onclick = openNav;
+$("navClose").onclick = closeNav;
+$("navShade").onclick = closeNav;
+$("navJoin").onclick = () => { closeNav(); openJoin(); };
 
 /* ------------------------------------------------------------------ home */
 let picked = null;
 
 async function showHome() {
   show("home");
-  $("crumb").hidden = true;
-  $("workingPill").hidden = true;
   resetDrop();
   const st = await loadState();
-  loadCatalog().then((c) => { if (c.length) $("forkCount").textContent = c.length; }).catch(() => {});
+  loadCatalog().then((c) => { if (c.length) $("forkCount").textContent = c.length.toLocaleString(); }).catch(() => {});
   const box = $("projects");
   box.innerHTML = "";
   $("recent").hidden = !st.projects.length;
@@ -113,7 +171,7 @@ async function showHome() {
       : `${esc(p.rom.game_code || "")}${p.rom.region ? " · " + esc(p.rom.region) : ""} · ${esc(p.compiler.name)}`;
     a.innerHTML = `<div class="cc-top"><span class="plat">${esc(p.platform_name || "?")}</span><span class="meta">${esc(since(p.last_activity))}</span></div>
       <div><h4>${esc(p.title)}</h4><p class="meta">${meta}</p></div>
-      <div class="meter"><i></i></div><p class="meta"><b>${pct < 10 ? pct.toFixed(2) : pct.toFixed(1)}%</b> of code · ${p.matched.toLocaleString()} / ${p.functions.toLocaleString()} functions</p>`;
+      <div class="meter"><i></i></div><p class="meta"><b>${pctNum(pct)}%</b> of code · ${p.matched.toLocaleString()} / ${p.functions.toLocaleString()} functions</p>`;
     box.append(a);
     requestAnimationFrame(() => { a.querySelector(".meter i").style.width = pct + "%"; });
   }
@@ -131,7 +189,7 @@ function resetDrop() {
 
 const drop = $("drop");
 drop.addEventListener("click", (e) => { if (!$("dropIdle").hidden && !e.target.closest("button")) $("file").click(); });
-drop.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && !$("dropIdle").hidden) { e.preventDefault(); $("file").click(); } });
+drop.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && !$("dropIdle").hidden && e.target === drop) { e.preventDefault(); $("file").click(); } });
 drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); });
@@ -223,10 +281,10 @@ async function pickFile(file) {
   const head = new Uint8Array(await file.slice(0, 0x9400).arrayBuffer());
   let info = identifyHead(head, file), buf = file;
   if (!info) {
-    if (file.size > 64 * 1024 * 1024) return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp below.", "err");
+    if (file.size > 64 * 1024 * 1024) return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp.", "err");
     buf = await file.arrayBuffer();
     try { info = parseRom(buf); info.platform = "n64"; } catch (e) {
-      return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp below.", "err");
+      return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp.", "err");
     }
   }
   picked = { buf, info, name: file.name };
@@ -283,7 +341,7 @@ $("mwAccept").addEventListener("change", updateAnalyse);
 function fillCompilers(select, current, platform) {
   const tcs = (S.st?.toolchains || []).filter((t) => t.kind === "compiler" && (!platform || !t.platform || t.platform === platform));
   select.innerHTML = tcs.map((t) => {
-    const note = !t.supported ? " (not available on this computer)" : t.installed ? "" : t.license === "proprietary" ? " (install in Setup)" : " (will be installed)";
+    const note = !t.supported ? " (not available on this computer)" : t.installed ? "" : t.license === "proprietary" ? " (install in Compilers & tools)" : " (will be installed)";
     return `<option value="${esc(t.id)}" ${t.id === current ? "selected" : ""} ${t.supported ? "" : "disabled"}>${esc(t.name)} · ${esc(t.use)}${note}</option>`;
   }).join("");
 }
@@ -314,6 +372,7 @@ async function runImport(query, file, title, name = "") {
       const last = log.filter((l) => l.trim()).pop();
       if (last) $("busyStep").textContent = last.trim().replace(/\s+/g, " ").slice(0, 120);
     });
+    loadNav();
     location.hash = `#/p/${res.slug}`;
   } catch (e) {
     toast(esc(e.message), "err");
@@ -332,7 +391,6 @@ async function ensureCodeWarrior() {
 
 $("analyse").onclick = async () => {
   if (!picked || $("analyse").disabled) return;
-  const p = picked.info.platform;
   const tc = $("compilerRow").hidden ? "" : $("compilerPick").value;
   const title = `Analysing ${picked.info.title}…`;
   if (!$("mwConsent").hidden) {
@@ -342,7 +400,8 @@ $("analyse").onclick = async () => {
   const body = picked.buf instanceof Blob ? picked.buf : new Blob([picked.buf]);
   runImport(`confirmed=1${tc ? `&toolchain=${encodeURIComponent(tc)}` : ""}`, body, title, picked.name);
 };
-$("pathPick").onclick = () => {
+$("pathPick").onclick = (e) => {
+  e.stopPropagation();
   const body = dialog("Use a file on this computer", `<p class="muted">For big disc images: decomp.wtf reads the file where it is instead of copying it through the browser.</p>
     <label class="field"><span>Path to the game file</span><input id="ppPath" class="mono" placeholder="/home/me/games/my-game.iso"></label>
     <label class="check"><input type="checkbox" id="ppOwn"><span>This is my own copy of this game, obtained legally. The results stay with me for my own use.</span></label>
@@ -358,10 +417,11 @@ $("pathPick").onclick = () => {
 $("demoBtn").onclick = () => runImport("demo=1", undefined, "Opening Demo Quest 64…");
 
 /* ------------------------------------------------------------------ project */
-async function openProject(slug) {
+async function openProject(slug, tab = "overview") {
   show("project");
-  S.slug = slug; S.e = 0; S.a = 0; S.seq = {}; S.scores = new Map(); S.flash = new Map(); S.sessions = []; S.claims = []; S.apFeed = null;
-  $("activity").innerHTML = ""; $("thoughts").innerHTML = "";
+  S.slug = slug; S.e = 0; S.a = 0; S.seq = {}; S.scores = new Map(); S.flash = new Map(); S.sessions = []; S.claims = [];
+  S.apFeed = null; S.stats = null; S.map = []; geo = null;
+  $("activity").innerHTML = ""; $("thoughts").innerHTML = ""; $("now").innerHTML = ""; $("expLog").hidden = true; $("expResult").innerHTML = ""; $("teamBox").innerHTML = "";
   try {
     if (!S.st) await loadState();
     S.ov = await api(`/api/project?slug=${slug}`);
@@ -370,27 +430,57 @@ async function openProject(slug) {
     location.hash = "#/";
     return;
   }
-  $("crumb").hidden = false;
-  $("crumb").innerHTML = `<b>${esc(S.ov.title)}</b>${S.ov.rom.game_code ? `<span class="code">${esc(S.ov.rom.game_code)}</span>` : ""}`;
+  document.querySelectorAll("#ptabs [data-ptab]").forEach((a) => { a.href = `#/p/${slug}/${a.dataset.ptab}`; });
   const fork = S.ov.kind === "fork";
   $("mapTitle").textContent = fork ? "Function map" : "ROM map";
   $("mapHint").textContent = fork ? "Every square is a function, grouped by source file. Click one to see it." : "Every square is a function, in ROM order. Click one to see it.";
   $("thAddr").textContent = fork ? "File" : "Address";
   groups.clear(); S.claimSig = "";
   L.q = ""; L.filter = "all"; L.limit = 200; $("fnSearch").value = "";
-  for (const id of ["compilerBtn", "inviteBtn"]) $(id).hidden = fork;
-  $("forkSetup").hidden = true;
-  $("grid").hidden = false;
-  $("stats").hidden = fork && !S.ov.ready;
+  $("instrEdit").value = S.ov.instructions || "";
+  renderHeader(S.ov);
+  markNav();
+  const setup = fork && !S.ov.ready;
+  $("ptabs").hidden = setup;
+  $("forkSetup").hidden = !setup;
+  document.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = true; });
+  if (setup) { renderForkSetup(); return; }
+  setTab(tab);
   renderStats(S.ov);
-  if (fork && !S.ov.ready) { renderForkSetup(); return; }
   await refreshMap();
   await poll(true);
-  renderQuickStart();
   S.timer = setInterval(() => poll(false), 1000);
+  S.statsTimer = setInterval(loadStats, 8000);
+  loadStats();
 }
 
-function stopPolling() { if (S.timer) clearInterval(S.timer); S.timer = null; }
+function stopPolling() {
+  if (S.timer) clearInterval(S.timer);
+  if (S.statsTimer) clearInterval(S.statsTimer);
+  S.timer = null; S.statsTimer = null;
+}
+
+function setTab(tab) {
+  if (!TABS.includes(tab)) tab = "overview";
+  S.tab = tab;
+  document.querySelectorAll("#ptabs [data-ptab]").forEach((a) => { a.classList.toggle("on", a.dataset.ptab === tab); a.setAttribute("aria-selected", a.dataset.ptab === tab); });
+  if (S.ov && S.ov.kind === "fork" && !S.ov.ready) return;
+  document.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== tab; });
+  if (tab === "overview") { if (S.map.length) layoutMap(); renderOverview(); }
+  if (tab === "functions") renderList();
+  if (tab === "agents") { renderLauncher($("launcher")); renderSessions(S.sessions); renderPrio(); }
+  if (tab === "team") renderTeam();
+  if (tab === "source" && S.ov) renderSource(S.ov);
+  if (tab === "settings") renderProjectSettings();
+  if (tab !== "team") clearInterval(teamTimer);
+}
+document.querySelectorAll("[data-goto]").forEach((a) => {
+  a.onclick = (e) => {
+    e.preventDefault();
+    if (a.dataset.filter) { L.filter = a.dataset.filter; L.limit = 200; }
+    location.hash = `#/p/${S.slug}/${a.dataset.goto}`;
+  };
+});
 
 async function refreshMap() {
   S.map = await api(`/api/map?slug=${S.slug}`);
@@ -398,19 +488,21 @@ async function refreshMap() {
   S.lastMapFetch = Date.now();
   S.map.forEach((f, i) => { f.i = i; });
   $("fnTabCount").textContent = S.map.length.toLocaleString();
-  layoutMap();
+  if (S.tab === "overview") layoutMap(); else applyClaims(false);
   renderList();
   renderProgress();
+  renderOverview();
 }
 
 let polling = false;
 async function poll(first) {
   if (polling || !S.slug) return;
   polling = true;
+  const slug = S.slug;
   try {
-    const live = await api(`/api/live?slug=${S.slug}&e=${S.e}&a=${S.a}&s=${encodeURIComponent(JSON.stringify(S.seq))}`);
+    const live = await api(`/api/live?slug=${slug}&e=${S.e}&a=${S.a}&s=${encodeURIComponent(JSON.stringify(S.seq))}`);
+    if (slug !== S.slug) return;
     S.ov = live.overview;
-    renderStats(live.overview);
     let mapDirty = false;
     for (const ev of live.events) {
       S.e = Math.max(S.e, ev.id);
@@ -433,8 +525,9 @@ async function poll(first) {
       if (s.feed.length) S.seq[s.id] = s.feed[s.feed.length - 1].seq;
     }
     addThoughts(live.sessions, first);
-    renderSessions(live.sessions);
+    if (S.tab === "agents") renderSessions(live.sessions);
     renderNow(live.claims);
+    renderStats(live.overview);
     const claimSig = live.claims.map((c) => c.name + "\u0000" + c.agent).join("\n");
     if (mapDirty || Date.now() - S.lastMapFetch > 8000) await refreshMap();
     else {
@@ -446,6 +539,7 @@ async function poll(first) {
       const touched = live.attempts.some((a) => a.function === S.fn) || live.events.some((e) => e.detail === S.fn);
       if (touched) refreshFn(false); else fnBadge();
     }
+    $("feedHint").textContent = "";
   } catch (e) {
     if (String(e.message).includes("Failed to fetch")) $("feedHint").textContent = "app not reachable";
   } finally {
@@ -453,160 +547,290 @@ async function poll(first) {
   }
 }
 
-function renderStats(ov) {
+async function loadStats() {
+  if (!S.slug || S.tab !== "overview") return;
+  try { S.stats = await api(`/api/stats?slug=${S.slug}`); } catch { return; }
+  renderOverview();
+}
+
+/* Agents at work on this project: the helpers this app runs, plus outside agents (yours, the room's) with a claim. */
+function workingAgents() {
+  const running = S.sessions.filter((s) => ["starting", "working", "waiting"].includes(s.state));
+  const own = new Set(S.sessions.map((s) => s.agent));
+  const outside = [...new Set(S.claims.filter((c) => !own.has(c.agent) && c.agent !== AUTO).map((c) => c.agent))];
+  return { running, outside, n: running.length + outside.length };
+}
+
+function renderHeader(ov) {
+  const fork = ov.kind === "fork";
+  const chips = [`<span class="plat">${esc(ov.platform_name || "?")}</span>`];
+  if (ov.rom && ov.rom.game_code) chips.push(`<span class="chip-s mono">${esc(ov.rom.game_code)}</span>`);
+  if (fork) chips.push(`<span class="chip-s">${ov.origin === "scratch" ? `from scratch · ${esc(LAYOUT[ov.platform] || "decomp")}` : "public decomp"}</span>`);
+  else if (ov.rom && ov.rom.region) chips.push(`<span class="chip-s">${esc(ov.rom.region)}</span>`);
+  const comp = fork ? (ov.compiler_name ? cwName(ov.compiler_name) : "") : ov.compiler.name;
+  if (comp) chips.push(`<span class="chip-s" title="${esc(fork ? "" : ov.compiler.flags.join(" "))}">${esc(comp)}</span>`);
+  $("phChips").innerHTML = chips.join("");
+  $("phTitle").textContent = ov.title;
   const pct = ov.bytes ? (100 * ov.matched_bytes) / ov.bytes : 0;
-  $("pct").textContent = pct < 10 ? pct.toFixed(2) : pct.toFixed(1);
-  $("pctBar").style.width = pct + "%";
+  $("phPct").textContent = pctNum(pct);
+  $("phBar").style.width = pct + "%";
+  $("phSub").textContent = fork && !ov.ready ? "set up the project to start"
+    : `${ov.matched.toLocaleString()} / ${ov.functions.toLocaleString()} functions · ${plural(ov.attempts || 0, "compile")}${S.today ? ` · ${S.today} matched today` : ""}`;
+  const w = workingAgents();
+  $("phWorking").hidden = !w.n;
+  $("phWorkingText").textContent = `${w.n} agent${w.n === 1 ? "" : "s"} working`;
+  $("phStartText").textContent = w.running.length ? "Add agents" : "Start agents";
+  $("phStart").hidden = fork && !ov.ready;
+  const room = ov.room;
+  const pill = $("phRoom");
+  pill.hidden = !room;
+  if (room) {
+    const members = room.members || [];
+    const online = members.filter((m) => m.online).length;
+    pill.classList.toggle("off", room.role === "guest" && !room.connected);
+    pill.innerHTML = room.role === "host" ? `<span class="dot ${online ? "on" : ""}"></span>Sharing · ${online} online`
+      : /waiting for the host/i.test(room.error || "") ? `<span class="dot work"></span>Waiting to be let in`
+      : `<span class="dot ${room.connected ? "on" : "err"}"></span>${room.connected ? `In a room as ${esc(room.member)}` : "Room offline"}`;
+    $("teamTabCount").textContent = members.length ? members.length : "";
+  } else $("teamTabCount").textContent = "";
+  $("agTabCount").textContent = w.n || "";
+}
+$("phWorking").onclick = () => { location.hash = `#/p/${S.slug}/agents`; };
+$("phRoom").onclick = () => { location.hash = `#/p/${S.slug}/team`; };
+$("phFolder").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
+
+function renderStats(ov) {
+  renderHeader(ov);
+  const pct = ov.bytes ? (100 * ov.matched_bytes) / ov.bytes : 0;
+  $("pct").textContent = pctNum(pct);
   $("pctSub").textContent = (ov.bytes ? `${bytes(ov.matched_bytes)} of ${bytes(ov.bytes)}` : "") + (S.today ? ` · ${S.today} matched today` : "");
-  $("fnCount").textContent = `${ov.matched} / ${ov.functions}`;
-  $("fnSub").textContent = `${ov.functions - ov.matched} to go`;
-  $("compiles").textContent = ov.attempts.toLocaleString();
-  const recent = [...S.scores.values()].flat().filter((x) => x.t > Date.now() / 1000 - 600).length;
-  $("rate").textContent = recent ? `${recent} in the last 10 minutes` : "each one checked against your ROM";
-  renderRoom(ov);
-  renderSource(ov);
+  $("fnCount").textContent = `${ov.matched.toLocaleString()} / ${ov.functions.toLocaleString()}`;
   renderAutopilot(ov);
   renderSteering(ov);
-  if (ov.kind === "fork") { renderFork(ov); return; }
-  $("forkNotice").hidden = true;
-  $("compilerLabel").textContent = "Compiler";
-  $("compilerName").textContent = ov.compiler.name;
-  $("compilerSub").textContent = ov.compiler.flags.join(" ");
+  if (S.tab === "source") renderSource(ov);
+  renderCompilerNotice(ov);
+  renderAgentsKpi(ov);
+  renderNext(ov);
+}
+
+function renderCompilerNotice(ov) {
   const n = $("compilerNotice");
-  if (!ov.compiler.supported) {
-    n.hidden = false; n.className = "notice bad";
-    n.innerHTML = `<span><b>${esc(ov.compiler.name)}</b> has no build for this computer yet. Pick another compiler in Compiler settings.</span>`;
-  } else if (!ov.compiler.installed) {
-    n.hidden = false; n.className = "notice";
-    n.innerHTML = ov.compiler.proprietary
-      ? `<span><b>${esc(ov.compiler.name)}</b> isn't installed. It's proprietary software (SGI's compiler, recompiled by the decomp community); install it only if you accept that.</span><button class="primary small-btn" id="tcInstall" type="button">Install…</button>`
-      : `<span><b>${esc(ov.compiler.name)}</b> isn't installed yet.</span><button class="primary small-btn" id="tcInstall" type="button">Install now</button>`;
-    $("tcInstall").onclick = () => installToolchain(ov.compiler.toolchain, ov.compiler.proprietary);
-  } else n.hidden = true;
-}
-
-function renderRoom(ov) {
-  const n = $("roomNotice");
-  const room = ov.room;
-  $("inviteBtn").hidden = (room && room.role === "guest") || ov.kind === "fork";
-  if (!room) { n.hidden = true; return; }
+  if (ov.kind === "fork" || ov.compiler.installed) { n.hidden = true; return; }
   n.hidden = false;
-  const members = room.members || [];
-  if (room.role === "host") {
-    const online = members.filter((m) => m.online).length;
-    const working = members.reduce((k, m) => k + ((m.working || []).length ? 1 : 0), 0);
-    n.className = "notice room";
-    n.innerHTML = `<span><b>Sharing this project.</b> ${members.length ? `${members.length} member${members.length === 1 ? "" : "s"}, ${online} online, ${working} working right now.` : "Nobody has joined yet."}</span><span class="members">${members.filter((m) => m.online).slice(0, 8).map((m) => `<span class="member">${esc(m.name)}${m.matched ? ` · ${m.matched}` : ""}</span>`).join("")}</span><span class="grow"></span><button class="ghost small-btn" id="roomManage" type="button">Team</button>`;
-    $("roomManage").onclick = openInvite;
-  } else {
-    const waiting = /waiting for the host/i.test(room.error || "");
-    const others = members.filter((m) => m.name !== room.member && m.online);
-    n.className = "notice room" + (room.connected ? "" : " off");
-    n.innerHTML = waiting
-      ? `<span><b>Waiting for the host to let you in</b> as ${esc(room.member)}. Your agents start working with the room as soon as they do.</span><span class="grow"></span><button class="ghost small-btn" id="roomLeave" type="button">Cancel</button>`
-      : `<span><b>${room.connected ? "In a team room" : "Room offline"}</b> as ${esc(room.member)}. ${room.connected ? `${members.length} member${members.length === 1 ? "" : "s"}${others.length ? `, ${others.length} others online` : ""}; your agents share their work with the host.` : esc(room.error || "Waiting for the host…") + " Your agents wait and carry on when it's back."}</span><span class="members">${room.connected ? others.slice(0, 8).map((m) => `<span class="member">${esc(m.name)}</span>`).join("") : ""}</span><span class="grow"></span><button class="ghost small-btn" id="roomReconnect" type="button">${room.connected ? "New link?" : "Reconnect"}</button><button class="ghost small-btn" id="roomLeave" type="button">Leave room</button>`;
-    const rc = $("roomReconnect");
-    if (rc) rc.onclick = openReconnect;
-    $("roomLeave").onclick = async () => {
-      if (!confirm("Leave this room? Your local copy of the project stays; it stops syncing.")) return;
-      await api("/api/collab/leave", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
-    };
+  if (!ov.compiler.supported) {
+    n.className = "notice bad";
+    n.innerHTML = `<span><b>${esc(ov.compiler.name)}</b> has no build for this computer yet. Pick another compiler in this project's Settings.</span>`;
+    return;
   }
+  n.className = "notice";
+  n.innerHTML = ov.compiler.proprietary
+    ? `<span><b>${esc(ov.compiler.name)}</b> isn't installed. It's proprietary software (recompiled by the decomp community); install it only if you accept that.</span><span class="grow"></span><button class="primary small-btn" id="tcInstall" type="button">Install…</button>`
+    : `<span><b>${esc(ov.compiler.name)}</b> isn't installed yet.</span><span class="grow"></span><button class="primary small-btn" id="tcInstall" type="button">Install now</button>`;
+  $("tcInstall").onclick = () => installToolchain(ov.compiler.toolchain, ov.compiler.proprietary);
 }
 
-let inviteTimer = null;
-async function openInvite() {
-  const info = await api(`/api/collab?slug=${S.slug}`).catch((e) => { toast(esc(e.message), "err"); return null; });
-  if (!info) return;
-  const body = dialog("Decompile together", `<p>Your team works on this game from their own computers, each with <b>their own copy of exactly this game</b> (decomp.wtf checks it's identical) and their own agents. This computer is the room's host: it keeps the shared work and checks every match against your copy.</p>
-    <p class="muted small">Only the work travels: who's on which function, C attempts, matches, names, structs and notes; never ROM data or assembly. You host the room and decide who's in. The decompiled code of a commercial game belongs to its rights holder: keep it among people who own the game.</p>
-    <div id="inviteBody"></div>`);
-  const box = body.querySelector("#inviteBody");
-  const opts = (inf) => `<div class="setup-group"><h3>Who can join</h3>
-      <div class="seg" id="visSeg"><button type="button" data-vis="private" class="${inf.settings.visibility !== "public" ? "on" : ""}">Private: invite link</button><button type="button" data-vis="public" class="${inf.settings.visibility === "public" ? "on" : ""}">Public: anyone with the address</button></div>
-      <label class="check"><input type="checkbox" id="apprChk" ${inf.settings.approve ? "checked" : ""}><span>I let each new member in (they wait until you approve)</span></label></div>`;
-  const render = (inf) => {
-    if (!box.isConnected) return;
-    if (!inf.sharing) {
-      const sugg = (inf.addresses || []).map((a) => `<button type="button" class="chip" data-addr="${esc(a.address)}">${esc(a.label)}: <span>${esc(a.address)}</span></button>`).join("");
-      box.innerHTML = `${inf.was_sharing ? `<div class="notice"><span>This room was shared before the app restarted. Share it again: members keep their place.</span></div>` : ""}
-        <div class="setup-group"><h3>How teammates reach this computer</h3>
-          <label class="check"><input type="radio" name="mode" value="tunnel" ${inf.mode !== "address" ? "checked" : ""} ${inf.tunnel_supported ? "" : "disabled"}><span><b>Quick tunnel</b>: works from anywhere, nothing to set up (Cloudflare's free tunnel). The address changes when the app restarts; members then paste the new link.</span></label>
-          <label class="check"><input type="radio" name="mode" value="address" ${inf.mode === "address" ? "checked" : ""}><span><b>An address you control</b>: this network, Tailscale, or a server with its own domain. It stays the same, so the room reopens by itself after a restart.</span></label>
-          <div id="addrBox" ${inf.mode === "address" ? "" : "hidden"}>
-            <label class="field"><span>The address teammates use (the room listens on port <input id="addrPort" class="mono port" type="number" value="${inf.port || 6481}">)</span><input id="addrIn" class="mono" placeholder="http://192.168.1.20:6481" value="${esc(inf.address || "")}"></label>
-            <div class="chips">${sugg}</div></div></div>
-        ${opts(inf)}
-        <div class="row"><button class="primary" id="startShare" type="button">Start sharing</button></div><pre class="joblog" id="shareLog" hidden></pre>`;
-      box.querySelectorAll('[name="mode"]').forEach((r) => { r.onchange = () => { box.querySelector("#addrBox").hidden = r.value !== "address" || !r.checked; }; });
-      box.querySelectorAll("[data-addr]").forEach((b) => { b.onclick = () => { box.querySelector("#addrIn").value = b.dataset.addr; }; });
-      box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => box.querySelectorAll("[data-vis]").forEach((x) => x.classList.toggle("on", x === b)); });
-      box.querySelector("#startShare").onclick = async () => {
-        const mode = box.querySelector('[name="mode"]:checked')?.value || "tunnel";
-        const visibility = box.querySelector("[data-vis].on")?.dataset.vis || "private";
-        box.querySelector("#shareLog").hidden = false;
-        box.querySelector("#startShare").disabled = true;
-        try {
-          const { job } = await api("/api/collab/start", { method: "POST", body: { slug: S.slug, mode, visibility,
-            approve: box.querySelector("#apprChk").checked, address: box.querySelector("#addrIn")?.value || "",
-            port: Number(box.querySelector("#addrPort")?.value) || 6481, keep: inf.was_sharing } });
-          await followJob(job, box.querySelector("#shareLog"));
-          render(await api(`/api/collab?slug=${S.slug}`));
-        } catch (e) { toast(esc(e.message), "err"); box.querySelector("#startShare").disabled = false; }
-      };
-      return;
-    }
-    const members = inf.room?.members || [];
-    const online = members.filter((m) => m.online).length;
-    const people = members.map((m) => `<div class="line-item"><span class="dot ${m.online ? "on" : ""}"></span><div class="txt"><b>${esc(m.name)}</b>
-        <span>${m.agents.length ? esc(m.agents.join(", ")) : "no agents yet"} · ${m.matched} matched${m.working.length ? ` · on ${esc(m.working.slice(0, 3).join(", "))}` : ""}</span></div>
-        <button class="ghost small-btn danger" data-remove="${esc(m.name)}" type="button">Remove</button></div>`).join("");
-    const waiting = (inf.pending || []).map((p) => `<div class="line-item"><div class="txt"><b>${esc(p.name)}</b><span>asks to join</span></div>
-        <button class="primary small-btn" data-approve="${esc(p.name)}" type="button">Let in</button><button class="ghost small-btn" data-decline="${esc(p.name)}" type="button">Decline</button></div>`).join("");
-    box.innerHTML = `<label class="field"><span>${inf.settings.visibility === "public" ? "The room's address (anyone with it and their own copy of the game can join)" : "Invite link (send it to teammates who own this game)"}</span></label>${cmdBox(inf.link || "")}
-      <p class="muted small">${inf.mode === "address" ? "Shared at your own address: the room reopens by itself when this app restarts." : "Shared through a quick tunnel: the address changes if this app restarts."} Teammates choose <i>Join a team's room</i> in decomp.wtf, or run <code>decomp join &lt;link&gt; &lt;their copy&gt; --name &lt;name&gt;</code>.</p>
-      ${waiting ? `<div class="setup-group"><h3>Waiting to join</h3>${waiting}</div>` : ""}
-      <div class="setup-group"><h3>In the room · ${members.length} member${members.length === 1 ? "" : "s"}, ${online} online</h3>${people || `<p class="muted small">Nobody yet.</p>`}</div>
-      ${opts(inf)}
-      <div class="setup-group"><h3>Keep it open</h3><div class="row" id="svcRow"><span class="muted small">Checking…</span></div></div>
-      <div class="row"><button class="ghost" id="rotate" type="button">New invite link</button><button class="ghost danger" id="stopShare" type="button">Stop sharing</button></div>`;
-    wireCopies(box);
-    const manage = async (payload) => {
-      try { await api("/api/collab/manage", { method: "POST", body: { slug: S.slug, ...payload } }); render(await api(`/api/collab?slug=${S.slug}`)); }
-      catch (e) { toast(esc(e.message), "err"); }
-    };
-    box.querySelectorAll("[data-remove]").forEach((b) => { b.onclick = () => { if (confirm(`Remove ${b.dataset.remove} from the room? Their agents stop working with it.`)) manage({ action: "remove", name: b.dataset.remove }); }; });
-    box.querySelectorAll("[data-approve]").forEach((b) => { b.onclick = () => manage({ action: "approve", name: b.dataset.approve }); });
-    box.querySelectorAll("[data-decline]").forEach((b) => { b.onclick = () => manage({ action: "decline", name: b.dataset.decline }); });
-    box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => manage({ action: "settings", visibility: b.dataset.vis }); });
-    box.querySelector("#apprChk").onchange = (e) => manage({ action: "settings", approve: e.target.checked });
-    box.querySelector("#rotate").onclick = () => { if (confirm("Make a new invite link? The old one stops working for people who haven't joined yet; members stay in.")) manage({ action: "rotate" }); };
-    box.querySelector("#stopShare").onclick = async () => {
-      await api("/api/collab/stop", { method: "POST", body: { slug: S.slug } });
-      render(await api(`/api/collab?slug=${S.slug}`));
-    };
-    api("/api/service").then((sv) => {
-      const row = box.querySelector("#svcRow");
-      if (!row) return;
-      row.innerHTML = sv.installed ? `<span class="ok-mark">decomp.wtf starts with this computer</span><button class="ghost small-btn" id="svcOff" type="button">Don't</button>`
-        : `<span class="muted small">The room is open while decomp.wtf runs.</span><button class="ghost small-btn" id="svcOn" type="button">Start decomp.wtf with this computer</button>`;
-      const on = row.querySelector("#svcOn"), off = row.querySelector("#svcOff");
-      if (on) on.onclick = async () => { try { toast(esc((await api("/api/service", { method: "POST", body: { action: "install" } })).message)); render(await api(`/api/collab?slug=${S.slug}`)); } catch (e) { toast(esc(e.message), "err"); } };
-      if (off) off.onclick = async () => { await api("/api/service", { method: "POST", body: { action: "remove" } }).catch(() => {}); render(await api(`/api/collab?slug=${S.slug}`)); };
-    }).catch(() => {});
-  };
-  render(info);
-  clearInterval(inviteTimer);
-  inviteTimer = setInterval(async () => {
-    if ($("dialog").hidden) { clearInterval(inviteTimer); return; }
+function fnCounts() {
+  const c = { matched: 0, working: 0, tried: 0, open: 0, asm: 0 };
+  for (const f of S.map) c[fnState(f)]++;
+  return c;
+}
+
+/* The overview's numbers: function states, pace, who matched what, recent matches. */
+function renderOverview() {
+  if (!S.ov || S.tab !== "overview") return;
+  const c = fnCounts(), total = Math.max(1, S.map.length);
+  const seg = (k, cls) => (c[k] ? `<i class="${cls}" data-w="${(100 * c[k]) / total}" title="${c[k]} ${k === "open" ? "to do" : k}"></i>` : "");
+  $("fnStack").innerHTML = seg("matched", "s-match") + seg("working", "s-work") + seg("tried", "s-tried") + seg("asm", "s-asm") + seg("open", "s-open");
+  setWidths($("fnStack"));
+  const togo = S.ov.functions - S.ov.matched;
+  $("fnSub").textContent = `${togo.toLocaleString()} to go${c.tried ? ` · ${c.tried.toLocaleString()} tried` : ""}${c.working ? ` · ${c.working} in progress` : ""}${c.asm ? ` · ${c.asm} assembly` : ""}`;
+  const st = S.stats;
+  if (st) {
+    const ph = st.matches_per_hour, max = Math.max(1, ...ph);
+    const last3 = ph.slice(-3).reduce((a, b) => a + b, 0) / 3;
+    $("paceNum").textContent = `${ph[23]}`;
+    $("paceBars").innerHTML = ph.map((n, i) => `<rect x="${i * 10 + 1}" y="${28 - Math.max(n ? 3 : 1, (26 * n) / max)}" width="8" height="${Math.max(n ? 3 : 1, (26 * n) / max)}" rx="1.5" class="${n ? "on" : ""}"><title>${n} matched ${23 - i ? `${23 - i} h ago` : "this hour"}</title></rect>`).join("");
+    $("paceSub").textContent = `matched in the last hour · ${plural(st.compiles_last_hour, "compile")}` + (last3 > 0 && togo > 0 ? ` · ≈ ${duration(togo / last3)} to go at this pace` : "");
+    $("board").innerHTML = st.agents.length ? st.agents.slice(0, 8).map((r) => `<li><span class="who">${esc(r.agent)}</span><span class="grow"></span>
+        <span class="mono small">${r.matched ? `<b class="ok">${r.matched.toLocaleString()}</b> matched · ` : ""}${plural(r.compiles, "compile")}</span></li>`).join("")
+      : `<li class="muted small">Nobody yet. Matches by agents, the autopilot and you show up here.</li>`;
+  }
+  const recent = S.map.filter((f) => f.status === "matched" && f.matched_at).sort((a, b) => b.matched_at - a.matched_at).slice(0, 8);
+  $("recentMatches").innerHTML = recent.length ? recent.map((f) => `<li><span class="ok">✓</span>${fnLink(f.name)}<span class="grow"></span><span class="muted small">${esc(f.matched_by || "")} · ${esc(since(f.matched_at))}</span></li>`).join("")
+    : `<li class="muted small">No matches yet.</li>`;
+  $("recentMatches").querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
+}
+
+function renderAgentsKpi(ov) {
+  const w = workingAgents();
+  $("agNum").textContent = w.n;
+  const names = [...w.running.map((s) => s.label), ...w.outside];
+  $("agSub").textContent = names.length ? names.slice(0, 4).join(", ") + (names.length > 4 ? ` +${names.length - 4}` : "") : "none working right now";
+  const sp = ov.spend, n = ov.helper_matches || 0, budget = S.st?.settings?.budget_usd || 0;
+  $("spendSub").textContent = sp && sp.usd ? `${money(sp.usd)} spent${n ? ` · ${money(sp.usd / n)} per match` : ""}${budget ? ` · budget ${money(budget)}` : ""}`
+    : sp && sp.tokens ? `${(sp.tokens / 1000).toFixed(0)}k tokens used` : budget ? `budget ${money(budget)}` : "";
+}
+
+/* What to do next, so a first project is plug and play. */
+function renderNext(ov) {
+  const box = $("nextStep");
+  const w = workingAgents();
+  const done = ov.functions > 0 && ov.matched >= ov.functions;
+  const compilerOk = ov.kind === "fork" || ov.compiler.installed;
+  if (done) {
+    box.hidden = false;
+    box.innerHTML = `<div class="next-text"><b>Every function matches.</b><span class="muted small">Export the project: a source tree that rebuilds your game byte for byte.</span></div><a class="primary small-btn as-btn" href="#/p/${esc(S.slug)}/source">Export</a>`;
+    return;
+  }
+  if (w.n || !compilerOk || !S.st) { box.hidden = true; return; }
+  launcherInit();
+  const a = S.st.agents.find((x) => x.id === LZ.kind);
+  const ap = ov.autopilot;
+  const steps = [`<span class="ok">✓</span> ${ov.kind === "fork" ? "Project set up" : "Game analysed"}: ${plural(ov.functions, "function")}`];
+  if (ap) steps.push(ap.state === "running" ? `<span class="spin-dot"></span> Autopilot trying machine drafts` : `<span class="ok">✓</span> Autopilot: ${ap.matched.toLocaleString()} free match${ap.matched === 1 ? "" : "es"}`);
+  steps.push(`<span class="todo">○</span> Agents`, `<span class="todo">○</span> Export`);
+  box.hidden = false;
+  box.innerHTML = `<div class="next-text"><b>Next: start your agents</b><span class="steps-line">${steps.join("")}</span></div>
+    ${a && (a.installed || a.id === "api") ? `<button class="primary" id="nextGo" type="button">${esc(launchLabel(a, LZ.model, LZ.count))}</button>` : ""}
+    <button class="ghost" id="nextPick" type="button">Choose agent &amp; model</button>`;
+  const go = $("nextGo");
+  if (go) go.onclick = () => startAgents(a, LZ.model, LZ.count, go);
+  $("nextPick").onclick = () => showLaunch();
+}
+
+/* ------------------------------------------------------------------ team (rooms) */
+let teamTimer = null;
+async function renderTeam() {
+  const box = $("teamBox");
+  clearInterval(teamTimer);
+  if (!S.ov) return;
+  const room = S.ov.room;
+  if (room && room.role === "guest") { renderGuest(box, room); teamTimer = setInterval(() => { if (S.tab === "team" && S.ov.room) renderGuest(box, S.ov.room); }, 4000); return; }
+  if (S.ov.kind === "fork") {
+    box.innerHTML = `<h2 class="pane-title">Decompile together</h2>
+      <p class="muted">Team rooms work for games started from a ROM (N64, PlayStation, GBA). This project is a git source tree: share it the git way, with a repository your team owns (keep it private; the code of a commercial game belongs to its rights holder). Each teammate adds their own copy of the game and their own agents.</p>
+      <div class="row"><button class="ghost" id="tmFolder" type="button">Open the project folder</button><button class="ghost" id="tmJoin" type="button">Join a team's room</button></div>`;
+    $("tmFolder").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
+    $("tmJoin").onclick = openJoin;
+    return;
+  }
+  if (!box.firstElementChild) box.innerHTML = `<p class="muted">Looking at this computer's network…</p>`;
+  const info = await api(`/api/collab?slug=${S.slug}`).catch((e) => { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return null; });
+  if (!info || S.tab !== "team") return;
+  renderHost(box, info);
+  teamTimer = setInterval(async () => {
+    if (S.tab !== "team" || !S.slug) { clearInterval(teamTimer); return; }
     if (box.contains(document.activeElement) && document.activeElement.matches("input")) return;  // typing
     const inf = await api(`/api/collab?slug=${S.slug}`).catch(() => null);
-    if (inf && inf.sharing) render(inf);
+    if (inf && inf.sharing && S.tab === "team") renderHost(box, inf);
   }, 5000);
 }
 
+function renderGuest(box, room) {
+  const members = room.members || [];
+  const waiting = /waiting for the host/i.test(room.error || "");
+  const people = members.map((m) => `<div class="line-item"><span class="dot ${m.online ? "on" : ""}"></span><div class="txt"><b>${esc(m.name)}${m.name === room.member ? " (you)" : ""}</b>
+      <span>${m.agents && m.agents.length ? esc(m.agents.join(", ")) : "no agents yet"} · ${m.matched || 0} matched${m.working && m.working.length ? ` · on ${esc(m.working.slice(0, 3).join(", "))}` : ""}</span></div></div>`).join("");
+  box.innerHTML = `<h2 class="pane-title">${waiting ? "Waiting for the host to let you in" : room.connected ? "In a team room" : "The room is offline"}</h2>
+    <p class="muted">${waiting ? `You asked to join as <b>${esc(room.member)}</b>. Your agents start working with the room as soon as the host lets you in.`
+      : room.connected ? `You're <b>${esc(room.member)}</b>. Your agents claim functions through the room, so nobody does the same one twice; matches are checked and shared by the host.`
+      : `${esc(room.error || "Waiting for the host…")} Your agents wait and carry on when it's back.`}</p>
+    <dl class="facts"><div><dt>Host</dt><dd>${esc(room.host)}</dd></div><div><dt>Members</dt><dd>${members.length}</dd></div><div><dt>Online</dt><dd>${members.filter((m) => m.online).length}</dd></div></dl>
+    ${people ? `<div class="setup-group"><h3>In the room</h3>${people}</div>` : ""}
+    <div class="row"><button class="ghost" id="roomReconnect" type="button">${room.connected ? "The host shared a new link?" : "Reconnect with a new link"}</button><button class="ghost danger" id="roomLeave" type="button">Leave room</button></div>`;
+  $("roomReconnect").onclick = openReconnect;
+  $("roomLeave").onclick = async () => {
+    if (!confirm("Leave this room? Your local copy of the project stays; it stops syncing.")) return;
+    await api("/api/collab/leave", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
+  };
+}
+
+function renderHost(box, info) {
+  const intro = `<h2 class="pane-title">Decompile together</h2>
+    <p class="muted">Your team works on this game from their own computers, each with <b>their own copy of exactly this game</b> (decomp.wtf checks it's identical) and their own agents. This computer is the room's host: it keeps the shared work and checks every match against your copy. Only the work travels, never ROM data. You host the room and decide who's in.</p>`;
+  const opts = (inf) => `<div class="setup-group"><h3>Who can join</h3>
+      <div class="seg" id="visSeg"><button type="button" data-vis="private" class="${inf.settings.visibility !== "public" ? "on" : ""}">Private: invite link</button><button type="button" data-vis="public" class="${inf.settings.visibility === "public" ? "on" : ""}">Public: anyone with the address</button></div>
+      <label class="check"><input type="checkbox" id="apprChk" ${inf.settings.approve ? "checked" : ""}><span>I let each new member in (they wait until you approve)</span></label></div>`;
+  if (!info.sharing) {
+    const sugg = (info.addresses || []).map((a) => `<button type="button" class="chip" data-addr="${esc(a.address)}">${esc(a.label)}: <span>${esc(a.address)}</span></button>`).join("");
+    box.innerHTML = `${intro}${info.was_sharing ? `<div class="notice"><span>This room was shared before the app restarted. Share it again: members keep their place.</span></div>` : ""}
+      <div class="setup-group"><h3>How teammates reach this computer</h3>
+        <label class="check"><input type="radio" name="mode" value="tunnel" ${info.mode !== "address" ? "checked" : ""} ${info.tunnel_supported ? "" : "disabled"}><span><b>Quick tunnel</b>: works from anywhere, nothing to set up (Cloudflare's free tunnel). The address changes when the app restarts; members then paste the new link.</span></label>
+        <label class="check"><input type="radio" name="mode" value="address" ${info.mode === "address" ? "checked" : ""}><span><b>An address you control</b>: this network, Tailscale, or a server with its own domain. It stays the same, so the room reopens by itself after a restart.</span></label>
+        <div id="addrBox" ${info.mode === "address" ? "" : "hidden"}>
+          <label class="field"><span>The address teammates use (the room listens on port <input id="addrPort" class="mono port" type="number" value="${info.port || 6481}">)</span><input id="addrIn" class="mono" placeholder="http://192.168.1.20:6481" value="${esc(info.address || "")}"></label>
+          <div class="chips">${sugg}</div></div></div>
+      ${opts(info)}
+      <div class="row"><button class="primary" id="startShare" type="button">Start sharing</button></div><pre class="joblog" id="shareLog" hidden></pre>`;
+    box.querySelectorAll('[name="mode"]').forEach((r) => { r.onchange = () => { box.querySelector("#addrBox").hidden = r.value !== "address" || !r.checked; }; });
+    box.querySelectorAll("[data-addr]").forEach((b) => { b.onclick = () => { box.querySelector("#addrIn").value = b.dataset.addr; }; });
+    box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => box.querySelectorAll("[data-vis]").forEach((x) => x.classList.toggle("on", x === b)); });
+    box.querySelector("#startShare").onclick = async () => {
+      const mode = box.querySelector('[name="mode"]:checked')?.value || "tunnel";
+      const visibility = box.querySelector("[data-vis].on")?.dataset.vis || "private";
+      box.querySelector("#shareLog").hidden = false;
+      box.querySelector("#startShare").disabled = true;
+      try {
+        const { job } = await api("/api/collab/start", { method: "POST", body: { slug: S.slug, mode, visibility,
+          approve: box.querySelector("#apprChk").checked, address: box.querySelector("#addrIn")?.value || "",
+          port: Number(box.querySelector("#addrPort")?.value) || 6481, keep: info.was_sharing } });
+        await followJob(job, box.querySelector("#shareLog"));
+        renderHost(box, await api(`/api/collab?slug=${S.slug}`));
+      } catch (e) { toast(esc(e.message), "err"); box.querySelector("#startShare").disabled = false; }
+    };
+    return;
+  }
+  const members = info.room?.members || [];
+  const online = members.filter((m) => m.online).length;
+  const people = members.map((m) => `<div class="line-item"><span class="dot ${m.online ? "on" : ""}"></span><div class="txt"><b>${esc(m.name)}</b>
+      <span>${m.agents.length ? esc(m.agents.join(", ")) : "no agents yet"} · ${m.matched} matched${m.working.length ? ` · on ${esc(m.working.slice(0, 3).join(", "))}` : ""}</span></div>
+      <button class="ghost small-btn danger" data-remove="${esc(m.name)}" type="button">Remove</button></div>`).join("");
+  const waiting = (info.pending || []).map((p) => `<div class="line-item"><div class="txt"><b>${esc(p.name)}</b><span>asks to join</span></div>
+      <button class="primary small-btn" data-approve="${esc(p.name)}" type="button">Let in</button><button class="ghost small-btn" data-decline="${esc(p.name)}" type="button">Decline</button></div>`).join("");
+  box.innerHTML = `${intro}<label class="field"><span>${info.settings.visibility === "public" ? "The room's address (anyone with it and their own copy of the game can join)" : "Invite link (send it to teammates who own this game)"}</span></label>${cmdBox(info.link || "")}
+    <p class="muted small">${info.mode === "address" ? "Shared at your own address: the room reopens by itself when this app restarts." : "Shared through a quick tunnel: the address changes if this app restarts."} Teammates choose <i>Join a team</i> in decomp.wtf, or run <code>decomp join &lt;link&gt; &lt;their copy&gt; --name &lt;name&gt;</code>.</p>
+    ${waiting ? `<div class="setup-group"><h3>Waiting to join</h3>${waiting}</div>` : ""}
+    <div class="setup-group"><h3>In the room · ${members.length} member${members.length === 1 ? "" : "s"}, ${online} online</h3>${people || `<p class="muted small">Nobody yet.</p>`}</div>
+    ${opts(info)}
+    <div class="setup-group"><h3>Keep it open</h3><div class="row" id="svcRow"><span class="muted small">Checking…</span></div></div>
+    <div class="row"><button class="ghost" id="rotate" type="button">New invite link</button><button class="ghost danger" id="stopShare" type="button">Stop sharing</button></div>`;
+  wireCopies(box);
+  const manage = async (payload) => {
+    try { await api("/api/collab/manage", { method: "POST", body: { slug: S.slug, ...payload } }); renderHost(box, await api(`/api/collab?slug=${S.slug}`)); }
+    catch (e) { toast(esc(e.message), "err"); }
+  };
+  box.querySelectorAll("[data-remove]").forEach((b) => { b.onclick = () => { if (confirm(`Remove ${b.dataset.remove} from the room? Their agents stop working with it.`)) manage({ action: "remove", name: b.dataset.remove }); }; });
+  box.querySelectorAll("[data-approve]").forEach((b) => { b.onclick = () => manage({ action: "approve", name: b.dataset.approve }); });
+  box.querySelectorAll("[data-decline]").forEach((b) => { b.onclick = () => manage({ action: "decline", name: b.dataset.decline }); });
+  box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => manage({ action: "settings", visibility: b.dataset.vis }); });
+  box.querySelector("#apprChk").onchange = (e) => manage({ action: "settings", approve: e.target.checked });
+  box.querySelector("#rotate").onclick = () => { if (confirm("Make a new invite link? The old one stops working for people who haven't joined yet; members stay in.")) manage({ action: "rotate" }); };
+  box.querySelector("#stopShare").onclick = async () => {
+    await api("/api/collab/stop", { method: "POST", body: { slug: S.slug } });
+    renderHost(box, await api(`/api/collab?slug=${S.slug}`));
+  };
+  serviceRow(box.querySelector("#svcRow"), "The room is open while decomp.wtf runs.");
+}
+
+/* Start decomp.wtf with the computer (systemd user service, launchd, or a log-on task). */
+function serviceRow(row, offText) {
+  if (!row) return;
+  api("/api/service").then((sv) => {
+    if (!row.isConnected) return;
+    row.innerHTML = sv.installed ? `<span class="ok-mark">decomp.wtf starts with this computer</span><button class="ghost small-btn" data-svc="remove" type="button">Don't</button>`
+      : `<span class="muted small grow">${esc(offText)}</span><button class="ghost small-btn" data-svc="install" type="button">Start decomp.wtf with this computer</button>`;
+    row.querySelector("[data-svc]").onclick = async (e) => {
+      try {
+        const r = await api("/api/service", { method: "POST", body: { action: e.target.dataset.svc } });
+        if (r.message) toast(esc(r.message));
+        serviceRow(row, offText);
+      } catch (err) { toast(esc(err.message), "err"); }
+    };
+  }).catch(() => { row.innerHTML = ""; });
+}
+
 function openReconnect() {
-  const body = dialog("Reconnect to the room", `<p class="muted">When the host restarts decomp.wtf, their invite link changes. Paste the new one; you stay the same member and keep everything you've done.</p>
+  const body = dialog("Reconnect to the room", `<p class="muted">When the host restarts decomp.wtf with a quick tunnel, their invite link changes. Paste the new one; you stay the same member and keep everything you've done.</p>
     <label class="field"><span>New invite link</span><input id="rLink" class="mono" placeholder="https://….trycloudflare.com/join/…"></label>
     <div class="row"><button class="primary" id="rGo" type="button">Reconnect</button></div><pre class="joblog" id="rLog" hidden></pre>`);
   body.querySelector("#rGo").onclick = async () => {
@@ -632,7 +856,7 @@ function openJoin() {
   body.querySelector("#jGo").onclick = async () => {
     const file = $("jRom").files[0];
     if (!$("jLink").value.trim() || !/^[A-Za-z0-9_-]{1,24}$/.test($("jName").value) || !file || !$("jOwn").checked) {
-      return toast("Fill in the link, a name (letters, digits, - or _), your ROM, and confirm it's your own copy.", "err");
+      return toast("Fill in the link, a name (letters, digits, - or _), your copy of the game, and confirm it's your own.", "err");
     }
     $("jLog").hidden = false;
     $("jGo").disabled = true;
@@ -641,27 +865,28 @@ function openJoin() {
       const { job } = await api(`/api/collab/join?${q}`, { method: "POST", raw: await file.arrayBuffer() });
       const res = await followJob(job, $("jLog"));
       $("dialog").hidden = true;
+      loadNav();
       location.hash = `#/p/${res.slug}`;
     } catch (e) { toast(esc(e.message), "err"); $("jGo").disabled = false; }
   };
 }
 
 async function installToolchain(id, proprietary) {
-  if (proprietary && !confirm("This downloads SGI's IDO compiler (recompiled for modern systems by the decompals project). It is proprietary software: install it only if you accept that risk. Continue?")) return;
-  toast("Installing the compiler…");
+  if (proprietary && !confirm("This downloads a proprietary compiler, kept by the decomp community. Install it only if you accept that. Continue?")) return;
+  toast("Installing…");
   try {
     const { job } = await api("/api/toolchain", { method: "POST", body: { id, accept_license: proprietary } });
     await followJob(job);
-    toast("Compiler installed.", "match");
+    toast("Installed.", "match");
     await loadState();
     if (S.slug) renderStats(await api(`/api/project?slug=${S.slug}`));
-    if (!$("setupSheet").hidden) openSetup();
+    if (!$("toolsPage").hidden) renderTools();
   } catch (e) { toast(esc(e.message), "err"); }
 }
 
-/* ------------------------------------------------------------------ forks */
+/* ------------------------------------------------------------------ public decomps */
 const PLAT_ORDER = ["gc", "wii", "ps", "ps2", "n64", "gba", "nds", "switch", "win32", "xbox360", "3ds", "xbox", "psp"];
-const PLAT_SHORT = { gc: "GameCube", wii: "Wii", ps: "PS1", ps2: "PS2", n64: "N64", gba: "GBA", nds: "DS", switch: "Switch", win32: "PC", xbox360: "Xbox 360", "3ds": "3DS", xbox: "Xbox", psp: "PSP" };
+const PLAT_SHORT = { gc: "GameCube", wii: "Wii", ps: "PS1", psx: "PS1", ps2: "PS2", n64: "N64", gba: "GBA", nds: "DS", switch: "Switch", win32: "PC", xbox360: "Xbox 360", "3ds": "3DS", xbox: "Xbox", psp: "PSP" };
 const cat = { list: null, plat: "", q: "", done: false };
 
 async function loadCatalog() {
@@ -677,8 +902,6 @@ function ago(iso) {
 
 async function showCatalog() {
   show("catalog");
-  $("crumb").hidden = true;
-  $("workingPill").hidden = true;
   $("catGrid").innerHTML = `<p class="muted">Loading projects from decomp.dev…</p>`;
   try { await loadCatalog(); } catch (e) { $("catGrid").innerHTML = `<p class="muted">Couldn't reach decomp.dev (${esc(e.message)}). You can still fork a repository by its address below.</p>`; return; }
   if (!S.st) await loadState().catch(() => {});
@@ -738,29 +961,9 @@ function openForkDialog(p) {
       const r = await followJob(job, $("forkLog"));
       $("dialog").hidden = true;
       await loadState();
+      loadNav();
       location.hash = `#/p/${r.slug}`;
     } catch (e) { toast(esc(e.message), "err"); $("forkGo").disabled = false; }
-  };
-}
-
-function renderFork(ov) {
-  $("compilerNotice").hidden = true;
-  $("compilerLabel").textContent = "Platform";
-  $("compilerName").textContent = ov.platform_name || "Fork";
-  $("compilerSub").textContent = ov.version || "";
-  if (ov.ready && ov.functions === 0) $("rate").textContent = "";
-  else if (ov.ready && !ov.attempts) $("rate").textContent = "each one judged by objdiff";
-  const n = $("forkNotice");
-  if (!ov.ready) { n.hidden = true; return; }
-  n.hidden = false;
-  const repo = (ov.repo_url || "").replace(/^https?:\/\//, "");
-  n.innerHTML = ov.origin === "scratch"
-    ? `<span><b>Started from scratch</b> · a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game byte for byte on every build${ov.compiler_name ? ` (${esc(cwName(ov.compiler_name))})` : ""}. Matches are committed to git in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button>`
-    : `<span><b>Fork of ${esc(repo)}</b> · matches are committed to the <code>decomp-wtf</code> branch in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button><a class="ghost small-btn as-btn" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">Repository</a>`;
-  $("forkMeasure").onclick = async () => {
-    toast("Measuring the whole project with objdiff…");
-    try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Progress updated.", "match"); refreshMap(); }
-    catch (e) { toast(esc(e.message), "err"); }
   };
 }
 
@@ -783,13 +986,12 @@ function uploadFile(url, file, onProgress) {
 
 async function renderForkSetup() {
   const box = $("forkSetup");
-  $("grid").hidden = true;
   box.hidden = false;
   box.innerHTML = `<p class="muted">Looking at the project…</p>`;
   let n;
   try { n = await api(`/api/fork/needs?slug=${S.slug}`); } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
   const kinds = { manifest: "decomp.wtf manifest", dtk: "dtk-template (configure.py + ninja)", configure: "configure.py + ninja", splat: "splat + make", objdiff: "objdiff project", custom: "its own setup" };
-  const facts = `<dl class="facts">${[["Repository", (S.ov.repo_url || "").replace(/^https?:\/\//, "")], ["Layout", kinds[n.kind] || n.kind], ["Version", n.version || "—"], ["Game goes to", n.path || "see the README"]]
+  const facts = `<dl class="facts one">${[["Repository", (S.ov.repo_url || "").replace(/^https?:\/\//, "") || "made by decomp.wtf"], ["Layout", kinds[n.kind] || n.kind], ["Version", n.version || "—"], ["Game goes to", n.path || "see the README"]]
     .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
     <div class="row"><button class="ghost small-btn" id="fsFolder" type="button">Open project folder</button></div>`;
   const run = async (start) => {
@@ -799,6 +1001,7 @@ async function renderForkSetup() {
       const { job } = await start();
       await followJob(job, $("fsLog"));
       toast("The project is ready for your agents.", "match");
+      loadNav();
       openProject(S.slug);
     } catch (e) {
       toast(esc(e.message), "err");
@@ -870,6 +1073,7 @@ const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 function layoutMap() {
   const wrap = $("mapWrap"), canvas = $("map");
+  if (!wrap.clientWidth) return;  // not on screen: laid out when the overview shows
   const w = Math.max(200, wrap.clientWidth - 32), n = Math.max(1, S.map.length);
   let size = Math.floor(Math.sqrt((w * 300) / n));
   size = Math.max(5, Math.min(26, size));
@@ -884,7 +1088,7 @@ function layoutMap() {
   applyClaims();
 }
 
-function applyClaims() {
+function applyClaims(draw = true) {
   const working = new Map(S.claims.map((c) => [c.name, c.agent]));
   for (const f of S.map) {
     if (f.status !== "matched" && f.status !== "asm") f.status = working.has(f.name) ? "working" : "open";
@@ -895,11 +1099,11 @@ function applyClaims() {
       if (Number.isFinite(best)) f.best = best;
     }
   }
-  drawMap();
+  if (draw) drawMap();
 }
 
 function drawMap() {
-  if (!geo) return;
+  if (!geo || S.tab !== "overview") return;
   if (!colors) readColors();
   const ctx = $("map").getContext("2d");
   const { size, gap, cols, dpr } = geo;
@@ -926,7 +1130,7 @@ function drawMap() {
         const g = size * (0.6 + 1.8 * t);
         ctx.strokeStyle = rgb(colors.match, 1 - t);
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.roundRect(x - g / 2 + size / 2 - size / 2, y - g / 2 + size / 2 - size / 2, size + g - size + size, size + g - size + size, r + 2); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(x - g / 2, y - g / 2, size + g, size + g, r + 2); ctx.stroke();
       } else S.flash.delete(f.name);
     }
     if (S.fn === f.name) { ctx.strokeStyle = rgb(colors.ink, 0.9); ctx.lineWidth = 1.5; ctx.strokeRect(x - 1.5, y - 1.5, size + 3, size + 3); }
@@ -948,8 +1152,9 @@ $("map").addEventListener("mousemove", (ev) => {
   if (i < 0) { tip.hidden = true; return; }
   const f = S.map[i];
   const p = pctOf(f.best, f.insns);
-  const status = f.status === "matched" ? "matched" : f.status === "working" ? `${esc(f.agent)} is on it` : f.best != null ? `best ${pctText(p)}` : "not started";
-  tip.innerHTML = `<b>${esc(f.name)}</b><br>${hex8(f.vram)} · ${f.insns} instructions<br>${status}`;
+  const status = f.status === "matched" ? `matched${f.matched_by ? " by " + esc(f.matched_by) : ""}` : f.status === "working" ? `${esc(f.agent)} is on it` : f.best != null ? `best ${pctText(p)}` : "not started";
+  const where = S.ov && S.ov.kind === "fork" ? esc(f.unit || "") : hex8(f.vram);
+  tip.innerHTML = `<b>${esc(f.name)}</b><br>${where} · ${f.insns} instructions<br>${status}`;
   tip.hidden = false;
   const wrap = $("mapWrap").getBoundingClientRect();
   let left = ev.clientX - wrap.left + 14, top = ev.clientY - wrap.top + 14;
@@ -959,7 +1164,7 @@ $("map").addEventListener("mousemove", (ev) => {
 $("map").addEventListener("mouseleave", () => { $("tip").hidden = true; });
 $("map").addEventListener("click", (ev) => { const i = mapIndexAt(ev); if (i >= 0) openFn(S.map[i].name); });
 let resizeT = null;
-window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (S.map.length) layoutMap(); }, 120); });
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (S.map.length && S.tab === "overview") layoutMap(); }, 120); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { colors = null; drawMap(); });
 
 /* ------------------------------------------------------------------ now working */
@@ -978,7 +1183,6 @@ function spark(points, w = 240, h = 34) {
 
 function renderNow(claims) {
   const box = $("now");
-  if (!claims.length) { box.innerHTML = ""; return; }
   claims = claims.filter((c) => c.agent !== AUTO);
   if (!claims.length) { box.innerHTML = ""; return; }
   box.innerHTML = claims.map((c) => {
@@ -990,28 +1194,32 @@ function renderNow(claims) {
   box.querySelectorAll(".job").forEach((j) => { j.onclick = () => openFn(j.dataset.fn); });
 }
 
-/* ------------------------------------------------------------------ sessions */
+/* ------------------------------------------------------------------ agents on this project */
 const STATE_TEXT = { starting: "starting…", working: "working", waiting: "next session in a moment", stopped: "stopped", error: "stopped with an error" };
 
 function renderSessions(sessions) {
   const box = $("sessions");
-  $("noSessions").hidden = sessions.length > 0;
-  const active = sessions.filter((s) => ["starting", "working", "waiting"].includes(s.state)).length;
-  $("workingPill").hidden = !active;
-  $("workingText").textContent = `${active} agent${active === 1 ? "" : "s"} working`;
+  const board = new Map((S.stats?.agents || []).map((r) => [r.agent, r]));
+  const running = sessions.filter((s) => ["starting", "working", "waiting"].includes(s.state));
+  $("stopAll").hidden = running.length < 2;
   box.innerHTML = sessions.map((s) => {
     const claim = S.claims.find((c) => c.agent === s.agent);
     const dot = s.state === "error" ? "err" : s.state === "working" ? "on" : s.state === "stopped" ? "" : "work";
-    const running = ["starting", "working", "waiting"].includes(s.state);
+    const live = ["starting", "working", "waiting"].includes(s.state);
+    const b = board.get(s.agent);
+    const facts = [s.model ? esc(s.model) : "default model", s.runs ? `session ${s.runs}` : "", b && b.matched ? `<b class="ok">${b.matched} matched</b>` : "", b ? plural(b.compiles, "compile") : "",
+      s.usd ? money(s.usd) : s.tokens ? `${(s.tokens / 1000).toFixed(0)}k tokens` : "", s.started_at ? `since ${clock(s.started_at).slice(0, 5)}` : ""].filter(Boolean);
     return `<div class="session"><div class="session-top"><span class="dot ${dot}"></span><b>${esc(s.label)}</b>
-        <button class="ghost" data-stop="${esc(s.id)}" data-remove="${running ? "" : "1"}" type="button">${running ? "Stop" : "Remove"}</button></div>
-      <span class="state ${s.state === "error" ? "err" : ""}">${s.state === "error" ? esc(s.error) : esc(STATE_TEXT[s.state] || s.state)}${s.model ? " · " + esc(s.model) : ""}${s.runs ? ` · session ${s.runs}` : ""}${s.usd ? ` · ${money(s.usd)}` : s.tokens ? ` · ${(s.tokens / 1000).toFixed(0)}k tokens` : ""}</span>
-      ${claim ? `<span class="last">on ${esc(claim.name)}</span>` : ""}</div>`;
+        <span class="state ${s.state === "error" ? "err" : ""}">${esc(STATE_TEXT[s.state] || s.state)}</span>
+        <button class="ghost" data-stop="${esc(s.id)}" data-remove="${live ? "" : "1"}" type="button">${live ? "Stop" : "Remove"}</button></div>
+      <span class="facts-line">${facts.join(" · ")}</span>
+      ${s.state === "error" ? `<span class="state err">${esc(s.error)}</span>` : ""}
+      ${claim ? `<span class="last">on ${fnLink(claim.name)}</span>` : ""}</div>`;
   }).join("");
   const own = new Set(sessions.map((s) => s.agent));
-  const outside = S.claims.filter((c) => !own.has(c.agent) && c.agent !== AUTO);
-  box.insertAdjacentHTML("beforeend", outside.map((c) => `<div class="session ext"><div class="session-top"><span class="dot on"></span><b>${esc(c.agent)}</b><span class="tag">${c.agent.startsWith("@") ? "in the room" : "connected"}</span></div>
-      <span class="last">on ${fnLink(c.name)}</span></div>`).join(""));
+  const outside = [...new Set(S.claims.filter((c) => !own.has(c.agent) && c.agent !== AUTO).map((c) => c.agent))];
+  box.insertAdjacentHTML("beforeend", outside.map((a) => `<div class="session ext"><div class="session-top"><span class="dot on"></span><b>${esc(a)}</b><span class="tag">${a.startsWith("@") ? "in the room" : "connected agent"}</span></div>
+      <span class="last">on ${S.claims.filter((c) => c.agent === a).map((c) => fnLink(c.name)).join(", ")}</span></div>`).join(""));
   box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
   $("noSessions").hidden = sessions.length + outside.length > 0;
   box.querySelectorAll("[data-stop]").forEach((b) => {
@@ -1021,6 +1229,142 @@ function renderSessions(sessions) {
     };
   });
 }
+$("stopAll").onclick = async () => {
+  await api("/api/agents/stop", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
+  toast("Stopping every agent on this project.");
+  poll(false);
+};
+
+/* ------------------------------------------------------------------ the launcher: agent, model, how many */
+const LZ = { kind: null, model: "", count: 1, per: null };
+function launcherInit() {
+  if (LZ.kind || !S.st) return;
+  const l = S.st.settings.launcher || {};
+  const ready = S.st.agents.filter((a) => a.installed && a.id !== "api");
+  const known = S.st.agents.find((a) => a.id === l.kind && (a.installed || a.id === "api"));
+  LZ.kind = known ? known.id : (ready[0] ? ready[0].id : "api");
+  LZ.model = known ? (l.model || "") : "";
+  LZ.count = l.count || 1;
+}
+function modelOptions(a) {
+  const recent = (S.st.settings.recent_models || {})[a.id] || [];
+  const opts = [{ id: "", name: a.default_model ? `Default · ${a.default_model}` : "Default", note: "" }];
+  for (const m of a.models || []) opts.push(m);
+  for (const r of recent) if (!opts.some((o) => o.id === r)) opts.push({ id: r, name: r, note: "used before" });
+  return opts;
+}
+function modelName(a, model) {
+  if (!model) return "";
+  const m = (a.models || []).find((x) => x.id === model);
+  return m ? m.name : model;
+}
+function launchLabel(a, model, count) {
+  if (a.id === "api") return `Start ${S.st.settings.api?.model || "API model"}${count > 1 ? ` × ${count}` : ""}`;
+  return `Start ${a.name}${model ? ` · ${modelName(a, model)}` : ""}${count > 1 ? ` × ${count}` : ""}`;
+}
+
+async function startAgents(a, model, count, btn, extra = {}) {
+  if (btn) btn.disabled = true;
+  try {
+    const options = { ...extra };
+    if (model && a.id !== "api") options.model = model;
+    if (LZ.per) options.per_session = LZ.per;
+    await api("/api/agents/start", { method: "POST", body: { kind: a.id, slug: S.slug, count, options } });
+    S.st.settings.launcher = { kind: a.id, model: model || "", count };
+    if (model && a.id !== "api") {
+      const rec = (S.st.settings.recent_models ||= {});
+      rec[a.id] = [model, ...(rec[a.id] || []).filter((m) => m !== model)].slice(0, 8);
+    }
+    hideLaunch();
+    toast(`${esc(a.id === "api" ? "Your API model" : a.name)} ${count > 1 ? `× ${count} are` : "is"} starting. Watch it on the map and in Activity.`, "match");
+    poll(false);
+    loadNav();
+  } catch (e) { toast(esc(e.message), "err"); } finally { if (btn) btn.disabled = false; }
+}
+
+function renderLauncher(box, compact = false) {
+  if (!box || !S.st) return;
+  launcherInit();
+  const list = S.st.agents;
+  const a = list.find((x) => x.id === LZ.kind) || list[0];
+  const kinds = list.map((x) => `<button type="button" class="lz-kind ${x.id === a.id ? "on" : ""}" data-k="${esc(x.id)}">
+      <b>${esc(x.name)}</b><span>${x.id === "api" ? "DeepSeek, OpenRouter, Ollama…" : x.installed ? esc(x.version ? x.version.replace(/\s*\(.*\)/, "") : x.vendor) : "not installed"}</span>
+      ${x.installed || x.id === "api" ? "" : `<em>install</em>`}</button>`).join("");
+  let body = "";
+  if (!a.installed) {
+    body = `<p class="small"><b>${esc(a.name)}</b> isn't installed on this computer.${a.needs ? ` It needs ${esc(a.needs)} first.` : ""}</p>
+      ${a.install ? cmdBox(a.install) : ""}
+      <div class="row"><button class="primary" data-act="install" type="button" ${a.needs ? "disabled" : ""}>Install it for me</button><a class="link small" href="${esc(a.docs)}" target="_blank" rel="noopener">About ${esc(a.name)}</a></div>
+      <p class="muted small">${esc(a.signin)}</p><pre class="joblog" data-log hidden></pre>`;
+  } else if (a.id === "api") {
+    const set = S.st.settings.api || {}, presets = S.st.api_presets, prov = set.provider || "deepseek";
+    body = `<div class="lz-fields">
+      <label class="field"><span>Provider</span><select data-f="prov">${Object.entries(presets).map(([k, p]) => `<option value="${k}" ${k === prov ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>Model</span><input data-f="model" class="mono" value="${esc(set.model || presets[prov].model)}"></label>
+      ${compact ? "" : `<label class="field wide"><span>API address</span><input data-f="base" class="mono" value="${esc(set.base_url || presets[prov].base_url)}"></label>`}
+      <label class="field wide"><span>API key (stored only on this computer)</span><input data-f="key" type="password" placeholder="${set.has_key ? esc(set.api_key) : "paste your key"}" autocomplete="off"></label></div>`;
+  } else {
+    const opts = modelOptions(a);
+    const known = opts.some((o) => o.id === LZ.model);
+    body = `<label class="field"><span>Model</span><select data-f="model">${opts.map((o) => `<option value="${esc(o.id)}" ${known && o.id === LZ.model ? "selected" : ""}>${esc(o.name)}${o.note ? ` — ${esc(o.note)}` : ""}</option>`).join("")}
+        <option value="__other" ${known ? "" : "selected"}>Another model…</option></select></label>
+      <input data-f="custom" class="mono lz-custom" placeholder="model name, as ${esc(a.name)} calls it" value="${known ? "" : esc(LZ.model)}" ${known ? "hidden" : ""}>`;
+  }
+  const ready = a.installed;
+  box.innerHTML = `<div class="lz-kinds">${kinds}</div>
+    <div class="lz-body">${body}
+      ${ready ? `<div class="lz-row">
+        <div class="field"><span>How many</span><span class="stepper"><button type="button" data-step="-1">−</button><output>${LZ.count}</output><button type="button" data-step="1">+</button></span></div>
+        ${compact ? "" : `<label class="field"><span>Functions per session</span><input data-f="per" type="number" min="1" max="20" value="${LZ.per || S.st.settings.per_session || 4}"></label>`}
+        <span class="grow"></span>
+        <button class="primary" data-act="start" type="button">${esc(launchLabel(a, LZ.model, LZ.count))}</button></div>
+        <p class="muted small">${a.id === "api" ? "A built-in agent loop drives the model through the decomp tools." : esc(a.signin)} Each agent takes a different function; a fresh session every few functions keeps its context small.</p>` : ""}
+    </div>`;
+  wireCopies(box);
+  const rerender = () => { renderLauncher(box, compact); if (box !== $("launcher") && S.tab === "agents") renderLauncher($("launcher")); };
+  box.querySelectorAll(".lz-kind").forEach((b) => { b.onclick = () => { LZ.kind = b.dataset.k; LZ.model = (S.st.settings.launcher || {}).kind === LZ.kind ? S.st.settings.launcher.model || "" : ""; rerender(); }; });
+  const sel = box.querySelector('select[data-f="model"]'), custom = box.querySelector('[data-f="custom"]');
+  const label = () => { const btn = box.querySelector('[data-act="start"]'); if (btn) btn.textContent = launchLabel(a, LZ.model, LZ.count); };
+  if (sel) sel.onchange = () => { if (sel.value === "__other") { custom.hidden = false; custom.focus(); LZ.model = custom.value.trim(); } else { custom.hidden = true; LZ.model = sel.value; } label(); };
+  if (custom) custom.oninput = () => { LZ.model = custom.value.trim(); label(); };
+  box.querySelectorAll("[data-step]").forEach((b) => { b.onclick = () => { LZ.count = Math.max(1, Math.min(8, LZ.count + Number(b.dataset.step))); box.querySelector(".stepper output").textContent = LZ.count; label(); }; });
+  const per = box.querySelector('[data-f="per"]');
+  if (per) per.onchange = () => { LZ.per = Math.max(1, Math.min(20, Number(per.value) || 4)); };
+  const prov = box.querySelector('[data-f="prov"]');
+  if (prov) prov.onchange = () => { const p = S.st.api_presets[prov.value]; box.querySelector('[data-f="model"]').value = p.model; const base = box.querySelector('[data-f="base"]'); if (base) base.value = p.base_url; };
+  const inst = box.querySelector('[data-act="install"]');
+  if (inst) inst.onclick = async () => {
+    const log = box.querySelector("[data-log]");
+    log.hidden = false; inst.disabled = true;
+    try {
+      const { job } = await api("/api/agents/install", { method: "POST", body: { kind: a.id } });
+      await followJob(job, log);
+      toast(`${esc(a.name)} installed. ${esc(a.signin)}`, "match");
+      await loadState();
+      rerender();
+    } catch (e) { toast(esc(e.message), "err"); inst.disabled = false; }
+  };
+  const go = box.querySelector('[data-act="start"]');
+  if (go) go.onclick = async () => {
+    if (a.id === "api") {
+      const f = (k) => box.querySelector(`[data-f="${k}"]`);
+      const p = S.st.api_presets[f("prov").value];
+      const payload = { provider: f("prov").value, base_url: f("base") ? f("base").value : (S.st.settings.api?.base_url || p.base_url), model: f("model").value, api_key: f("key").value };
+      try { S.st.settings = await api("/api/settings", { method: "POST", body: { api: payload } }); } catch (e) { return toast(esc(e.message), "err"); }
+      return startAgents(a, "", LZ.count, go, { provider: payload.provider, base_url: payload.base_url, model: payload.model });
+    }
+    startAgents(a, LZ.model, LZ.count, go);
+  };
+}
+
+function showLaunch() {
+  if (!S.st || !S.slug) return;
+  $("launchPop").hidden = false;
+  renderLauncher($("launchPopBody"), true);
+}
+function hideLaunch() { $("launchPop").hidden = true; }
+$("phStart").onclick = (e) => { e.stopPropagation(); if ($("launchPop").hidden) showLaunch(); else hideLaunch(); };
+document.addEventListener("click", (e) => { if (!$("launchPop").hidden && !e.target.closest(".pop-wrap")) hideLaunch(); });
 
 /* ------------------------------------------------------------------ feeds */
 function fnLink(name) { return `<span class="fn" data-fn="${esc(name)}">${esc(name)}</span>`; }
@@ -1032,12 +1376,12 @@ function eventHtml(ev) {
     case "match": return `<span class="ok">✓</span> ${who} matched ${fnLink(d)}`;
     case "release": return `${who} set ${fnLink(d)} aside, with notes for the next agent`;
     case "expired": return `${fnLink(d)} was left unfinished`;
-    case "context": return `${who} updated context.h: ${esc(d)}`;
+    case "context": return `${who} updated ${ev.agent ? "shared code" : "context"}: ${esc(d)}`;
     case "rename": return `${who} renamed ${esc(d)}`;
     case "split": return `${who} split ${esc(d)}`;
     case "import": return `ROM analysed: ${esc(d)}`;
     case "compiler": return `compiler set to ${esc(d)}`;
-    case "collab": return `${esc(d.replace(" joined", ""))} joined the room`;
+    case "collab": return esc(d);
     default: return `${who} ${esc(ev.kind)} ${esc(d)}`;
   }
 }
@@ -1108,7 +1452,7 @@ function addActivity(events, attempts, first) {
   const list = $("activity");
   while (list.children.length > 300) list.lastChild.remove();
   list.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
-  if (!list.children.length) list.innerHTML = `<li class="placeholder"><time></time><span class="muted">Nothing yet. Add an agent and its work shows up here.</span></li>`;
+  if (!list.children.length) list.innerHTML = `<li class="placeholder"><time></time><span class="muted">Nothing yet. Start an agent and its work shows up here.</span></li>`;
 }
 
 /* Agents write Markdown. Escape everything first, then allow only **bold** and `code`. */
@@ -1137,15 +1481,9 @@ function addThoughts(sessions, first) {
     list.prepend(li);
   }
   while (list.children.length > 400) list.lastChild.remove();
+  if (!list.children.length) list.innerHTML = `<li class="placeholder"><time></time><span class="muted">Helper agents you start from decomp.wtf think out loud here.</span></li>`;
+  else list.querySelector(".placeholder")?.remove();
 }
-
-document.querySelectorAll(".tab").forEach((t) => {
-  t.onclick = () => {
-    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
-    $("activity").hidden = t.dataset.tab !== "activity";
-    $("thoughts").hidden = t.dataset.tab !== "thoughts";
-  };
-});
 
 /* ------------------------------------------------------------------ inspector */
 function highlightAsm(text) {
@@ -1171,6 +1509,7 @@ async function openFn(name) {
   if (!again) { giveBack(name); S.editDirty = false; $("tryMsg").hidden = true; }
   S.fn = name;
   $("drawer").hidden = false;
+  document.body.classList.add("locked");
   if (!again) { S.ftab = null; S.which = "latest"; S.diffKey = null; $("diff").innerHTML = ""; $("diffSum").textContent = ""; }
   drawMap();
   document.querySelectorAll("#fnRows tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.fn === name));
@@ -1217,14 +1556,7 @@ async function refreshFn(first) {
     $("fnPin").hidden = S.ov.kind === "fork" || d.status !== "open";
     $("fnPin").classList.toggle("on", pinned);
     $("fnPin").textContent = pinned ? "★ Next (on)" : "★ Next";
-    $("fnPin").onclick = async () => {
-      try {
-        const r = await api("/api/priority", { method: "POST", body: { slug: S.slug, name: d.name, on: !pinned } });
-        S.ov.priority = r.priority;
-        toast(pinned ? "No longer first in line." : `Agents take <code>${esc(d.name)}</code> next.`);
-        refreshFn(false); renderList();
-      } catch (e) { toast(esc(e.message), "err"); }
-    };
+    $("fnPin").onclick = () => togglePrio(d.name, !pinned).then(() => refreshFn(false));
     $("noteAdd").onclick = async () => {
       const text = $("noteText").value.trim();
       if (!text) return;
@@ -1394,7 +1726,7 @@ function renderDiff(d) {
     } else html.push(...run.map(rowHtml));
     run = [];
   };
-  rows.forEach((r, i) => {
+  rows.forEach((r) => {
     if (r[0] === " ") { run.push(r); return; }
     flush(html.length ? "mid" : "start");
     html.push(rowHtml(r));
@@ -1419,7 +1751,7 @@ async function loadDiff() {
 
 function stepFn(delta) {
   if (!S.fn || !S.map.length) return;
-  const order = !$("listView").hidden && L.rows.length ? L.rows : S.map;
+  const order = S.tab === "functions" && L.rows.length ? L.rows : S.map;
   const k = order.findIndex((f) => f.name === S.fn);
   const next = order[(k + delta + order.length) % order.length];
   if (next) openFn(next.name);
@@ -1434,7 +1766,7 @@ const fnState = (f) => (f.status === "matched" ? "matched" : f.status === "asm" 
 const STATE_RANK = { working: 0, tried: 1, open: 2, matched: 3, asm: 4 };
 
 function renderList() {
-  if (!S.map.length || $("listView").hidden) return;
+  if (!S.map.length || S.tab !== "functions") return;
   const counts = { all: S.map.length, open: 0, working: 0, tried: 0, matched: 0, asm: 0 };
   for (const f of S.map) counts[fnState(f)]++;
   $("fnFilter").innerHTML = FILTERS.map(([k, label]) => `<button type="button" role="radio" aria-checked="${L.filter === k}" class="${L.filter === k ? "on" : ""}" data-filter="${k}">${label}<span>${counts[k].toLocaleString()}</span></button>`).join("");
@@ -1451,7 +1783,7 @@ function renderList() {
   $("fnRows").innerHTML = rows.slice(0, L.limit).map((f) => {
     const st = fnState(f), p = pctOf(f.best, f.insns);
     const best = st === "matched" ? `<span class="ok">100%</span>` : p == null ? `<span class="dim">–</span>` : pctText(p);
-    const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "asm" ? `<span class="st" title="hand-written assembly: no C compiles to it">assembly</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
+    const status = st === "matched" ? `<span class="st matched" title="${esc(f.matched_by ? "by " + f.matched_by : "")}">matched</span>` : st === "asm" ? `<span class="st" title="hand-written assembly: no C compiles to it">assembly</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
       : st === "tried" ? `<span class="st tried">tried</span>` : `<span class="st">to do</span>`;
     return `<tr data-fn="${esc(f.name)}" class="${S.fn === f.name ? "sel" : ""}" tabindex="0"><td class="mono dim">${fork ? esc(f.unit || "") : hex8(f.vram)}</td>
       <td class="mono name">${(S.ov && (S.ov.priority || []).includes(f.name)) ? `<span class="star" title="agents take it next">★</span>` : ""}${esc(f.name)}</td><td class="r mono">${f.insns.toLocaleString()}</td><td class="r mono">${best}</td>
@@ -1460,8 +1792,8 @@ function renderList() {
   $("fnShown").textContent = rows.length > L.limit ? `${L.limit.toLocaleString()} of ${rows.length.toLocaleString()} shown` : plural(rows.length, "function");
   $("fnMore").hidden = rows.length <= L.limit;
   document.querySelectorAll(".fn-table th").forEach((th) => {
-    th.classList.toggle("sorted", th.dataset.sort === L.sort);
-    th.classList.toggle("desc", th.dataset.sort === L.sort && L.dir < 0);
+    th.classList.toggle("sorted", th.dataset.sort === L.sort || (th.dataset.sort === "vram" && L.sort === "i"));
+    th.classList.toggle("desc", (th.dataset.sort === L.sort || (th.dataset.sort === "vram" && L.sort === "i")) && L.dir < 0);
   });
 }
 $("fnFilter").addEventListener("click", (e) => { const b = e.target.closest("[data-filter]"); if (b) { L.filter = b.dataset.filter; L.limit = 200; renderList(); } });
@@ -1472,18 +1804,11 @@ $("fnRows").addEventListener("keydown", (e) => { const tr = e.target.closest("tr
 document.querySelectorAll(".fn-table th[data-sort]").forEach((th) => {
   th.onclick = () => {
     const k = th.dataset.sort === "vram" ? "i" : th.dataset.sort;
-    if (L.sort === k || (k === "i" && L.sort === "vram")) L.dir = -L.dir;
+    if (L.sort === k) L.dir = -L.dir;
     else { L.sort = k; L.dir = ["best", "attempts", "insns"].includes(k) ? -1 : 1; }
     renderList();
   };
 });
-function showView(view) {
-  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
-  $("mapView").hidden = view !== "map";
-  $("listView").hidden = view !== "list";
-  if (view === "map") layoutMap(); else renderList();
-}
-document.querySelectorAll("[data-view]").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
 
 /* Matched code over time, from when each function was matched. */
 function renderProgress() {
@@ -1500,24 +1825,33 @@ function renderProgress() {
   for (const f of dated) { cum += f.size || 0; line += `H${X(f.matched_at).toFixed(1)}V${Y(cum).toFixed(1)}`; }
   line += "H200";
   svg.innerHTML = `<path class="area" d="${line}V44H0Z"/><path class="line" d="${line}"/>`;
-  S.today = done.filter((f) => f.matched_at > Date.now() / 1000 - 86400).length;
 }
 
-/* ------------------------------------------------------------------ sheets */
+/* ------------------------------------------------------------------ drawers, keys */
 function closeAll() {
   if (!$("drawer").hidden) giveBack(null);
-  for (const id of ["drawer", "agentSheet", "setupSheet", "dialog"]) $(id).hidden = true;
+  for (const id of ["drawer", "dialog"]) $(id).hidden = true;
+  document.body.classList.remove("locked");
   S.fn = null;
   if (S.map.length) drawMap();
 }
 document.querySelectorAll(".drawer").forEach((d) => {
-  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) { if (d.id === "drawer") giveBack(null); d.hidden = true; if (d.id === "drawer") { S.fn = null; drawMap(); } } });
+  d.addEventListener("click", (e) => {
+    if (e.target !== d && !e.target.closest("[data-close]")) return;
+    if (d.id === "drawer") { giveBack(null); S.fn = null; drawMap(); }
+    d.hidden = true;
+    if ($("drawer").hidden && $("dialog").hidden) document.body.classList.remove("locked");
+  });
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { closeAll(); return; }
+  if (e.key === "Escape") { if (!$("launchPop").hidden) { hideLaunch(); return; } closeAll(); return; }
   if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;  // typing
   if (!$("drawer").hidden && (e.key === "j" || e.key === "k")) { e.preventDefault(); stepFn(e.key === "j" ? 1 : -1); return; }
-  if (e.key === "/" && !$("project").hidden && $("drawer").hidden) { e.preventDefault(); showView("list"); $("fnSearch").focus(); }
+  if (e.key === "/" && S.slug && $("drawer").hidden) {
+    e.preventDefault();
+    if (S.tab !== "functions") location.hash = `#/p/${S.slug}/functions`;
+    setTimeout(() => $("fnSearch").focus(), 50);
+  }
 });
 
 function cmdBox(cmd) {
@@ -1527,127 +1861,22 @@ function wireCopies(root) {
   root.querySelectorAll("[data-copy]").forEach((b) => { b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); }); });
 }
 
-/* add agent */
-let chosenKind = null;
-$("addAgent").onclick = openAgentSheet;
-async function openAgentSheet() {
-  $("agentSheet").hidden = false;
-  await loadState();
-  const box = $("kinds");
-  box.innerHTML = S.st.agents.map((a) => `<button class="kind ${a.id === chosenKind ? "on" : ""}" data-kind="${esc(a.id)}" type="button">
-      <b>${esc(a.name)}</b><span>${esc(a.vendor)}</span>
-      <em class="${a.installed ? "ok" : "no"}">${a.id === "api" ? "built in" : a.installed ? "installed" : "not installed"}</em></button>`).join("");
-  box.querySelectorAll(".kind").forEach((b) => { b.onclick = () => { chosenKind = b.dataset.kind; openAgentSheet(); }; });
-  renderKind();
-}
-
-function renderKind() {
-  const box = $("kindDetail");
-  const a = S.st.agents.find((x) => x.id === chosenKind);
-  if (!a) { box.innerHTML = `<p class="muted small">Pick the agent you use. You can run several at once; each takes a different function.</p>`; return; }
-  if (!a.installed) {
-    box.innerHTML = `<div class="detail"><p><b>${esc(a.name)}</b> isn't installed on this computer.</p>
-      ${a.needs ? `<p class="muted small">Needs ${esc(a.needs)} first.</p>` : ""}
-      ${a.install ? cmdBox(a.install) : ""}
-      <div class="row"><button class="primary" id="doInstall" type="button" ${a.needs ? "disabled" : ""}>Install it for me</button><a class="link small" href="${esc(a.docs)}" target="_blank" rel="noopener">About ${esc(a.name)}</a></div>
-      <p class="muted small">${esc(a.signin)}</p><pre class="joblog" id="installLog" hidden></pre></div>`;
-    wireCopies(box);
-    $("doInstall").onclick = async () => {
-      $("installLog").hidden = false;
-      $("doInstall").disabled = true;
-      try {
-        const { job } = await api("/api/agents/install", { method: "POST", body: { kind: a.id } });
-        await followJob(job, $("installLog"));
-        toast(`${esc(a.name)} installed.`, "match");
-        openAgentSheet();
-      } catch (e) { toast(esc(e.message), "err"); $("doInstall").disabled = false; }
-    };
-    return;
-  }
-  const api_ = a.id === "api";
-  const set = S.st.settings.api || {};
-  const presets = S.st.api_presets;
-  const prov = set.provider || "deepseek";
-  box.innerHTML = `<div class="detail">
-    ${api_ ? `<p>Runs a model through its API with a built-in agent loop. Your key is stored only on this computer.</p>
-      <label class="field"><span>Provider</span><select id="apiProv">${Object.entries(presets).map(([k, p]) => `<option value="${k}" ${k === prov ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
-      <label class="field"><span>API address</span><input id="apiBase" class="mono" value="${esc(set.base_url || presets[prov].base_url)}"></label>
-      <label class="field"><span>Model</span><input id="apiModel" class="mono" value="${esc(set.model || presets[prov].model)}"></label>
-      <label class="field"><span>API key</span><input id="apiKey" type="password" placeholder="${set.has_key ? esc(set.api_key) : "paste your key"}" autocomplete="off"></label>`
-    : `<p><b>${esc(a.name)}</b> ${a.version ? `<span class="muted">(${esc(a.version)})</span>` : ""} runs in the background with access to the decomp tools only. ${esc(a.signin)}</p>
-      <label class="field"><span>Model (optional)</span><input id="agentModel" class="mono" placeholder="the agent's default"></label>`}
-    <div class="row"><span class="muted small grow">How many in parallel</span><span class="stepper"><button type="button" id="minus">−</button><output id="count">1</output><button type="button" id="plus">+</button></span></div>
-    <button class="primary" id="startAgent" type="button">Start ${esc(a.name)}</button></div>`;
-  let count = 1;
-  $("minus").onclick = () => { count = Math.max(1, count - 1); $("count").textContent = count; };
-  $("plus").onclick = () => { count = Math.min(6, count + 1); $("count").textContent = count; };
-  if (api_) {
-    $("apiProv").onchange = () => { const p = presets[$("apiProv").value]; $("apiBase").value = p.base_url; $("apiModel").value = p.model; };
-  }
-  $("startAgent").onclick = async () => {
-    const options = {};
-    try {
-      if (api_) {
-        await api("/api/settings", { method: "POST", body: { api: { provider: $("apiProv").value, base_url: $("apiBase").value, model: $("apiModel").value, api_key: $("apiKey").value } } });
-        Object.assign(options, { provider: $("apiProv").value, base_url: $("apiBase").value, model: $("apiModel").value });
-      } else if ($("agentModel").value.trim()) options.model = $("agentModel").value.trim();
-      await api("/api/agents/start", { method: "POST", body: { kind: a.id, slug: S.slug, count, options } });
-      $("agentSheet").hidden = true;
-      toast(`${esc(a.name)} is starting.`);
-      document.querySelector('.tab[data-tab="thoughts"]').click();
-      poll(false);
-    } catch (e) { toast(esc(e.message), "err"); }
-  };
-}
-
-/* setup */
-$("setupBtn").onclick = openSetup;
-async function openSetup() {
-  $("setupSheet").hidden = false;
-  const st = await loadState();
-  const tcs = st.toolchains.map((t) => `<div class="line-item"><div class="txt"><b>${esc(t.name)}</b><span>${esc(t.use)}${t.license === "proprietary" ? " · proprietary" : ""}</span></div>
-      ${!t.supported ? `<span class="muted small">not for this computer</span>` : t.installed ? `<span class="ok-mark">installed</span>` : `<button class="ghost small-btn" data-tc="${esc(t.id)}" data-prop="${t.license === "proprietary" ? 1 : ""}" type="button">Install</button>`}</div>`).join("");
-  const ags = st.agents.filter((a) => a.id !== "api").map((a) => `<div class="line-item"><div class="txt"><b>${esc(a.name)}</b><span>${a.installed ? esc(a.version || "installed") : esc(a.install)}</span></div>
-      ${a.installed ? `<span class="ok-mark">ready</span>` : `<span class="muted small">not installed</span>`}</div>`).join("");
-  $("setupBody").innerHTML = `
-    <div class="setup-group"><h3>Compilers and tools</h3>${tcs}</div>
-    <div class="setup-group"><h3>AI agents on this computer</h3>${ags}<p class="muted small">Models with an API key (DeepSeek, OpenRouter, Ollama…) need no install: choose "API key" when adding an agent.</p>
-      <div class="row"><button class="ghost small-btn" id="setupConnect" type="button">Use decomp.wtf from your agent…</button><span class="muted small">then just ask it to decompile your game</span></div></div>
-    <div class="setup-group"><h3>Work rhythm</h3>
-      <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
-      <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span>Autopilot after each import: try every function's machine draft first, so free matches cost no agent time.</span></label>
-      <label class="field"><span>Budget: stop helper agents when a project's agents have spent this much (US dollars, as the agents report it; 0 = no limit)</span><input id="budgetSet" type="number" min="0" step="0.5" value="${st.settings.budget_usd || 0}"></label></div>
-    <div class="setup-group"><h3>About</h3><p class="muted small">decomp.wtf ${esc(st.version)} on ${esc(st.platform)}. Projects live in <code>${esc(st.home)}</code>. Nothing is sent to us. Open source (MIT).</p></div>`;
-  $("setupBody").querySelectorAll("[data-tc]").forEach((b) => { b.onclick = () => installToolchain(b.dataset.tc, !!b.dataset.prop); });
-  $("setupConnect").onclick = () => { $("setupSheet").hidden = true; openConnect(); };
-  $("perSession").onchange = () => api("/api/settings", { method: "POST", body: { per_session: Number($("perSession").value) } }).catch(() => {});
-  $("autopilotSet").onchange = () => api("/api/settings", { method: "POST", body: { autopilot: $("autopilotSet").checked } }).catch(() => {});
-  $("budgetSet").onchange = () => api("/api/settings", { method: "POST", body: { budget_usd: Number($("budgetSet").value) || 0 } }).catch(() => {});
-}
-
-/* dialogs */
 function dialog(title, html) {
   $("dialogTitle").textContent = title;
   $("dialogBody").innerHTML = html;
   $("dialog").hidden = false;
+  document.body.classList.add("locked");
   wireCopies($("dialogBody"));
   return $("dialogBody");
 }
 
-$("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
 $("askBtn").onclick = openConnect;
 $("talkBtn").onclick = openConnect;
+$("connectBtn").onclick = openConnect;
 
 /* Your own agent with decomp.wtf's tools: registered once, then you just ask it. */
-async function openConnect() {
-  const body = dialog("Use decomp.wtf from your AI agent", `<p>Connect the agent you already use, once. Then ask it in your terminal, for example:</p>
-    ${cmdBox("decompile my game at ~/roms/game.z64")}
-    <p class="muted small">It confirms the game is your own copy, imports it, opens this live view and works with every tool here: the byte-for-byte judge, the autopilot, helper agents, export. Anything it does shows up here as it happens.</p>
-    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>
-    <div class="setup-group"><h3>Any other MCP client (Cursor, Claude Desktop, Windsurf, your own)</h3><pre class="code" id="bridgeJson"></pre>
-      <p class="muted small">It starts decomp.wtf when needed; no token, nothing to update when the app restarts.</p></div>`);
-  const box = body.querySelector("#connectRows");
+async function connectRows(box) {
   const render = (rows) => {
     box.innerHTML = rows.map((a) => `<div class="line-item"><div class="txt"><b>${esc(a.name)}</b><span class="mono">${esc(a.command)}</span></div>
       ${!a.installed ? `<span class="muted small">not installed</span>` : a.connected ? `<span class="ok-mark">connected</span>` : `<button class="primary small-btn" data-connect="${esc(a.id)}" type="button">Connect</button>`}</div>`).join("");
@@ -1665,54 +1894,52 @@ async function openConnect() {
   try {
     const r = await api("/api/connect");
     render(r.agents);
-    body.querySelector("#bridgeJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2);
-  } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+    return r;
+  } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return null; }
+}
+async function openConnect() {
+  const body = dialog("Use decomp.wtf from your AI agent", `<p>Connect the agent you already use, once. Then ask it in your terminal, for example:</p>
+    ${cmdBox("decompile my game at ~/roms/game.z64")}
+    <p class="muted small">It confirms the game is your own copy, imports it, opens this live view and works with every tool here: the byte-for-byte judge, the autopilot, helper agents, export. Anything it does shows up here as it happens.</p>
+    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>
+    <div class="setup-group"><h3>Any other MCP client (Cursor, Claude Desktop, Windsurf, your own)</h3><pre class="code" id="bridgeJson"></pre>
+      <p class="muted small">It starts decomp.wtf when needed; no token, nothing to update when the app restarts.</p></div>`);
+  const r = await connectRows(body.querySelector("#connectRows"));
+  if (r) body.querySelector("#bridgeJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2);
 }
 
-/* One click: start the agents this computer has on the open project. */
-function renderQuickStart() {
-  const box = $("quickStart");
-  if (!box || !S.st) return;
-  const ready = (S.st.agents || []).filter((a) => a.installed && a.id !== "api");
-  box.innerHTML = ready.length ? ready.map((a) => `<button class="primary small-btn" data-quick="${esc(a.id)}" type="button">Start ${esc(a.name)}</button>`).join("")
-    : `<button class="primary small-btn" id="quickAdd" type="button">Add an agent</button>`;
-  box.querySelectorAll("[data-quick]").forEach((b) => {
-    b.onclick = async () => {
-      b.disabled = true;
-      try {
-        await api("/api/agents/start", { method: "POST", body: { kind: b.dataset.quick, slug: S.slug, count: 1, options: {} } });
-        toast(`${esc(b.textContent.replace("Start ", ""))} is starting.`);
-        poll(false);
-      } catch (e) { toast(esc(e.message), "err"); } finally { b.disabled = false; }
-    };
-  });
-  const add = box.querySelector("#quickAdd");
-  if (add) add.onclick = openAgentSheet;
-}
-/* What agents cost, and what you tell them. */
-function money(usd) { return usd >= 10 ? `$${usd.toFixed(0)}` : `$${usd.toFixed(2)}`; }
+/* ------------------------------------------------------------------ steering: instructions, next in line */
 function renderSteering(ov) {
   const sp = ov.spend;
   const n = ov.helper_matches || 0;
-  $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)}${n ? ` · ${money(sp.usd / n)}/match` : ""}`
+  $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)} spent${n ? ` · ${money(sp.usd / n)}/match` : ""}`
     : sp && sp.tokens ? `· ${(sp.tokens / 1000).toFixed(0)}k tokens` : "";
-  $("instrText").textContent = ov.instructions || "Tell every agent what to focus on, names you know, things to avoid…";
-  $("instrBtn").classList.toggle("set", !!ov.instructions);
+  $("instrState").textContent = ov.instructions ? "agents get these" : "none yet";
 }
-$("instrBtn").onclick = () => {
-  const body = dialog("Instructions for agents", `<p class="muted">Every agent on this project gets these with its task, before anything else. Use them to steer: what to focus on, what you already know about the game, conventions to follow, things to leave alone.</p>
-    <label class="field"><span>Instructions</span><textarea id="instrEdit" rows="8" placeholder="Focus on the game's own code first; leave zlib (0x80003000-0x80006000) for later.&#10;The struct at 0x8004AE34 is the player (hp at +0x20).&#10;Name functions in snake_case."></textarea></label>
-    <div class="row"><button class="primary" id="instrSave" type="button">Save</button><button class="ghost" data-close type="button">Cancel</button></div>`);
-  body.querySelector("#instrEdit").value = (S.ov && S.ov.instructions) || "";
-  body.querySelector("#instrSave").onclick = async () => {
-    try {
-      S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });
-      renderSteering(S.ov);
-      $("dialog").hidden = true;
-      toast("Saved. Agents get them from their next task on.");
-    } catch (e) { toast(esc(e.message), "err"); }
-  };
+$("instrSave").onclick = async () => {
+  try {
+    S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });
+    renderSteering(S.ov);
+    toast("Saved. Agents get them from their next task on.");
+  } catch (e) { toast(esc(e.message), "err"); }
 };
+async function togglePrio(name, on) {
+  try {
+    const r = await api("/api/priority", { method: "POST", body: { slug: S.slug, name, on } });
+    S.ov.priority = r.priority;
+    toast(on ? `Agents take <code>${esc(name)}</code> next.` : "No longer first in line.");
+    renderList(); renderPrio();
+  } catch (e) { toast(esc(e.message), "err"); }
+}
+function renderPrio() {
+  const list = (S.ov && S.ov.priority) || [];
+  const box = $("prioList");
+  if (S.ov && S.ov.kind === "fork") { box.innerHTML = `<li class="muted small">Agents pick the easiest open functions first.</li>`; return; }
+  box.innerHTML = list.length ? list.map((n) => `<li><span class="star">★</span>${fnLink(n)}<span class="grow"></span><button class="link-btn" data-unpin="${esc(n)}" type="button">remove</button></li>`).join("")
+    : `<li class="muted small">Nothing pinned: agents take the easiest open functions first. Open a function and click ★ Next to put it first.</li>`;
+  box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
+  box.querySelectorAll("[data-unpin]").forEach((b) => { b.onclick = () => togglePrio(b.dataset.unpin, false); });
+}
 
 /* Autopilot: every function's machine draft, tried through the judge before any agent spends a token. */
 function renderAutopilot(ov) {
@@ -1749,16 +1976,21 @@ function renderAutopilot(ov) {
 const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp" };
 const cwName = (c) => (c.startsWith("DS/") ? `CodeWarrior for DS ${c.slice(3)}` : `CodeWarrior ${c}`);
 
-/* The project as source code: the base for ports and mods. */
+/* ------------------------------------------------------------------ source: the base for ports and mods */
 function renderSource(ov) {
   const ex = ov.export, fork = ov.kind === "fork";
   $("srcExport").hidden = fork || !ov.exportable;
   $("srcWhen").textContent = !fork && ex ? `exported ${since(ex.t)}` : "";
   if (fork) {
     $("srcText").innerHTML = ov.origin === "scratch"
-      ? `This project <b>is</b> the source tree: a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game on every build. Every match is committed to git.`
-      : "This project <b>is</b> the source tree. Every match is committed to the <code>decomp-wtf</code> branch, ready to send upstream.";
-    $("srcState").innerHTML = "";
+      ? `This project <b>is</b> the source tree: a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game on every build. Every match is committed to git in the project folder.`
+      : `This project <b>is</b> the source tree${ov.repo_url ? ` (a fork of <a class="link" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">${esc(ov.repo_url.replace(/^https?:\/\//, ""))}</a>)` : ""}. Every match is committed to the <code>decomp-wtf</code> branch, ready to send upstream.`;
+    $("srcState").innerHTML = `<div class="row"><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure with objdiff</button></div>`;
+    $("forkMeasure").onclick = async () => {
+      toast("Measuring the whole project with objdiff…");
+      try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Progress updated.", "match"); refreshMap(); }
+      catch (e) { toast(esc(e.message), "err"); }
+    };
     return;
   }
   if (!ov.exportable) {
@@ -1766,56 +1998,59 @@ function renderSource(ov) {
     $("srcState").innerHTML = "";
     return;
   }
-  $("srcText").innerHTML = "A decompilation project with the matched functions as C and the rest as assembly, proven to rebuild your game <b>byte for byte</b>. The base for ports and mods.";
+  $("srcText").innerHTML = "decomp.wtf writes a complete decompilation project: the matched functions as C, everything else as assembly, a linker script and <code>build.py</code>. Then it builds it to prove it rebuilds your game <b>byte for byte</b>. It's the base for ports and mods; game code and data stay out of git, so the tree is safe to put in a repository.";
   const stale = ex && ex.matched != null && ex.matched < ov.matched;
   $("srcState").innerHTML = !ex ? `<span class="muted small">Not exported yet.</span>`
     : `<div class="src-line ${ex.identical === false ? "bad" : "ok"}">${ex.identical === false ? "✕ the last rebuild differed" : "✓ rebuilds byte for byte"}</div>
-       <div class="src-line">${ex.matched != null ? `${ex.matched.toLocaleString()} of ${ex.functions.toLocaleString()} functions in C` : ""}${stale ? ` · <b>${ov.matched - ex.matched} new matches since</b>` : ""}</div>`;
+       <div class="src-line">${ex.matched != null ? `${ex.matched.toLocaleString()} of ${ex.functions.toLocaleString()} functions in C` : ""}${stale ? ` · <b>${ov.matched - ex.matched} new matches since</b>` : ""}</div>
+       ${ex.path ? `<div class="src-line">${esc(ex.path)}</div>` : ""}`;
   $("srcExport").textContent = ex ? "Export again" : "Export project";
 }
 $("srcOpen").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
-$("srcExport").onclick = () => {
-  const body = dialog("Export a rebuildable project", `<p>decomp.wtf writes a complete decompilation project: the matched functions as C, everything else as assembly, a linker script and <code>build.py</code>. Then it builds it to prove it rebuilds your game <b>byte for byte</b>.</p>
-    <p class="muted small">It's the base for ports and mods: keep working on it with any tool or agent. Game code and data stay out of git (they're regenerated from your copy), so the tree is safe to put in a repository.</p>
-    <div class="row"><button class="primary" id="expGo" type="button">Export and build</button><button class="ghost" data-close type="button">Cancel</button></div>
-    <pre class="joblog" id="expLog" hidden></pre><div id="expResult"></div>`);
-  body.querySelector("#expGo").onclick = async () => {
-    $("expGo").disabled = true;
-    $("expLog").hidden = false;
-    try {
-      const { job } = await api("/api/export", { method: "POST", body: { slug: S.slug } });
-      const r = await followJob(job, $("expLog"));
-      $("expResult").innerHTML = r.identical === false
-        ? `<div class="notice bad"><span><b>Exported, but the rebuild differs.</b> ${esc(r.log.split("\n").filter(Boolean).pop() || "")}</span></div>`
-        : `<div class="notice room"><span><b>Rebuilds byte for byte.</b> ${r.matched != null ? `${r.matched} of ${r.functions} functions are C.` : ""}</span><span class="grow"></span><button class="ghost small-btn" id="expOpen" type="button">Open folder</button></div>
-           ${cmdBox(`cd "${r.path}" && python build.py`)}`;
-      wireCopies($("expResult"));
-      api(`/api/project?slug=${S.slug}`).then((ov) => { S.ov = ov; renderSource(ov); }).catch(() => {});
-      const open = $("expOpen");
-      if (open) open.onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch(() => {});
-    } catch (e) { toast(esc(e.message), "err"); $("expGo").disabled = false; }
-  };
+$("srcExport").onclick = async () => {
+  $("srcExport").disabled = true;
+  $("expLog").hidden = false;
+  $("expResult").innerHTML = "";
+  try {
+    const { job } = await api("/api/export", { method: "POST", body: { slug: S.slug } });
+    const r = await followJob(job, $("expLog"));
+    $("expResult").innerHTML = r.identical === false
+      ? `<div class="notice bad"><span><b>Exported, but the rebuild differs.</b> ${esc(r.log.split("\n").filter(Boolean).pop() || "")}</span></div>`
+      : `<div class="notice room"><span><b>Rebuilds byte for byte.</b> ${r.matched != null ? `${r.matched} of ${r.functions} functions are C.` : ""}</span></div>${cmdBox(`cd "${r.path}" && python build.py`)}`;
+    wireCopies($("expResult"));
+    S.ov = await api(`/api/project?slug=${S.slug}`);
+    renderSource(S.ov);
+  } catch (e) { toast(esc(e.message), "err"); } finally { $("srcExport").disabled = false; }
+};
+
+/* ------------------------------------------------------------------ project settings */
+async function renderProjectSettings() {
+  const ov = S.ov;
+  if (!ov) return;
+  const fork = ov.kind === "fork";
+  $("compilerPanel").hidden = fork;
+  if (!fork) {
+    if (!S.st) await loadState();
+    fillCompilers($("setTc"), ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[ov.platform]);
+    $("setFlags").value = ov.compiler.flags.join(" ");
+  }
+  const facts = [["Platform", ov.platform_name], ["Game", ov.rom?.title || ov.title], [fork ? "Version" : "Game code", ov.rom?.game_code || ov.version],
+    !fork && ov.rom?.region ? ["Region", ov.rom.region] : null, fork ? ["Layout", ov.origin === "scratch" ? (LAYOUT[ov.platform] || "decomp") + " (from scratch)" : ov.fork_kind] : ["Compiler", `${ov.compiler.name} ${ov.compiler.flags.join(" ")}`],
+    fork && ov.repo_url ? ["Repository", ov.repo_url.replace(/^https?:\/\//, "")] : null,
+    ["Functions", `${ov.functions.toLocaleString()} (${bytes(ov.bytes || 0)} of code)`], ["Folder", ov.folder]].filter(Boolean);
+  $("projFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("");
+}
+$("setTcReset").onclick = () => { $("setFlags").value = ""; };
+$("setTcSave").onclick = async () => {
+  try {
+    const flags = $("setFlags").value.trim();
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, toolchain: $("setTc").value, flags: flags ? flags.split(/\s+/) : null } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast("Compiler settings saved.");
+  } catch (e) { toast(esc(e.message), "err"); }
 };
 $("folderBtn").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
-$("compilerBtn").onclick = async () => {
-  await loadState();
-  const body = dialog("Compiler settings", `<p class="muted">The compiler and flags every function is built with. If almost nothing matches, the game was probably built with another compiler or flags.</p>
-    <label class="field"><span>Compiler</span><select id="dlgTc"></select></label>
-    <label class="field"><span>Flags</span><input id="dlgFlags" class="mono" value="${esc(S.ov.compiler.flags.join(" "))}"></label>
-    <div class="row"><button class="primary" id="dlgSave" type="button">Save</button><button class="ghost" id="dlgReset" type="button">Default flags</button></div>`);
-  fillCompilers($("dlgTc"), S.ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[S.ov.platform]);
-  $("dlgReset").onclick = () => { $("dlgFlags").value = ""; };
-  body.querySelector("#dlgSave").onclick = async () => {
-    try {
-      const flags = $("dlgFlags").value.trim();
-      S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, toolchain: $("dlgTc").value, flags: flags ? flags.split(/\s+/) : null } });
-      renderStats(S.ov);
-      $("dialog").hidden = true;
-      toast("Compiler settings saved.");
-    } catch (e) { toast(esc(e.message), "err"); }
-  };
-};
-$("connectBtn").onclick = () => openConnect();
 $("deleteBtn").onclick = () => {
   dialog("Remove project", `<p>Remove <b>${esc(S.ov.title)}</b> from decomp.wtf? Matched functions and notes are deleted.</p>
     <label class="check"><input type="checkbox" id="delFiles"><span>Also delete the project folder (your ROM copy and exported sources in it)</span></label>
@@ -1824,14 +2059,116 @@ $("deleteBtn").onclick = () => {
     try {
       await api("/api/delete", { method: "POST", body: { slug: S.slug, files: $("delFiles").checked } });
       $("dialog").hidden = true;
+      document.body.classList.remove("locked");
+      loadNav();
       location.hash = "#/";
     } catch (e) { toast(esc(e.message), "err"); }
   };
 };
+
+/* ------------------------------------------------------------------ agents & models page */
+async function showAgentsPage() {
+  show("agentsPage");
+  $("agList").innerHTML = `<p class="muted small">Looking for your agents…</p>`;
+  await loadState();
+  renderAgentsPage();
+}
+function renderAgentsPage() {
+  const rows = S.st.agents.filter((a) => a.id !== "api");
+  $("agList").innerHTML = rows.map((a) => `<div class="agent-row">
+      <div class="ar-head"><b>${esc(a.name)}</b><span class="muted small">${esc(a.vendor)}</span><span class="grow"></span>
+        ${a.installed ? `<span class="ok-mark">installed</span>` : `<button class="primary small-btn" data-inst="${esc(a.id)}" type="button" ${a.needs ? "disabled" : ""}>Install</button>`}</div>
+      ${a.installed ? `<dl class="facts"><div><dt>Version</dt><dd>${esc(a.version || "?")}</dd></div><div><dt>Default model</dt><dd>${esc(a.default_model || "the app's own")}</dd></div><div><dt>Models offered</dt><dd>${(a.models || []).length ? (a.models || []).length : "any you type"}</dd></div></dl>
+        ${(a.models || []).length ? `<div class="model-chips">${a.models.slice(0, 12).map((m) => `<span class="chip-s mono" title="${esc(m.note || "")}">${esc(m.name)}</span>`).join("")}${a.models.length > 12 ? `<span class="muted small">+${a.models.length - 12} more</span>` : ""}</div>` : ""}
+        <p class="muted small">${esc(a.signin)}</p>`
+      : `<p class="muted small">${a.needs ? `Needs ${esc(a.needs)} first. ` : ""}Or install it yourself:</p>${cmdBox(a.install)}`}
+      <pre class="joblog" data-ilog="${esc(a.id)}" hidden></pre></div>`).join("");
+  wireCopies($("agList"));
+  $("agList").querySelectorAll("[data-inst]").forEach((b) => {
+    b.onclick = async () => {
+      const log = $("agList").querySelector(`[data-ilog="${b.dataset.inst}"]`);
+      log.hidden = false; b.disabled = true;
+      try {
+        const { job } = await api("/api/agents/install", { method: "POST", body: { kind: b.dataset.inst } });
+        await followJob(job, log);
+        toast("Installed.", "match");
+        showAgentsPage();
+      } catch (e) { toast(esc(e.message), "err"); b.disabled = false; }
+    };
+  });
+  const set = S.st.settings.api || {}, presets = S.st.api_presets, prov = set.provider || "deepseek";
+  $("apiBox").innerHTML = `<p class="muted small">Any OpenAI-compatible API runs through decomp.wtf's built-in agent loop: DeepSeek, OpenRouter, OpenAI, or a local Ollama or LM Studio. The key stays on this computer.</p>
+    <label class="field"><span>Provider</span><select id="apProv">${Object.entries(presets).map(([k, p]) => `<option value="${k}" ${k === prov ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+    <label class="field"><span>API address</span><input id="apBase" class="mono" value="${esc(set.base_url || presets[prov].base_url)}"></label>
+    <label class="field"><span>Model</span><input id="apModel" class="mono" value="${esc(set.model || presets[prov].model)}"></label>
+    <label class="field"><span>API key</span><input id="apKey" type="password" placeholder="${set.has_key ? esc(set.api_key) : "paste your key"}" autocomplete="off"></label>
+    <div class="row"><button class="primary small-btn" id="apSave" type="button">Save</button>${set.has_key ? `<button class="ghost small-btn" id="apClear" type="button">Forget the key</button>` : ""}</div>`;
+  $("apProv").onchange = () => { const p = presets[$("apProv").value]; $("apBase").value = p.base_url; $("apModel").value = p.model; };
+  $("apSave").onclick = async () => {
+    try {
+      S.st.settings = await api("/api/settings", { method: "POST", body: { api: { provider: $("apProv").value, base_url: $("apBase").value, model: $("apModel").value, api_key: $("apKey").value } } });
+      toast("Saved. Choose “API key” when you start agents.");
+      renderAgentsPage();
+    } catch (e) { toast(esc(e.message), "err"); }
+  };
+  if ($("apClear")) $("apClear").onclick = async () => { S.st.settings = await api("/api/settings", { method: "POST", body: { api: { clear_key: true } } }); renderAgentsPage(); };
+  $("mcpBox").innerHTML = `<p class="muted small">Connect the agent you talk to, once. Then ask it in your terminal: <i>“decompile my game at ~/roms/game.z64”</i>. It imports it, opens this view and works with every tool here.</p>
+    <div class="setup-group" id="mcpRows"><p class="muted small">Looking…</p></div>
+    <p class="col-title">Any other MCP client (Cursor, Claude Desktop, Windsurf…)</p><pre class="code" id="mcpJson"></pre>`;
+  connectRows($("mcpRows")).then((r) => { if (r) $("mcpJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2); });
+}
+$("agRefresh").onclick = showAgentsPage;
+
+/* ------------------------------------------------------------------ compilers & tools page */
+const TOOL_GROUPS = [["", "All"], ["N64", "N64"], ["PS1", "PS1"], ["PS2", "PS2"], ["GBA", "GBA"], ["cw", "GameCube, Wii, DS"], ["tool", "Tools"]];
+let toolFilter = "";
+async function showToolsPage() {
+  show("toolsPage");
+  await loadState();
+  renderTools();
+}
+function renderTools() {
+  const all = S.st.toolchains;
+  const group = (t) => (t.kind === "compiler" ? (t.platform || "") : /^mwcc/.test(t.id) ? "cw" : "tool");
+  $("toolChips").innerHTML = TOOL_GROUPS.map(([k, label]) => `<button class="chip ${toolFilter === k ? "on" : ""}" data-g="${k}" type="button">${label} <span>${k ? all.filter((t) => group(t) === k).length : all.length}</span></button>`).join("");
+  $("toolChips").querySelectorAll("[data-g]").forEach((b) => { b.onclick = () => { toolFilter = b.dataset.g; renderTools(); }; });
+  const rows = all.filter((t) => !toolFilter || group(t) === toolFilter);
+  $("toolGrid").innerHTML = rows.map((t) => `<div class="tool-card ${t.installed ? "ok" : ""}">
+      <div class="tc-top"><b>${esc(t.name)}</b>${t.license === "proprietary" ? `<span class="chip-s warn">proprietary</span>` : ""}${t.platform ? `<span class="chip-s">${esc(t.platform)}</span>` : ""}</div>
+      <p class="muted small">${esc(t.use)}</p>
+      <div class="row">${!t.supported ? `<span class="muted small">not available for this computer</span>` : t.installed ? `<span class="ok-mark">✓ installed</span>` : `<button class="ghost small-btn" data-tc="${esc(t.id)}" data-prop="${t.license === "proprietary" ? 1 : ""}" type="button">Install</button>`}</div></div>`).join("");
+  $("toolGrid").querySelectorAll("[data-tc]").forEach((b) => { b.onclick = () => { b.disabled = true; installToolchain(b.dataset.tc, !!b.dataset.prop).finally(() => { b.disabled = false; }); }; });
+}
+
+/* ------------------------------------------------------------------ settings page */
+async function showSettingsPage() {
+  show("settingsPage");
+  const st = await loadState();
+  $("setAgents").innerHTML = `
+    <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
+    <label class="field"><span>Budget: stop helper agents when a project's agents have spent this much (US dollars, as the agents report it; 0 = no limit)</span><input id="budgetSet" type="number" min="0" step="0.5" value="${st.settings.budget_usd || 0}"></label>
+    <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span><b>Autopilot after each import</b>: try every function's machine draft first, so free matches cost no agent time.</span></label>`;
+  const theme = savedTheme();
+  $("setComputer").innerHTML = `
+    <div class="field"><span>Appearance</span><div class="seg" id="themeSeg">${[["", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button type="button" data-theme="${k}" class="${theme === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+    <div class="field"><span>Start with this computer (keeps team rooms open, resumes agents)</span><div class="row" id="svcRow2"><span class="muted small">Checking…</span></div></div>
+    <div class="field"><span>Projects live in</span>${cmdBox(st.home)}</div>`;
+  $("setAbout").innerHTML = `<p class="small">decomp.wtf ${esc(st.version)} on ${esc(st.platform)}. Free and open source (MIT). Everything runs on this computer: no account, nothing sent to us.</p>
+    <div class="row"><a class="link small" href="https://decomp.wtf" target="_blank" rel="noopener">decomp.wtf</a><a class="link small" href="https://github.com/i12bp8/decomp.wtf" target="_blank" rel="noopener">Source code</a></div>`;
+  wireCopies($("setComputer"));
+  serviceRow($("svcRow2"), "decomp.wtf runs while you have it open.");
+  $("themeSeg").querySelectorAll("[data-theme]").forEach((b) => { b.onclick = () => { setTheme(b.dataset.theme); $("themeSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); }; });
+  const save = (body, msg) => api("/api/settings", { method: "POST", body }).then((s) => { S.st.settings = s; toast(msg); }).catch((e) => toast(esc(e.message), "err"));
+  $("perSession").onchange = () => save({ per_session: Number($("perSession").value) }, "Saved.");
+  $("autopilotSet").onchange = () => save({ autopilot: $("autopilotSet").checked }, "Saved.");
+  $("budgetSet").onchange = () => save({ budget_usd: Number($("budgetSet").value) || 0 }, "Budget saved.");
+}
+
 $("quitBtn").onclick = async () => {
   if (!confirm("Quit decomp.wtf? Running agents stop.")) return;
   await api("/api/quit", { method: "POST" }).catch(() => {});
   document.body.innerHTML = `<main class="view"><p class="muted">decomp.wtf has stopped. You can close this tab.</p></main>`;
 };
 
+loadNav();
 route();

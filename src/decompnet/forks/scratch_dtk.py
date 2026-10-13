@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import struct
@@ -85,6 +86,31 @@ def _vfs_read(disc: Path, inner: str) -> bytes:
         if res.returncode != 0 or not out.exists():
             raise ForkError(f"couldn't read {inner} from the disc image: {(res.stderr or res.stdout).strip()[-300:]}")
         return out.read_bytes()
+
+
+def disc_id(path: Path) -> str | None:
+    """The game ID (e.g. GP6E01) of a GameCube/Wii disc image in any format dtk reads, or None if it isn't one."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(0x440)
+        kind = disc_kind(head)
+        if kind is None:
+            return None
+        boot = head if kind in ("gc", "wii") else _vfs_read(path, "sys/boot.bin")
+    except (OSError, ForkError):
+        return None
+    gid = boot[:6].decode("ascii", "replace")
+    return gid if re.fullmatch(r"[A-Z0-9]{6}", gid) else None
+
+
+def vfs_copy(disc: Path, inner: list[str], dest: Path) -> None:
+    """Copy files (paths inside the disc, like files/dll/m699Dll.rel) out of a disc image into `dest`."""
+    dest.mkdir(parents=True, exist_ok=True)
+    for i in range(0, len(inner), 64):
+        res = subprocess.run(capped([_dtk(), "vfs", "cp", "-q", *[f"{disc}:{x}" for x in inner[i:i + 64]], f"{dest}{os.sep}"]),
+                             capture_output=True, text=True, timeout=1800)
+        if res.returncode != 0:
+            raise ForkError(f"couldn't copy files out of the disc image: {(res.stderr or res.stdout).strip()[-400:]}")
 
 
 def game_info(path: Path) -> dict:

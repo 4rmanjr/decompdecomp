@@ -237,3 +237,74 @@ def test_rewriting_a_matched_function_must_keep_it_matching(fork):
     assert not res["matched"] and "already matches" in res["text"]
     assert (root / "src" / "game.c").read_text() == before
     assert net.store.one("SELECT status FROM functions WHERE name='clamp_s32'")["status"] == "matched"
+
+
+def _dtk_project(root: Path, version: str, config: str) -> None:
+    (root / "config" / version).mkdir(parents=True)
+    (root / "config" / version / "config.yml").write_text(config)
+    (root / "configure.py").write_text("# dtk-template\n")
+    (root / "orig" / version).mkdir(parents=True)
+
+
+def test_a_project_that_reads_an_extracted_disc_gets_its_files_from_the_disc_image(tmp_path, monkeypatch):
+    """Older dtk projects read orig/<version>/sys/main.dol and files/... (the README says "extract the disc with
+    Dolphin"); decomp.wtf copies exactly those files out of the user's disc image, picking the disc of that version."""
+    from decompnet.forks import scratch_dtk
+    from decompnet.forks.project import ForkProject
+
+    _dtk_project(tmp_path, "GP6E01", "object: orig/GP6E01/sys/main.dol\nmodules:\n- object: orig/GP6E01/files/dll/a.rel\n"
+                                     "- object: 'orig/GP6E01/files/dll/b.rel'\n")
+    for name in ("eu.rvz", "us.rvz"):
+        (tmp_path / "orig" / "GP6E01" / name).write_bytes(b"RVZ\x01" + bytes(2 << 20))
+    monkeypatch.setattr(scratch_dtk, "disc_id", lambda p: {"eu.rvz": "GP6P01", "us.rvz": "GP6E01"}.get(p.name))
+    copied = []
+
+    def fake_copy(disc, inner, dest):
+        copied.append((disc.name, list(inner), dest.relative_to(tmp_path).as_posix()))
+        for x in inner:
+            (dest / Path(x).name).parent.mkdir(parents=True, exist_ok=True)
+            (dest / Path(x).name).write_bytes(b"x")
+    monkeypatch.setattr(scratch_dtk, "vfs_copy", fake_copy)
+    fp = ForkProject(tmp_path)
+    assert fp.unpack_disc("GP6E01", log=lambda *_: None) == 3
+    assert sorted(copied) == [("us.rvz", ["files/dll/a.rel", "files/dll/b.rel"], "orig/GP6E01/files/dll"),
+                              ("us.rvz", ["sys/main.dol"], "orig/GP6E01/sys")]
+    assert fp.unpack_disc("GP6E01", log=lambda *_: None) == 0  # everything is there now
+    # a project whose dtk reads the disc image itself is left alone
+    other = tmp_path / "new"
+    _dtk_project(other, "GALE01", "object_base: orig/GALE01\nobject: sys/main.dol\n")
+    assert ForkProject(other).unpack_disc("GALE01", log=lambda *_: None) == 0
+
+
+def test_a_disc_of_another_version_switches_the_project_or_is_refused(tmp_path, monkeypatch):
+    from decompnet.forks import scratch_dtk
+
+    net = RomNetwork(tmp_path / "decomp.db", tmp_path / "ws")
+    root = tmp_path / "ws" / "mp6"
+    _dtk_project(root, "GP6E01", "object: orig/GP6E01/sys/main.dol\n")
+    (root / "config" / "GP6P01").mkdir(parents=True)
+    (root / "config" / "GP6P01" / "config.yml").write_text("object: orig/GP6P01/sys/main.dol\n")
+    net.forks._register("mp6", "Mario Party 6", "fork", root, {"kind": "fork", "version": "GP6E01", "fork_kind": "dtk"}, "x")
+    proj, fp, cfg = net.forks.get("mp6")
+    disc = tmp_path / "game.rvz"
+    disc.write_bytes(b"RVZ\x01")
+    monkeypatch.setattr(scratch_dtk, "disc_id", lambda p: "GP6P01")
+    net.forks._match_version(proj, fp, cfg, disc, log=lambda *_: None)
+    assert net.forks.get("mp6")[2]["version"] == "GP6P01"
+    monkeypatch.setattr(scratch_dtk, "disc_id", lambda p: "GP6J01")
+    with pytest.raises(NetworkError, match="GP6J01.*GP6E01, GP6P01"):
+        net.forks._match_version(*net.forks.get("mp6"), disc, log=lambda *_: None)
+
+
+def test_a_project_made_from_scratch_builds_with_this_computers_tools(tmp_path, monkeypatch):
+    """The manifest of a generated project records the tools of the computer that made it; setup uses this one's."""
+    from decompnet.forks import scratch_dsd
+    from decompnet.forks.project import ForkProject
+
+    (tmp_path / ".decomp.wtf.json").write_text(json.dumps({
+        "created": "from scratch", "platform": "nds", "version": "abce",
+        "setup": [["python", "tools/configure.py", "abce", "--dsd", "/elsewhere/dsd", "--compilers", "/elsewhere/mw"], ["ninja"]]}))
+    monkeypatch.setattr(scratch_dsd, "tool_args", lambda: ["--dsd", "/here/dsd", "--compilers", "/here/mw"])
+    cmds = ForkProject(tmp_path).setup_commands("abce")
+    assert cmds[0][1:] == ["tools/configure.py", "abce", "--dsd", "/here/dsd", "--compilers", "/here/mw"]
+    assert cmds[1] == ["ninja"]

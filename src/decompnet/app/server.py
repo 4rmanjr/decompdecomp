@@ -84,7 +84,8 @@ class Settings:
             api["api_key"] = "•" * 8 + api["api_key"][-4:]
             api["has_key"] = True
         return {"api": api, "per_session": self.data.get("per_session", 4), "last_project": self.data.get("last_project"),
-                "autopilot": self.data.get("autopilot", True), "budget_usd": self.data.get("budget_usd") or 0}
+                "autopilot": self.data.get("autopilot", True), "budget_usd": self.data.get("budget_usd") or 0,
+                "launcher": self.data.get("launcher") or {}, "recent_models": self.data.get("recent_models") or {}}
 
 
 def _static(name: str) -> bytes | None:
@@ -127,6 +128,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             raise NetworkError("no project is open in decomp.wtf; open a ROM in the app first")
         return agent, slug
 
+    threading.Thread(target=collab.local_addresses, daemon=True).start()  # `tailscale status` can take seconds
     # rooms this computer belongs to reconnect (members keep their place; their agents wait while the host is away)
     net.restore_links()
 
@@ -238,6 +240,28 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 "api_presets": agents.API_PRESETS, "settings": settings.public(), "mcp_url": mcp_url,
                 "codewarrior": {"installed": toolchains.installed("mwcc") is not None,
                                 "ds_installed": toolchains.installed("mwccarm") is not None, **MW_VERSIONS}}
+
+    def project_list() -> list[dict]:
+        """The sidebar: every project with its progress and how many helper agents work on it right now."""
+        running: dict[str, int] = {}
+        for s in manager.sessions.values():
+            if s.state in ("starting", "working", "waiting"):
+                running[s.slug] = running.get(s.slug, 0) + 1
+        out = []
+        for p in net.store.all("SELECT slug FROM projects ORDER BY id DESC"):
+            try:
+                ov = net.overview(p["slug"])
+            except (NetworkError, OSError, KeyError):
+                continue
+            out.append({k: ov.get(k) for k in ("slug", "title", "kind", "origin", "platform", "platform_name", "ready",
+                                                "functions", "matched", "bytes", "matched_bytes", "last_activity")}
+                       | {"working": running.get(p["slug"], 0), "room": (ov.get("room") or {}).get("role"),
+                          "autopilot": (ov.get("autopilot") or {}).get("state")})
+        return out
+
+    @mcp.custom_route("/api/projects", methods=["GET"])
+    async def api_projects(request: Request) -> Response:
+        return guard(request) or JSONResponse(await call(project_list))
 
     @mcp.custom_route("/api/state", methods=["GET"])
     async def api_state(request: Request) -> Response:
@@ -415,6 +439,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
         "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]),
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
+        "/api/stats": (lambda s, r, d: net.stats(s), ["GET"]),
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))
@@ -571,6 +596,13 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             ids = manager.start(kind, slug, int(data.get("count", 1)), options)
         except (NetworkError, ValueError) as e:
             return fail(e)
+        # remembered, so the next start is one click; models typed in come back as suggestions
+        model = str(options.get("model") or "")
+        settings.data["launcher"] = {"kind": kind, "model": model, "count": max(1, min(int(data.get("count", 1)), 8))}
+        if model and kind != "api":
+            recent = settings.data.setdefault("recent_models", {}).setdefault(kind, [])
+            settings.data["recent_models"][kind] = [model] + [m for m in recent if m != model][:7]
+        settings.save()
         return JSONResponse({"started": ids})
 
     @mcp.custom_route("/api/connect", methods=["GET", "POST"])
@@ -587,13 +619,13 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             return JSONResponse({"ok": True, "message": msg})
 
         def rows():
-            out = []
-            for a in agents.detect():
-                if a["id"] not in connect.LABEL:
-                    continue
-                out.append({"id": a["id"], "name": a["name"], "installed": a["installed"],
-                            "connected": a["installed"] and connect.status(a["id"]), "command": connect.shown(a["id"])})
-            return out
+            from concurrent.futures import ThreadPoolExecutor
+
+            found = [a for a in agents.detect() if a["id"] in connect.LABEL]
+            with ThreadPoolExecutor(len(found) or 1) as pool:  # each agent's own CLI answers; ask them all at once
+                linked = list(pool.map(lambda a: a["installed"] and connect.status(a["id"]), found))
+            return [{"id": a["id"], "name": a["name"], "installed": a["installed"], "connected": ok,
+                     "command": connect.shown(a["id"])} for a, ok in zip(found, linked)]
         return JSONResponse({"agents": await anyio.to_thread.run_sync(rows), "bridge": connect.bridge_command()})
 
     @mcp.custom_route("/api/agents/token", methods=["POST"])
@@ -615,6 +647,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         data = await body(request)
         if data.get("remove"):
             manager.remove(str(data.get("id")))
+        elif data.get("slug"):  # every helper on one project
+            for s in list(manager.sessions.values()):
+                if s.slug == data["slug"] and s.state in ("starting", "working", "waiting"):
+                    manager.stop(s.id)
         else:
             manager.stop(data.get("id") or None)
         return JSONResponse({"ok": True})

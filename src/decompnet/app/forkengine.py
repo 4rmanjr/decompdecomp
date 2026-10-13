@@ -181,12 +181,30 @@ class ForkEngine:
                 tmp = fp.root / STATE / "upload.tmp"
                 tmp.write_bytes(game)
                 game, move = tmp, True
+            self._match_version(proj, fp, cfg, Path(game), log)
             dest = fp.place_game(Path(game), filename or Path(game).name, cfg.get("version"), move=move)
             log(f"your copy of the game is at {dest.relative_to(fp.root)}")
         if not fp.needs(cfg.get("version"))["auto"]:
             raise NetworkError("this project has its own setup: follow its README, then click Check again")
         fp.setup(cfg.get("version"), log=log)
         return self.check(slug, log=log)
+
+    def _match_version(self, proj, fp: ForkProject, cfg: dict, game: Path, log) -> None:
+        """A GameCube/Wii disc names its version (GP6E01, GP6P01...): use the project's matching version, or say
+        which ones the project has, instead of failing deep in the build."""
+        if fp.kind() != "dtk":
+            return
+        versions = fp.versions()
+        gid = scratch_dtk.disc_id(game)
+        if not gid or not versions or gid == cfg.get("version"):
+            return
+        if gid in versions:
+            log(f"your disc is {gid}: using the project's {gid} version")
+            cfg["version"] = gid
+            self._save_cfg(proj, cfg)
+        elif all(re.fullmatch(r"[A-Z0-9]{6}", v) for v in versions):
+            raise NetworkError(f"this disc is {gid}, but the project decompiles {', '.join(versions)}: "
+                               "pick your copy of one of those versions")
 
     def check(self, slug: str, log=print) -> dict:
         """After a manual setup (or to refresh): pick the project up once it has an objdiff.json."""

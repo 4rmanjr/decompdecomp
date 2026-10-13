@@ -12,6 +12,7 @@ from __future__ import annotations
 import collections
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,51 @@ API_PRESETS = {
 }
 
 _versions: dict[str, tuple[float, str | None]] = {}
+_models: dict[str, tuple[float, list[dict]]] = {}
+
+# Claude Code's aliases always point at Anthropic's latest model of each kind.
+CLAUDE_MODELS = [("fable", "Fable", "Anthropic's most capable model"), ("opus", "Opus", "very capable"),
+                 ("sonnet", "Sonnet", "fast and capable, cheaper"), ("haiku", "Haiku", "fastest, cheapest")]
+
+
+def _config_model(kind: str) -> str | None:
+    """The model the user set as default in the agent's own settings, if any."""
+    home = Path.home()
+    try:
+        if kind == "claude":
+            return json.loads((home / ".claude" / "settings.json").read_text()).get("model") or None
+        if kind == "codex":
+            import tomllib
+            return tomllib.loads((home / ".codex" / "config.toml").read_text()).get("model") or None
+        if kind == "gemini":
+            m = json.loads((home / ".gemini" / "settings.json").read_text()).get("model")
+            return (m.get("name") if isinstance(m, dict) else m) or None
+        if kind == "opencode":
+            base = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+            return json.loads((base / "opencode" / "opencode.json").read_text()).get("model") or None
+    except (OSError, ValueError, AttributeError):
+        return None
+    return None
+
+
+def models(kind: str, path: str | None) -> list[dict]:
+    """Models to offer for this agent: [{"id", "name", "note"}]. Claude Code's aliases; opencode's own list
+    (whatever providers the user signed in to); for the others the user's default plus any model name they type."""
+    if kind == "claude":
+        return [{"id": i, "name": n, "note": note} for i, n, note in CLAUDE_MODELS]
+    if kind == "opencode" and path:
+        cached = _models.get(kind)
+        if cached and time.time() - cached[0] < 600:
+            return cached[1]
+        try:
+            res = subprocess.run([path, "models"], capture_output=True, text=True, timeout=30)
+            rows = [line.strip() for line in res.stdout.splitlines() if re.fullmatch(r"[\w.-]+/[\w.:/-]+", line.strip())]
+        except (OSError, subprocess.TimeoutExpired):
+            rows = []
+        out = [{"id": r, "name": r.split("/", 1)[1], "note": r.split("/", 1)[0]} for r in rows[:200]]
+        _models[kind] = (time.time(), out)
+        return out
+    return []
 
 
 def _which(cmd: str) -> str | None:
@@ -99,6 +145,8 @@ def detect() -> list[dict]:
                     version = None
                 _versions[k.id] = (time.time(), version)
             row.update(installed=path is not None, path=path, version=_versions.get(k.id, (0, None))[1] if path else None)
+            if path:
+                row.update(models=models(k.id, path), default_model=_config_model(k.id))
         if k.id in ("codex", "gemini") and not row["installed"] and not shutil.which("npm"):
             row["needs"] = "Node.js (https://nodejs.org) for npm"
         out.append(row)

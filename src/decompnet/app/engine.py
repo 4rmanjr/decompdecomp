@@ -1112,13 +1112,14 @@ class RomNetwork(Network):
         proj = self._project(slug)
         rows = self.store.all(
             "SELECT f.name, f.vram, f.size, f.n_insns, f.status, f.best_score, f.attempts, f.unit, f.matched_at, "
-            "a.name AS agent FROM functions f LEFT JOIN claims c ON c.function_id=f.id LEFT JOIN agents a "
-            "ON a.id=c.agent_id WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
+            "a.name AS agent, m.name AS matched_by FROM functions f LEFT JOIN claims c ON c.function_id=f.id "
+            "LEFT JOIN agents a ON a.id=c.agent_id LEFT JOIN agents m ON m.id=f.matched_agent_id "
+            "WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
         remote = {c["vram"]: "@" + c["agent"] for c in (self.links[slug].claims if slug in self.links else [])}
         return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"], "unit": r["unit"],
                  "status": r["status"] if r["status"] in ("matched", "asm") else "working" if (r["agent"] or r["vram"] in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"]),
-                 "matched_at": r["matched_at"]} for r in rows]
+                 "matched_at": r["matched_at"], "matched_by": r["matched_by"]} for r in rows]
 
     # ------------------------------------------------------------------ what agents spend, and steering them
 
@@ -1342,6 +1343,28 @@ class RomNetwork(Network):
             "calls": [syms.label(a) for a in sorted(x["calls"].get(fn["vram"], ()))],
             "called_by": [syms.label(a) for a in sorted(x["called_by"].get(fn["vram"], ()))],
         }
+
+    def stats(self, slug: str) -> dict:
+        """Who did what and how fast: the overview's numbers (asked every few seconds, not every second)."""
+        pid = self._project(slug)["id"]
+        now = time.time()
+        rows = self.store.all(
+            "SELECT a.name AS agent, COUNT(t.id) AS compiles, MAX(t.created_at) AS last FROM attempts t "
+            "JOIN functions f ON f.id=t.function_id JOIN agents a ON a.id=t.agent_id WHERE f.project_id=? GROUP BY a.id", pid)
+        matched = {r["agent"]: r["n"] for r in self.store.all(
+            "SELECT a.name AS agent, COUNT(*) AS n FROM functions f JOIN agents a ON a.id=f.matched_agent_id "
+            "WHERE f.project_id=? AND f.status='matched' GROUP BY a.id", pid)}
+        board = [{"agent": r["agent"], "compiles": r["compiles"], "matched": matched.pop(r["agent"], 0), "last": r["last"]}
+                 for r in rows]
+        board += [{"agent": a, "compiles": 0, "matched": n, "last": None} for a, n in matched.items()]
+        board.sort(key=lambda r: (-r["matched"], -r["compiles"]))
+        per_hour = [0] * 24
+        for r in self.store.all("SELECT matched_at FROM functions WHERE project_id=? AND status='matched' AND matched_at > ?",
+                                pid, now - 86400):
+            per_hour[23 - min(23, int((now - r["matched_at"]) // 3600))] += 1
+        compiles = self.store.one("SELECT COUNT(*) AS n FROM attempts t JOIN functions f ON f.id=t.function_id "
+                                  "WHERE f.project_id=? AND t.created_at > ?", pid, now - 3600)["n"]
+        return {"agents": board[:24], "matches_per_hour": per_hour, "compiles_last_hour": compiles}
 
     def live(self, slug: str, since_event: int = 0, since_attempt: int = 0) -> dict:
         proj = self._project(slug)

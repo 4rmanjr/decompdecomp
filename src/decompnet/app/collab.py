@@ -610,8 +610,19 @@ def cloudflared_available() -> bool:
     return toolchains.get("cloudflared").supported or bool(shutil.which("cloudflared"))
 
 
+_addresses: tuple[float, list[dict]] = (0.0, [])
+
+
 def local_addresses() -> list[dict]:
     """Addresses teammates might reach this computer at: the LAN address, and Tailscale's when it's installed."""
+    global _addresses
+    if time.time() - _addresses[0] < 600:
+        return _addresses[1]
+    _addresses = (time.time(), _local_addresses())
+    return _addresses[1]
+
+
+def _local_addresses() -> list[dict]:
     import socket
 
     out = []

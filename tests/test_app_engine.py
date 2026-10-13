@@ -176,3 +176,14 @@ def test_steering_priority_instructions_spend(net):
     net.add_spend(slug, 0.5, 1200)
     sp = net.overview(slug)["spend"]
     assert round(sp["usd"], 2) == 0.75 and sp["tokens"] == 1200
+
+
+def test_stats_say_who_matched_what_and_how_fast(net):
+    st = net.stats("demo-quest-64")
+    assert len(st["matches_per_hour"]) == 24
+    agent, _ = net.local_agent("statsy")
+    net.compile_and_diff(agent, "func_80000A0C", "void func_80000A0C(s32 p) { }", "demo-quest-64")
+    st = net.stats("demo-quest-64")
+    me = next(r for r in st["agents"] if r["agent"] == "statsy")
+    assert me["compiles"] == 1 and st["compiles_last_hour"] >= 1
+    assert all("matched_by" in r for r in net.function_map("demo-quest-64"))

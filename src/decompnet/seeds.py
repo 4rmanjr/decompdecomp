@@ -24,6 +24,7 @@ M2C_TARGETS = {
     "ido-5.3": "mips-ido-c",
     "gcc-2.7.2-psx": "mipsel-gcc-c",
     "gcc-2.8.1-psx": "mipsel-gcc-c",
+    "agbcc": "gba-gcc-c",
 }
 _BRANCH = re.compile(r"^(b|beq|bne|beqz|bnez|bgtz|blez|bltz|bgez|bltzal|bgezal|beql|bnel|beqzl|bnezl|bgtzl|blezl|"
                      r"bltzl|bgezl|bc1t|bc1f|bc1tl|bc1fl|j)$")
@@ -79,6 +80,10 @@ def run_m2c(asm_text: str, name: str, target: str, context_header: str = "", dat
     """Run m2c for one function with an explicit target triple (e.g. ppc-mwcc-c++)."""
     if not available():
         return None
+    if target.startswith("gba"):  # luvdis / pret style: function macro, pre-UAL load mnemonics
+        asm_text = re.sub(r"^\s*(?:non_word_aligned_)?thumb_func_start\s+(\w+)", r"glabel \1", asm_text, flags=re.M)
+        asm_text = re.sub(r"^\s*arm_func_start\s+(\w+)", r"glabel \1", asm_text, flags=re.M)
+        asm_text = re.sub(r"\bld(s[hb])\b", r"ldr\1", asm_text)
     m2c = toolchains.venv_bin(toolchains.path("m2c") / "venv", "m2c")
     with tempfile.TemporaryDirectory(prefix="decompnet-m2c-") as tmp:
         asm = Path(tmp) / f"{name}.s"

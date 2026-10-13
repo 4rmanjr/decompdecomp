@@ -34,6 +34,8 @@ _MASKS: dict[tuple[str, int], tuple[int, int, int]] = {
     ("ppc", 6): (0, 2, 0xFFFF),  # R_PPC_ADDR16_HA
     ("ppc", 10): (0, 4, 0x03FFFFFC),  # R_PPC_REL24
     ("ppc", 109): (0, 4, 0x001FFFFF),  # R_PPC_EMB_SDA21
+    ("thumb", 10): (0, 4, 0x07FF07FF),  # R_ARM_THM_CALL (both halves of a Thumb bl)
+    ("thumb", 2): (0, 4, 0xFFFFFFFF),  # R_ARM_ABS32 (a literal-pool word)
     ("arm", 28): (0, 4, 0x00FFFFFF),  # R_ARM_CALL
     ("arm", 29): (0, 4, 0x00FFFFFF),  # R_ARM_JUMP24
     ("arm", 43): (0, 4, 0x000F0FFF),  # R_ARM_MOVW_ABS_NC

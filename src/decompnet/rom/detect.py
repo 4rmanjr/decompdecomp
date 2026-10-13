@@ -6,10 +6,10 @@ from dataclasses import dataclass
 
 from pathlib import Path
 
-from . import n64, ps2, psx
+from . import gba, n64, ps2, psx
 from .n64 import RomError
 
-PLATFORMS = {"n64": "Nintendo 64", "psx": "PlayStation", "ps2": "PlayStation 2"}
+PLATFORMS = {"n64": "Nintendo 64", "psx": "PlayStation", "ps2": "PlayStation 2", "gba": "Game Boy Advance"}
 SMALL = 64 * 1024 * 1024  # ROMs and programs are read whole; disc images are read from disk
 
 
@@ -23,6 +23,8 @@ class Picked:
 
 
 def _program(data: bytes, name: str = "") -> Picked | None:
+    if gba.is_gba(data):
+        return Picked("gba", data, "rom.gba", gba.read_info(data), False)
     if data[:4] in n64.MAGIC:
         rom, info = n64.read_info(data)
         return Picked("n64", rom, "rom.z64", info.to_dict() | {"platform": "n64", "gp": 0}, True)

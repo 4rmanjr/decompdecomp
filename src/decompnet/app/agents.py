@@ -337,8 +337,8 @@ class Manager:
             return tools.FORK_PROMPT.format(title=ov["title"], platform=ov.get("platform_name") or "its platform",
                                             count=s.options.get("per_session", 4),
                                             guides=", ".join(f'guide("{g}")' for g in guides))
-        guide = ("psx" if ov.get("platform") == "psx" else
-                 "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc")
+        guide = {"psx": "psx", "ps2": "ps2", "gba": "agbcc"}.get(ov.get("platform")) or (
+            "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc")
         return tools.WORK_PROMPT.format(title=ov["title"], count=s.options.get("per_session", 4), compiler_guide=guide)
 
     def _command(self, s: Session, token: str, workdir: Path) -> tuple[list[str], dict]:

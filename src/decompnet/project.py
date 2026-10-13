@@ -66,8 +66,16 @@ def compiler_config(root: Path, cfg: dict) -> CompilerConfig:
         ro_paths += [str(d) for d in dirs]
         if "runtime-i386" in tc.requires:
             runtime32 = str(toolchains.require("runtime-i386"))
-        base = c.get("cmd") or [*tc.cc, *c.get("flags", tc.flags), "-I{include}", "{src}", "-o", "{obj}"]
+        flags = c.get("flags", tc.flags)
+        if c.get("cmd"):
+            base = c["cmd"]
+        elif tc.cmd:  # a full template ({flags} expands to the flags)
+            base = [x for a in tc.cmd for x in (flags if a == "{flags}" else [a])]
+        else:
+            base = [*tc.cc, *flags, "-I{include}", "{src}", "-o", "{obj}"]
         cmd = [a.replace("{tc}", tc_dir) for a in base]
+        for dep in tc.requires:  # {tc:<id>} is another toolchain this one needs
+            cmd = [a.replace(f"{{tc:{dep}}}", str(toolchains.path(dep))) for a in cmd]
     else:
         cmd = list(c["cmd"])
     return CompilerConfig(

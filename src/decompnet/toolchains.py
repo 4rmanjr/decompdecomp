@@ -43,10 +43,12 @@ class Toolchain:
     cc: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
+    cmd: list[str] = field(default_factory=list)  # full command template, when compiling is more than cc + flags
     parts: list[dict] = field(default_factory=list)
     git: str = ""
     commit: str = ""
     binary_name: str = ""  # main executable of a tool, without .exe
+    pip_extra: list[str] = field(default_factory=list)  # extra requirements for a git tool's environment
     requires_java: int = 0  # minimum Java version (Ghidra)
 
     @property
@@ -246,7 +248,8 @@ def _install_git_tool(tc: Toolchain, dest: Path, log) -> None:
         spec = f"{tc.id} @ git+{tc.git}@{tc.commit}"
     log(f"  creating an isolated environment for {tc.git} @ {tc.commit[:10]}")
     subprocess.run([uv, "venv", "--quiet", "--python", "3.12", str(dest / "venv")], check=True)
-    subprocess.run([uv, "pip", "install", "--quiet", "--python", str(venv_bin(dest / "venv", "python")), spec], check=True)
+    subprocess.run([uv, "pip", "install", "--quiet", "--python", str(venv_bin(dest / "venv", "python")), spec, *tc.pip_extra],
+                   check=True)
 
 
 def binary(tid: str) -> Path:

@@ -22,11 +22,13 @@ import time
 from pathlib import Path
 
 from .. import seeds, similarity, toolchains
+from ..elfobj import FunctionObj
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
 from ..rom.symbols import AUTO_NAME, IDENT, Symbol, SymbolTable
 
-DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx", "EEGCC": "ee-gcc-2.96"}
+DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx", "EEGCC": "ee-gcc-2.96",
+                     "AGBCC": "agbcc"}
 COMPILERS = {
     "gcc-2.7.2-kmc": "many third-party N64 games",
     "ido-7.1": "most later first-party N64 games",
@@ -34,9 +36,11 @@ COMPILERS = {
     "gcc-2.7.2-psx": "PlayStation games (PSY-Q era GCC)",
     "gcc-2.8.1-psx": "later PlayStation games",
     "ee-gcc-2.96": "PlayStation 2 games (Sony's EE GCC)",
+    "agbcc": "Game Boy Advance games (pret's agbcc, GCC 2.95)",
 }
 SHORT_NAMES = {"gcc-2.7.2-kmc": "KMC GCC 2.7.2", "ido-7.1": "IDO 7.1", "ido-5.3": "IDO 5.3",
-               "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)", "ee-gcc-2.96": "EE-GCC 2.96"}
+               "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)", "ee-gcc-2.96": "EE-GCC 2.96",
+               "agbcc": "agbcc"}
 # CodeWarrior versions in the `mwcc` pack, for GameCube and Wii games started from scratch.
 MW_VERSIONS = {
     "gc": ["GC/1.0", "GC/1.1", "GC/1.1p1", "GC/1.2.5", "GC/1.2.5n", "GC/1.3", "GC/1.3.2", "GC/1.3.2r", "GC/2.0",
@@ -53,7 +57,7 @@ TOOLS = {
     "mwcc": "CodeWarrior, the compilers of GameCube and Wii games (proprietary)",
 }
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
-                      "ps2": ["ee-gcc-2.96"]}
+                      "ps2": ["ee-gcc-2.96"], "gba": ["agbcc"]}
 _AUTO_TOKEN = re.compile(r"\b(?:func|D|B|jtbl|RO|STR|FLT|DBL)_[0-9A-F]{8}\b")
 _ADDRESS = re.compile(r"^(?:0x)?([0-9A-Fa-f]{8})$")
 
@@ -197,11 +201,19 @@ class RomNetwork(Network):
     def _target_obj(self, fn, proj):
         if not self.is_rom(proj):
             return super()._target_obj(fn, proj)
+        if self.cfg(proj).get("platform") == "gba":
+            return FunctionObj(fn["name"], "thumb", False, fn["target"], [])
         return match.canonical_target(self._rom_target(fn), self.symbols(proj["id"]))
 
     def _evaluate(self, fn, proj, obj: bytes):
         if not self.is_rom(proj):
             return super()._evaluate(fn, proj, obj)
+        if self.cfg(proj).get("platform") == "gba":
+            from ..rom import match_arm
+
+            res = match_arm.link(obj, fn["name"], match_arm.ArmTarget(fn["name"], fn["vram"], fn["target"]),
+                                 self.symbols(proj["id"]), self.reader(proj))
+            return res.candidate, res.exact if res.candidate is not None else None, res.problems
         res = match.link(obj, fn["name"], self._rom_target(fn), self.symbols(proj["id"]), self.reader(proj))
         return res.candidate, res.exact if res.candidate is not None else None, res.problems
 
@@ -243,6 +255,8 @@ class RomNetwork(Network):
         size = f"{info['size'] // (1024 * 1024)} MiB" if info["size"] >= 1 << 20 else f"{info['size'] // 1024} KiB"
         log(f"{detect.PLATFORMS[picked.platform]}: {info['title']} ({info['game_code'] or 'no game code'}, "
             f"{info['region']}), {size}, looks built with {info['compiler_guess']}")
+        if picked.platform == "gba":
+            return self._import_gba(picked, slug, workdir, toolchain, flags, log)
         res = split.split_rom(workdir, picked.filename, log=log)
         if res.image and res.image != picked.filename:  # splat works on a flat image made from the program
             rom = (workdir / res.image).read_bytes()
@@ -305,6 +319,43 @@ class RomNetwork(Network):
                                                   None, "basic types", now, ""))
             self._event(db, pid, None, "import", f"{len(res.functions)} functions from {info['title']}")
         log(f"ready: {len(res.functions)} functions to decompile")
+        return slug
+
+    def _import_gba(self, picked, slug: str, workdir: Path, toolchain: str | None, flags: list[str] | None, log) -> str:
+        """Game Boy Advance: functions found by luvdis (plus a pass for code nothing calls), judged by the ARM matcher."""
+        from ..rom import gba
+
+        info = picked.info
+        fns = gba.split(workdir / picked.filename, workdir, log=log)
+        toolchain = toolchain or "agbcc"
+        tc = toolchains.get(toolchain)
+        cfg = {
+            "kind": "rom", "platform": "gba", "big_endian": False, "gp": 0, "arch": "thumb",
+            "rom": {**info, "file": picked.filename, "program": picked.filename},
+            "segments": [{"name": "rom", "rom_start": 0, "rom_end": info["size"], "vram": gba.BASE}],
+            "compiler": {"toolchain": toolchain, "flags": flags or tc.flags, "timeout": 20},
+            "legal": {"basis": "personal-copy", "license": "personal use only",
+                      "statement": "imported by the owner of this copy of the game, who confirmed it was legally obtained",
+                      "confirmed_at": time.time()},
+            "context": {"file": None},
+        }
+        now = time.time()
+        with self.store.tx() as db:
+            pid = db.execute("INSERT INTO projects(slug,name,description,arch,big_endian,root,config) VALUES(?,?,?,?,?,?,?)",
+                             (slug, info["title"], f"{info['game_code']} · {info['region']} · {len(fns)} functions",
+                              "arm", 0, str(workdir), json.dumps(cfg))).lastrowid
+            for f in fns:
+                db.execute(
+                    "INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (pid, f.name, len(f.code), f.n_insns, f.code, json.dumps([list(r) for r in f.refs or []]),
+                     f.asm, None, "rom", f.vram, f.rom))
+                db.execute("INSERT INTO symbols(project_id,name,address,size,kind,preview) VALUES(?,?,?,?,?,?)",
+                           (pid, f.name, f.vram, len(f.code), "func", None))
+            db.execute("INSERT INTO context_versions(project_id,version,header,agent_id,message,created_at,unit) "
+                       "VALUES(?,?,?,?,?,?,?)", (pid, 1, BASE_HEADER.format(title=info["title"]), None, "basic types", now, ""))
+            self._event(db, pid, None, "import", f"{len(fns)} functions from {info['title']}")
+        log(f"ready: {len(fns)} functions to decompile")
         return slug
 
     def _gamecube_or_wii(self, data: bytes | Path, name: str = "") -> Path | None:
@@ -412,7 +463,7 @@ class RomNetwork(Network):
                 if addr in starts:
                     calls.setdefault(f["vram"], set()).add(addr)
                     called_by.setdefault(addr, set()).add(f["vram"])
-                elif rtype != match.R_MIPS_26:
+                elif rtype not in (match.R_MIPS_26, 10):  # 10: a Thumb call (GBA) to something not known as a function
                     uses.setdefault(f["vram"], set()).add(addr)
                     used_by.setdefault(addr, set()).add(f["vram"])
         self._xrefs[proj["id"]] = {"calls": calls, "called_by": called_by, "uses": uses, "used_by": used_by}
@@ -459,7 +510,8 @@ class RomNetwork(Network):
             key = (r["vram"], r["size"])
             live.add(key)
             if key not in cache:
-                cache[key] = similarity.mips_mnemonics(r["target"], bool(proj["big_endian"]), r["vram"] or 0)
+                cache[key] = (similarity.thumb_mnemonics(r["target"], r["vram"] or 0) if proj["arch"] == "arm" else
+                              similarity.mips_mnemonics(r["target"], bool(proj["big_endian"]), r["vram"] or 0))
         for key in set(cache) - live:
             del cache[key]
         return cache
@@ -574,6 +626,8 @@ class RomNetwork(Network):
         syms = self.symbols(proj["id"])
         if not IDENT.match(new_name) or new_name in syms.by_name:
             raise NetworkError(f"`{new_name}` is not a free C identifier")
+        if self.cfg(proj).get("platform") == "gba":
+            return self._split_gba(agent, proj, fn, addr, new_name, syms)
         rf = self._parse_asm(fn["name"], fn["asm"], fn["unit"])
         try:
             head, tail = split.split_function(rf, addr, new_name)
@@ -599,6 +653,65 @@ class RomNetwork(Network):
         self._xrefs.pop(proj["id"], None)
         return (f"✅ split: {fn['name']} is now {len(head.lines)} instructions; {new_name} at 0x{addr:08X} has "
                 f"{len(tail.lines)}. Continue with {fn['name']} (get_function shows its new assembly).")
+
+    def _split_gba(self, agent: Agent, proj, fn, addr: int, new_name: str, syms: SymbolTable) -> str:
+        """Cut a GBA function's bytes and assembly in two at `addr` (Thumb: a halfword boundary)."""
+        off = addr - fn["vram"]
+        if off >= fn["size"] and off % 2 == 0:  # code after the function that nobody found yet: make it a function
+            return self._add_gba_function(agent, proj, fn, addr, new_name, syms)
+        if off <= 0 or off >= fn["size"] or off % 2:
+            raise NetworkError(f"0x{addr:08X} isn't inside {fn['name']} (0x{fn['vram']:08X}, {fn['size']} bytes)")
+        head, tail = fn["target"][:off], fn["target"][off:]
+        cut = re.search(rf"^(?:_|\.L){addr:08X}:|^\t(?:thumb|arm)_func_start \w*{addr:08X}\b", fn["asm"], re.M)
+        asm_head, asm_tail = ((fn["asm"][:cut.start()], fn["asm"][cut.start():]) if cut else
+                              (fn["asm"], f"\tthumb_func_start {new_name}\n@ split from {fn['name']}: see its assembly\n"))
+        refs = json.loads(fn["relocs"])
+        refs_head = [r for r in refs if r[0] < off]
+        refs_tail = [[r[0] - off, r[1], r[2]] for r in refs if r[0] >= off]
+        syms.add(Symbol(new_name, addr, len(tail), "func"))
+        with self.store.tx() as db:
+            db.execute("UPDATE functions SET size=?, n_insns=?, target=?, relocs=?, asm=?, seed=NULL, best_score=NULL "
+                       "WHERE id=?", (len(head), max(1, len(head) // 2), head, json.dumps(refs_head), asm_head, fn["id"]))
+            db.execute("INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?)", (proj["id"], new_name, len(tail), max(1, len(tail) // 2), tail,
+                                                        json.dumps(refs_tail), asm_tail, None, fn["unit"], addr,
+                                                        fn["rom_offset"] + off))
+            db.execute("UPDATE symbols SET size=? WHERE project_id=? AND name=?", (len(head), proj["id"], fn["name"]))
+            db.execute("INSERT OR REPLACE INTO symbols(project_id,name,address,size,kind) VALUES(?,?,?,?,?)",
+                       (proj["id"], new_name, addr, len(tail), "func"))
+            self._event(db, proj["id"], agent.id, "split", f"{fn['name']} / {new_name}")
+        self._xrefs.pop(proj["id"], None)
+        self._ops.pop(proj["id"], None)
+        return (f"✅ split: {fn['name']} is now {len(head)} bytes; {new_name} at 0x{addr:08X} has {len(tail)}. "
+                f"Continue with {fn['name']} (get_function shows its new assembly).")
+
+    def _add_gba_function(self, agent: Agent, proj, prev, addr: int, new_name: str, syms: SymbolTable) -> str:
+        from ..rom import gba, gba_candidates
+
+        nxt = self.store.one("SELECT vram FROM functions WHERE project_id=? AND vram>? ORDER BY vram LIMIT 1",
+                             proj["id"], prev["vram"])
+        rom, _ = self._rom(proj)
+        off, limit = addr - gba.BASE, (nxt["vram"] - gba.BASE) if nxt else len(rom)
+        if not off < limit or not gba_candidates.plausible_function(rom, off):
+            raise NetworkError(f"0x{addr:08X} doesn't look like the start of a function")
+        literals = gba_candidates.literal_words(rom, [addr])
+        end = min(next(gba_candidates.bodies(rom, [addr], literals))[1], limit)
+        while end + 4 <= limit and end in literals:
+            end += 4
+        code = rom[off:end]
+        syms.add(Symbol(new_name, addr, len(code), "func"))
+        with self.store.tx() as db:
+            db.execute("INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?,?)", (proj["id"], new_name, len(code), max(1, len(code) // 2), code,
+                                                        json.dumps(gba._refs(code, addr, literals, off)),
+                                                        f"\tthumb_func_start {new_name}\n@ found by an agent after {prev['name']}\n",
+                                                        None, prev["unit"], addr, off))
+            db.execute("INSERT OR REPLACE INTO symbols(project_id,name,address,size,kind) VALUES(?,?,?,?,?)",
+                       (proj["id"], new_name, addr, len(code), "func"))
+            self._event(db, proj["id"], agent.id, "split", f"{prev['name']} / {new_name}")
+        self._xrefs.pop(proj["id"], None)
+        self._ops.pop(proj["id"], None)
+        return f"✅ new function {new_name} at 0x{addr:08X}, {len(code)} bytes."
 
     def rename_symbol(self, agent: Agent, project: str | None, old: str, new: str, message: str = "") -> str:
         self._rom_only(project, "rename_symbol")

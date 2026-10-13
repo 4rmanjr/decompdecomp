@@ -29,6 +29,7 @@ _CS = {
     ("mips", False): (capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS64 | capstone.CS_MODE_LITTLE_ENDIAN),
     ("ppc", True): (capstone.CS_ARCH_PPC, capstone.CS_MODE_32 | capstone.CS_MODE_BIG_ENDIAN),
     ("arm", False): (capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM),
+    ("thumb", False): (capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB),
 }
 
 _REG = re.compile(

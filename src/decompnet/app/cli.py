@@ -144,14 +144,20 @@ def shortcut(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="decomp", description="decomp.wtf: your AI agent decompiles your N64 ROMs")
+    ap = argparse.ArgumentParser(prog="decomp", description="decomp.wtf: your AI agents decompile your games, matching byte for byte")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--no-browser", action="store_true", help="don't open the browser")
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("setup", help="install the compilers and tools this computer needs")
     sub.add_parser("stop", help="stop the running app")
     sub.add_parser("shortcut", help="add decomp.wtf to your apps menu / desktop")
+    m = sub.add_parser("mcp", help="serve decomp.wtf to the AI agent you talk to (stdio MCP; starts the app if needed)")
+    m.add_argument("--name", default=os.environ.get("DECOMP_AGENT_NAME") or "chat",
+                   help="how this agent shows up in the app (e.g. claude-code; or set DECOMP_AGENT_NAME)")
     args = ap.parse_args(argv)
+    if args.cmd == "mcp":
+        from .bridge import main as bridge
+        return bridge(args.name)
     return {"setup": setup, "stop": stop, "shortcut": shortcut}.get(args.cmd, run)(args)
 
 

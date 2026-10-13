@@ -852,9 +852,28 @@ class RomNetwork(Network):
         fn = self.claim_row(agent, project, name, strategy)
         return self._brief(fn, agent, header="CLAIMED")
 
+    def _yield_autopilot(self, function: str | None, project: str | None) -> None:
+        """The autopilot holds a function only while its draft compiles: an agent that wants it waits for that."""
+        if not function or self.fork_slug(project):
+            return
+        try:
+            fid = self._function(function, project)["id"]
+        except NetworkError:
+            return
+        for _ in range(100):
+            held = self.store.one("SELECT a.name FROM claims c JOIN agents a ON a.id=c.agent_id WHERE c.function_id=?", fid)
+            if not held or held["name"] != "autopilot":
+                return
+            time.sleep(0.2)
+
+    def claim_row(self, agent: Agent, project: str | None = None, function: str | None = None, strategy: str = "easiest"):
+        self._yield_autopilot(function, project)
+        return super().claim_row(agent, project, function, strategy)
+
     def attempt(self, agent: Agent, function: str, source: str, project: str | None = None) -> dict:
         if (fork := self.fork_slug(project)):
             return self.forks.attempt(agent, fork, function, source)
+        self._yield_autopilot(function, project)
         link = self._link(project)
         before = self._function(function, project)["best_score"] if link else None
         res = super().attempt(agent, function, source, project)
@@ -1122,7 +1141,10 @@ class RomNetwork(Network):
 
     def autopilot_status(self, slug: str) -> dict | None:
         state = self.autopilots.get(slug)
-        return {k: v for k, v in state.items() if k != "stop"} if state else None
+        if state:
+            return {k: v for k, v in state.items() if k != "stop"}
+        last = self.cfg(self._project(slug)).get("autopilot")  # the last run, from before the app restarted
+        return {"state": "done", **last} if last else None
 
     def _autopilot_run(self, slug: str, ids: list[int], state: dict, workers: int) -> None:
         from concurrent.futures import ThreadPoolExecutor
@@ -1147,6 +1169,10 @@ class RomNetwork(Network):
         finally:
             state["state"] = "stopped" if state["stop"].is_set() else "done"
             state["finished_at"] = time.time()
+            with self.store.tx() as db:
+                cfg = json.loads(db.execute("SELECT config FROM projects WHERE id=?", (proj["id"],)).fetchone()["config"])
+                cfg["autopilot"] = {k: state[k] for k in ("total", "tried", "matched", "near", "started_at", "finished_at")}
+                db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
             if state["matched"]:
                 with self.store.tx() as db:
                     self._event(db, proj["id"], agent.id, "autopilot",
@@ -1289,6 +1315,29 @@ class RomNetwork(Network):
             db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
             db.execute("UPDATE functions SET seed=NULL WHERE project_id=? AND status='open'", (proj["id"],))
             self._event(db, proj["id"], None, "compiler", f"{tc.name} {' '.join(cfg['compiler']['flags'])}")
+
+    def chat_agent(self, base: str) -> tuple[Agent, str]:
+        """An identity for an agent the user talks to (Claude Code, Codex, ... connected with `decomp mcp`): `base`,
+        or base-2, base-3... when another session of the same agent is active right now."""
+        base = re.sub(r"[^A-Za-z0-9_.-]+", "-", base).strip("-")[:30] or "chat"
+        for n in range(1, 100):
+            name = base if n == 1 else f"{base}-{n}"
+            row = self.store.one("SELECT id, origin, last_seen FROM agents WHERE name=?", name)
+            if row is None or (row["origin"] == "chat" and (row["last_seen"] or 0) < time.time() - 600):
+                break
+        else:
+            raise NetworkError("too many chat sessions at once")
+        if row is None:
+            token = self.register_agent(name, "you", trusted=True, origin="chat")
+        else:
+            token = "dn_" + secrets.token_urlsafe(24)
+            with self.store.tx() as db:
+                db.execute("UPDATE agents SET token_hash=?, last_seen=? WHERE id=?", (_hash_token(token), time.time(), row["id"]))
+        return self.authenticate(token), token
+
+    def is_chat(self, agent: Agent) -> bool:
+        row = self.store.one("SELECT origin FROM agents WHERE id=?", agent.id)
+        return bool(row) and row["origin"] == "chat"
 
     def local_agent(self, name: str) -> tuple[Agent, str]:
         """An agent identity for one runner on this machine (created on first use)."""

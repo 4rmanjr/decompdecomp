@@ -29,7 +29,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from .. import __version__, toolchains
 from ..network import NetworkError
 from ..rom.n64 import RomError
-from . import agents, collab, tools
+from . import agents, chat, collab, connect, tools
 from .engine import COMPILERS, MW_VERSIONS, SHORT_NAMES, TOOLS, RomNetwork
 
 COOKIE = "decomp_live"
@@ -121,6 +121,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         return agent, slug
 
     mcp = tools.build_mcp(net, agent_of)
+    chat.register(mcp, net, manager, jobs, settings, port, secret)
 
     def guard(request: Request, write: bool = False) -> Response | None:
         if request.headers.get("host") not in allowed_hosts:
@@ -514,6 +515,41 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         except (NetworkError, ValueError) as e:
             return fail(e)
         return JSONResponse({"started": ids})
+
+    @mcp.custom_route("/api/connect", methods=["GET", "POST"])
+    async def api_connect(request: Request) -> Response:
+        """Your agents (Claude Code, Codex, ...) with decomp.wtf's tools: whether they have them, and adding them."""
+        if (bad := guard(request, write=request.method == "POST")):
+            return bad
+        if request.method == "POST":
+            kind = str((await body(request)).get("id", ""))
+            try:
+                msg = await anyio.to_thread.run_sync(lambda: connect.connect(kind))
+            except (ValueError, OSError, subprocess.TimeoutExpired) as e:
+                return fail(e)
+            return JSONResponse({"ok": True, "message": msg})
+
+        def rows():
+            out = []
+            for a in agents.detect():
+                if a["id"] not in connect.LABEL:
+                    continue
+                out.append({"id": a["id"], "name": a["name"], "installed": a["installed"],
+                            "connected": a["installed"] and connect.status(a["id"]), "command": connect.shown(a["id"])})
+            return out
+        return JSONResponse({"agents": await anyio.to_thread.run_sync(rows)})
+
+    @mcp.custom_route("/api/agents/token", methods=["POST"])
+    async def api_agents_token(request: Request) -> Response:
+        """An identity for an agent the user talks to, connecting through `decomp mcp`."""
+        if (bad := guard(request, write=True)):
+            return bad
+        data = await body(request)
+        try:
+            agent, token = net.chat_agent(str(data.get("name") or "chat"))
+        except NetworkError as e:
+            return fail(e)
+        return JSONResponse({"agent": agent.name, "token": token, "url": mcp_url})
 
     @mcp.custom_route("/api/agents/stop", methods=["POST"])
     async def api_agents_stop(request: Request) -> Response:

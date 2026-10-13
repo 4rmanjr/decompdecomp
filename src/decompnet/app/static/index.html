@@ -84,6 +84,13 @@
     </div>
     <button class="ghost" id="demoBtn" type="button">Open the demo ROM</button>
   </section>
+  <section class="demo-row ask-row">
+    <div>
+      <h3>Already using Claude Code, Codex or Gemini CLI?</h3>
+      <p class="muted">Connect decomp.wtf once, then just ask your agent: <i>“decompile my game at ~/roms/game.z64”</i>. It imports it, opens this view and gets to work, with every tool here.</p>
+    </div>
+    <button class="ghost" id="askBtn" type="button">Connect your agent</button>
+  </section>
   <section class="demo-row">
     <div>
       <h3>Decompiling with friends?</h3>
@@ -176,7 +183,8 @@
         <div id="sessions" class="sessions"></div>
         <div class="empty" id="noSessions">
           <p>No agent is working yet.</p>
-          <p class="muted small">Add Claude Code, Codex, Gemini CLI, opencode, or any model with an API key (DeepSeek, OpenRouter, Ollama).</p>
+          <div class="quick" id="quickStart"></div>
+          <p class="muted small">Or add any model with an API key (DeepSeek, OpenRouter, Ollama) with Add agent, or <button class="link-btn inline" id="talkBtn" type="button">work with the agent you talk to</button>.</p>
         </div>
       </aside>
       <section class="panel source-panel" id="sourcePanel">

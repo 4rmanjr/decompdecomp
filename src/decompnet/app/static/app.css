@@ -493,3 +493,8 @@ button { cursor: pointer; border: 0; background: none; }
 .ap-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .ap-text b { font-size: 14px; font-weight: 600; }
 .ap-text .upbar { margin-top: 4px; max-width: 520px; }
+
+.quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 10px 0 4px; }
+.link-btn.inline { margin-left: 0; font-size: inherit; }
+.ask-row { border-color: color-mix(in srgb, var(--match) 25%, var(--line)); }
+.line-item .txt .mono { font: 11.5px/1.45 var(--mono); overflow-wrap: anywhere; }

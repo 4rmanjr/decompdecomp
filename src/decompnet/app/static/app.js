@@ -386,6 +386,7 @@ async function openProject(slug) {
   if (fork && !S.ov.ready) { renderForkSetup(); return; }
   await refreshMap();
   await poll(true);
+  renderQuickStart();
   S.timer = setInterval(() => poll(false), 1000);
 }
 
@@ -1531,12 +1532,14 @@ async function openSetup() {
       ${a.installed ? `<span class="ok-mark">ready</span>` : `<span class="muted small">not installed</span>`}</div>`).join("");
   $("setupBody").innerHTML = `
     <div class="setup-group"><h3>Compilers and tools</h3>${tcs}</div>
-    <div class="setup-group"><h3>AI agents on this computer</h3>${ags}<p class="muted small">Models with an API key (DeepSeek, OpenRouter, Ollama…) need no install: choose "API key" when adding an agent.</p></div>
+    <div class="setup-group"><h3>AI agents on this computer</h3>${ags}<p class="muted small">Models with an API key (DeepSeek, OpenRouter, Ollama…) need no install: choose "API key" when adding an agent.</p>
+      <div class="row"><button class="ghost small-btn" id="setupConnect" type="button">Use decomp.wtf from your agent…</button><span class="muted small">then just ask it to decompile your game</span></div></div>
     <div class="setup-group"><h3>Work rhythm</h3>
       <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
       <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span>Autopilot after each import: try every function's machine draft first, so free matches cost no agent time.</span></label></div>
     <div class="setup-group"><h3>About</h3><p class="muted small">decomp.wtf ${esc(st.version)} on ${esc(st.platform)}. Projects live in <code>${esc(st.home)}</code>. Nothing is sent to us. Open source (MIT).</p></div>`;
   $("setupBody").querySelectorAll("[data-tc]").forEach((b) => { b.onclick = () => installToolchain(b.dataset.tc, !!b.dataset.prop); });
+  $("setupConnect").onclick = () => { $("setupSheet").hidden = true; openConnect(); };
   $("perSession").onchange = () => api("/api/settings", { method: "POST", body: { per_session: Number($("perSession").value) } }).catch(() => {});
   $("autopilotSet").onchange = () => api("/api/settings", { method: "POST", body: { autopilot: $("autopilotSet").checked } }).catch(() => {});
 }
@@ -1552,6 +1555,53 @@ function dialog(title, html) {
 
 $("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
+$("askBtn").onclick = openConnect;
+$("talkBtn").onclick = openConnect;
+
+/* Your own agent with decomp.wtf's tools: registered once, then you just ask it. */
+async function openConnect() {
+  const body = dialog("Use decomp.wtf from your AI agent", `<p>Connect the agent you already use, once. Then ask it in your terminal, for example:</p>
+    ${cmdBox("decompile my game at ~/roms/game.z64")}
+    <p class="muted small">It confirms the game is your own copy, imports it, opens this live view and works with every tool here: the byte-for-byte judge, the autopilot, helper agents, export. Anything it does shows up here as it happens.</p>
+    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>`);
+  const box = body.querySelector("#connectRows");
+  const render = (rows) => {
+    box.innerHTML = rows.map((a) => `<div class="line-item"><div class="txt"><b>${esc(a.name)}</b><span class="mono">${esc(a.command)}</span></div>
+      ${!a.installed ? `<span class="muted small">not installed</span>` : a.connected ? `<span class="ok-mark">connected</span>` : `<button class="primary small-btn" data-connect="${esc(a.id)}" type="button">Connect</button>`}</div>`).join("");
+    box.querySelectorAll("[data-connect]").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = "Connecting…";
+        try {
+          await api("/api/connect", { method: "POST", body: { id: b.dataset.connect } });
+          toast(`Connected. Ask it to decompile your game.`, "match");
+          render((await api("/api/connect")).agents);
+        } catch (e) { toast(esc(e.message), "err"); b.disabled = false; b.textContent = "Connect"; }
+      };
+    });
+  };
+  try { render((await api("/api/connect")).agents); } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+}
+
+/* One click: start the agents this computer has on the open project. */
+function renderQuickStart() {
+  const box = $("quickStart");
+  if (!box || !S.st) return;
+  const ready = (S.st.agents || []).filter((a) => a.installed && a.id !== "api");
+  box.innerHTML = ready.length ? ready.map((a) => `<button class="primary small-btn" data-quick="${esc(a.id)}" type="button">Start ${esc(a.name)}</button>`).join("")
+    : `<button class="primary small-btn" id="quickAdd" type="button">Add an agent</button>`;
+  box.querySelectorAll("[data-quick]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api("/api/agents/start", { method: "POST", body: { kind: b.dataset.quick, slug: S.slug, count: 1, options: {} } });
+        toast(`${esc(b.textContent.replace("Start ", ""))} is starting.`);
+        poll(false);
+      } catch (e) { toast(esc(e.message), "err"); } finally { b.disabled = false; }
+    };
+  });
+  const add = box.querySelector("#quickAdd");
+  if (add) add.onclick = openAgentSheet;
+}
 /* Autopilot: every function's machine draft, tried through the judge before any agent spends a token. */
 function renderAutopilot(ov) {
   const box = $("autopilot"), ap = ov.autopilot;

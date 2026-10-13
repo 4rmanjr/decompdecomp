@@ -6,6 +6,7 @@ off a function the finder merged, add one it didn't find, name things, write the
 """
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -81,3 +82,26 @@ def test_drafts_and_look_alikes(gba):
     brief = net.get_function(row["name"], slug)
     assert "thumb_func_start" in brief or "push" in brief
     assert net.find_similar(slug, row["name"]).startswith(("Functions that look like", "No look-alikes"))
+
+
+def test_export_rebuilds_the_rom(gba):
+    """The exported tree (luvdis assembly + the matched C) rebuilds the ROM byte for byte, also from a fresh clone."""
+    net, slug = gba
+    out = net.export_rom(slug, log=lambda *_: None)
+    assert out["identical"], out["log"]
+    assert out["matched"] == len(FUNCTIONS) and not out["fallback"]
+    root = Path(out["path"])
+    assert "g_player" in (root / "src" / "player_take_damage.c").read_text()
+    linked = (root / "build" / "game.ld").read_text()  # a matched function links its C, not its assembly
+    assert "build/src/game_tick.o(.text)" in linked and "build/asm/game_tick.o" not in linked
+    assert (root / "asm" / "game_tick.s").exists()  # the assembly stays as the reference
+    # a fresh copy: what git keeps (no build/, asm/ or ROM), plus your ROM
+    fresh = root.parent / "fresh"
+    shutil.copytree(root, fresh, ignore=shutil.ignore_patterns("build", "asm", "baserom*"))
+    shutil.copyfile(root / "baserom.gba", fresh / "baserom.gba")
+    res = subprocess.run([sys.executable, "build.py"], cwd=fresh, capture_output=True, text=True, timeout=900)
+    assert res.returncode == 0 and "identical" in res.stdout, res.stdout + res.stderr
+    assert "13 of" in subprocess.run([sys.executable, "build.py", "status"], cwd=fresh, capture_output=True,
+                                     text=True).stdout
+    assert subprocess.run([sys.executable, "build.py", "check", "lerp"], cwd=fresh, capture_output=True,
+                          text=True).returncode == 0

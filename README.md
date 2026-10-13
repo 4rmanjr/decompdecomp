@@ -195,7 +195,7 @@ share a new link and friends click **Reconnect**.
 | **PlayStation** | ✓ disc or EXE | GCC 2.7.2 / 2.8.1 (PSY-Q era) | ✓ export | ✓ |
 | **PlayStation 2** | ✓ disc or ELF | EE-GCC 2.96 | ✓ export | ✓ |
 | **GameCube · Wii** | ✓ disc (ISO, RVZ, WBFS…) or DOL | CodeWarrior GC 1.0 – Wii 1.7 | ✓ dtk-template | ✓ |
-| **Game Boy Advance** | ✓ ROM | agbcc | coming | ✓ |
+| **Game Boy Advance** | ✓ ROM | agbcc | ✓ export | ✓ |
 | **DS · 3DS · PSP · Switch · PC · Xbox · Xbox 360** | coming | | | ✓ |
 
 **From scratch.** splat and spimdisasm split MIPS games, decomp-toolkit analyses GameCube and Wii programs inside a
@@ -205,7 +205,7 @@ compiled with the game's compiler and checked byte for byte: linked at its addre
 or judged by objdiff inside the project's own build (GameCube, Wii).
 
 **The base for ports and mods.** *Export project* writes a normal decomp tree (matched functions as C, the rest
-as assembly, a linker script and `build.py`) and proves it rebuilds your game byte for byte. GameCube and Wii
+as assembly from splat or luvdis, a linker script and `build.py`) and proves it rebuilds your game byte for byte. GameCube and Wii
 projects are dtk-template projects that rebuild the game on every build. Game code and data stay out of git:
 they're regenerated from your own copy, so the tree can be shared and continued with any tool or agent.
 

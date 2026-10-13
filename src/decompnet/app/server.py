@@ -590,7 +590,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 out.append({"id": a["id"], "name": a["name"], "installed": a["installed"],
                             "connected": a["installed"] and connect.status(a["id"]), "command": connect.shown(a["id"])})
             return out
-        return JSONResponse({"agents": await anyio.to_thread.run_sync(rows)})
+        return JSONResponse({"agents": await anyio.to_thread.run_sync(rows), "bridge": connect.bridge_command()})
 
     @mcp.custom_route("/api/agents/token", methods=["POST"])
     async def api_agents_token(request: Request) -> Response:

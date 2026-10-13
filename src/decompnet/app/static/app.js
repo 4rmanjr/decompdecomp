@@ -1589,7 +1589,9 @@ async function openConnect() {
   const body = dialog("Use decomp.wtf from your AI agent", `<p>Connect the agent you already use, once. Then ask it in your terminal, for example:</p>
     ${cmdBox("decompile my game at ~/roms/game.z64")}
     <p class="muted small">It confirms the game is your own copy, imports it, opens this live view and works with every tool here: the byte-for-byte judge, the autopilot, helper agents, export. Anything it does shows up here as it happens.</p>
-    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>`);
+    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>
+    <div class="setup-group"><h3>Any other MCP client (Cursor, Claude Desktop, Windsurf, your own)</h3><pre class="code" id="bridgeJson"></pre>
+      <p class="muted small">It starts decomp.wtf when needed; no token, nothing to update when the app restarts.</p></div>`);
   const box = body.querySelector("#connectRows");
   const render = (rows) => {
     box.innerHTML = rows.map((a) => `<div class="line-item"><div class="txt"><b>${esc(a.name)}</b><span class="mono">${esc(a.command)}</span></div>
@@ -1605,7 +1607,11 @@ async function openConnect() {
       };
     });
   };
-  try { render((await api("/api/connect")).agents); } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+  try {
+    const r = await api("/api/connect");
+    render(r.agents);
+    body.querySelector("#bridgeJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2);
+  } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
 }
 
 /* One click: start the agents this computer has on the open project. */
@@ -1754,15 +1760,7 @@ $("compilerBtn").onclick = async () => {
     } catch (e) { toast(esc(e.message), "err"); }
   };
 };
-$("connectBtn").onclick = async () => {
-  try {
-    const r = await api("/api/agents/manual", { method: "POST", body: { slug: S.slug } });
-    dialog("Connect another agent", `<p class="muted">Any MCP-capable agent (Cursor, Claude Desktop, Windsurf, your own) can join this project while decomp.wtf runs. Give it these settings, then ask it to "decompile functions with the decomp tools".</p>
-      <label class="field"><span>Claude Code</span></label>${cmdBox(r.claude)}
-      <label class="field"><span>MCP config (JSON)</span></label><pre class="code">${esc(r.json)}</pre>
-      <p class="muted small">This token only works on this computer, for this project.</p>`);
-  } catch (e) { toast(esc(e.message), "err"); }
-};
+$("connectBtn").onclick = () => openConnect();
 $("deleteBtn").onclick = () => {
   dialog("Remove project", `<p>Remove <b>${esc(S.ov.title)}</b> from decomp.wtf? Matched functions and notes are deleted.</p>
     <label class="check"><input type="checkbox" id="delFiles"><span>Also delete the project folder (your ROM copy and exported sources in it)</span></label>

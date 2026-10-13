@@ -247,6 +247,11 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                     shutil.rmtree(game.parent, ignore_errors=True)
             settings.data["last_project"] = slug
             settings.save()
+            if not net.fork_slug(slug):  # free matches first: every function's machine draft, in the background
+                try:
+                    net.start_autopilot(slug)
+                except NetworkError:
+                    pass
             return {"slug": slug}
         return JSONResponse({"job": jobs.start("import", work)})
 
@@ -334,6 +339,13 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             pass  # not yours (any more): nothing to give back
         return {"ok": True}
 
+    def p_autopilot(slug, request, data):
+        if data.get("action") == "stop":
+            net.stop_autopilot(slug)
+        else:
+            net.start_autopilot(slug)
+        return net.overview(slug)
+
     routes = {
         "/api/project": (p_overview, ["GET"]), "/api/map": (lambda s, r, d: net.function_map(s), ["GET"]),
         "/api/live": (p_live, ["GET"]),
@@ -343,6 +355,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/compiler": (p_compiler, ["POST"]), "/api/export": (p_export, ["POST"]), "/api/open": (p_open, ["POST"]),
         "/api/delete": (p_delete, ["POST"]), "/api/agents/manual": (p_manual, ["POST"]),
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
+        "/api/autopilot": (p_autopilot, ["POST"]),
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))

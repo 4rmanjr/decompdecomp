@@ -484,3 +484,12 @@ button { cursor: pointer; border: 0; background: none; }
 .try-msg { margin-top: 10px; font: 12.5px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; }
 .try-msg.ok { color: var(--match); }
 .try-msg.bad { color: var(--miss); }
+
+/* ------------------------------------------------------------------ autopilot */
+.autopilot { margin-top: 14px; display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: var(--r); border: 1px solid var(--line); background: var(--panel); }
+.autopilot.on { border-color: color-mix(in srgb, var(--match) 40%, var(--line)); background: color-mix(in srgb, var(--match-bg) 30%, var(--panel)); }
+.ap-icon { width: 10px; height: 10px; border-radius: 3px; background: var(--faint); flex: none; }
+.autopilot.on .ap-icon { background: var(--match); animation: breathe 1.4s ease-in-out infinite; }
+.ap-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.ap-text b { font-size: 14px; font-weight: 600; }
+.ap-text .upbar { margin-top: 4px; max-width: 520px; }

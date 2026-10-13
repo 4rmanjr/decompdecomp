@@ -26,6 +26,22 @@ M2C_TARGETS = {
     "gcc-2.8.1-psx": "mipsel-gcc-c",
     "agbcc": "gba-gcc-c",
 }
+# What m2c's --valid-syntax output needs to compile: its unknown types and macros, defined the simplest way that
+# keeps the code's meaning (written for decomp.wtf; the names are m2c's interface).
+M2C_MACROS = """\
+#ifndef M2C_DEFINES
+#define M2C_DEFINES
+typedef s32 M2C_UNK;
+typedef s8 M2C_UNK8;
+typedef s16 M2C_UNK16;
+typedef s32 M2C_UNK32;
+#define M2C_FIELD(expr, type_ptr, offset) (*(type_ptr)((s8 *)(expr) + (offset)))
+#define M2C_BITWISE(type, expr) ((type)(expr))
+#define M2C_ERROR(desc) (0)
+#define M2C_CARRY 0
+#define M2C_OVERFLOW(a) (0)
+#endif
+"""
 _BRANCH = re.compile(r"^(b|beq|bne|beqz|bnez|bgtz|blez|bltz|bgez|bltzal|bgezal|beql|bnel|beqzl|bnezl|bgtzl|blezl|"
                      r"bltzl|bgezl|bc1t|bc1f|bc1tl|bc1fl|j)$")
 
@@ -67,16 +83,17 @@ def generate(fn: FunctionObj, toolchain_id: str | None, context_header: str = ""
 
 
 def generate_from_asm(asm_text: str, name: str, toolchain_id: str | None, context_header: str = "",
-                      data_asm: str | None = None, timeout: float = 20) -> str | None:
-    """C draft from GNU/splat-style assembly text (plus optional data, for jump tables and strings)."""
+                      data_asm: str | None = None, timeout: float = 20, valid: bool = False) -> str | None:
+    """C draft from GNU/splat-style assembly text (plus optional data, for jump tables and strings). `valid`:
+    m2c's compilable form (unknown types and expressions as M2C_ macros, see M2C_MACROS), for trying drafts as is."""
     target = M2C_TARGETS.get(toolchain_id or "")
     if not target:
         return None
-    return run_m2c(asm_text, name, target, context_header, data_asm, timeout)
+    return run_m2c(asm_text, name, target, context_header, data_asm, timeout, valid)
 
 
 def run_m2c(asm_text: str, name: str, target: str, context_header: str = "", data_asm: str | None = None,
-            timeout: float = 20) -> str | None:
+            timeout: float = 20, valid: bool = False) -> str | None:
     """Run m2c for one function with an explicit target triple (e.g. ppc-mwcc-c++)."""
     if not available():
         return None
@@ -88,7 +105,7 @@ def run_m2c(asm_text: str, name: str, target: str, context_header: str = "", dat
     with tempfile.TemporaryDirectory(prefix="decompnet-m2c-") as tmp:
         asm = Path(tmp) / f"{name}.s"
         asm.write_text(asm_text)
-        argv = [str(m2c), "-t", target, "-f", name, str(asm)]
+        argv = [str(m2c), *(["--valid-syntax"] if valid else []), "-t", target, "-f", name, str(asm)]
         if data_asm:
             (Path(tmp) / "data.s").write_text(data_asm)
             argv.append(str(Path(tmp) / "data.s"))

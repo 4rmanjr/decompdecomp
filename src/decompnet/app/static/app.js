@@ -360,7 +360,7 @@ $("demoBtn").onclick = () => runImport("demo=1", undefined, "Opening Demo Quest 
 /* ------------------------------------------------------------------ project */
 async function openProject(slug) {
   show("project");
-  S.slug = slug; S.e = 0; S.a = 0; S.seq = {}; S.scores = new Map(); S.flash = new Map(); S.sessions = []; S.claims = [];
+  S.slug = slug; S.e = 0; S.a = 0; S.seq = {}; S.scores = new Map(); S.flash = new Map(); S.sessions = []; S.claims = []; S.apFeed = null;
   $("activity").innerHTML = ""; $("thoughts").innerHTML = "";
   try {
     if (!S.st) await loadState();
@@ -416,8 +416,9 @@ async function poll(first) {
       if (["match", "split", "rename"].includes(ev.kind)) mapDirty = true;
       if (ev.kind === "match" && !first) {
         S.flash.set(ev.detail, performance.now());
-        toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");
+        if (ev.agent !== AUTO) toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");
       }
+      if (ev.kind === "autopilot" && !first) toast(`Autopilot: ${esc(ev.detail)}`, "match");
     }
     for (const at of live.attempts) {
       S.a = Math.max(S.a, at.id);
@@ -463,6 +464,7 @@ function renderStats(ov) {
   $("rate").textContent = recent ? `${recent} in the last 10 minutes` : "each one checked against your ROM";
   renderRoom(ov);
   renderSource(ov);
+  renderAutopilot(ov);
   if (ov.kind === "fork") { renderFork(ov); return; }
   $("forkNotice").hidden = true;
   $("compilerLabel").textContent = "Compiler";
@@ -920,6 +922,8 @@ function spark(points, w = 240, h = 34) {
 function renderNow(claims) {
   const box = $("now");
   if (!claims.length) { box.innerHTML = ""; return; }
+  claims = claims.filter((c) => c.agent !== AUTO);
+  if (!claims.length) { box.innerHTML = ""; return; }
   box.innerHTML = claims.map((c) => {
     const sc = S.scores.get(c.name) || [];
     const p = pctOf(c.best_score, c.n_insns);
@@ -948,7 +952,7 @@ function renderSessions(sessions) {
       ${claim ? `<span class="last">on ${esc(claim.name)}</span>` : ""}</div>`;
   }).join("");
   const own = new Set(sessions.map((s) => s.agent));
-  const outside = S.claims.filter((c) => !own.has(c.agent));
+  const outside = S.claims.filter((c) => !own.has(c.agent) && c.agent !== AUTO);
   box.insertAdjacentHTML("beforeend", outside.map((c) => `<div class="session ext"><div class="session-top"><span class="dot on"></span><b>${esc(c.agent)}</b><span class="tag">${c.agent.startsWith("@") ? "in the room" : "connected"}</span></div>
       <span class="last">on ${fnLink(c.name)}</span></div>`).join(""));
   box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
@@ -1014,10 +1018,24 @@ function touchGroup(agent, fn, t, change, first) {
   if (g.matched || g.released) groups.delete(key);
 }
 
+const AUTO = "autopilot";
+function autopilotLine(t, first, done) {
+  const a = S.apFeed || (S.apFeed = { tried: 0, matched: 0, li: null });
+  const html = `<span class="who">autopilot</span> ${done ? esc(done) : `tried ${plural(a.tried, "machine draft")}${a.matched ? ` · <span class="ok">${a.matched} matched</span>` : ""}`}`;
+  if (a.li && a.li.isConnected) { a.li.querySelector("time").textContent = clock(t); a.li.querySelector("span").innerHTML = html; }
+  else a.li = addLine(t, html, first);
+}
 function addActivity(events, attempts, first) {
   const items = [...events.map((e) => ({ t: e.created_at, ev: e })), ...attempts.map((a) => ({ t: a.created_at, at: a }))];
   items.sort((a, b) => a.t - b.t);
   for (const it of items) {
+    if ((it.at && it.at.agent === AUTO) || (it.ev && it.ev.agent === AUTO && ["match", "claim", "autopilot"].includes(it.ev.kind))) {
+      const a = S.apFeed || (S.apFeed = { tried: 0, matched: 0, li: null });
+      if (it.at) a.tried++;
+      if (it.ev && it.ev.kind === "match") a.matched++;
+      autopilotLine(it.t, first, it.ev && it.ev.kind === "autopilot" ? it.ev.detail : null);
+      continue;
+    }
     if (it.at) {
       const at = it.at;
       touchGroup(at.agent, at.function, it.t, (g) => {
@@ -1532,6 +1550,38 @@ function dialog(title, html) {
 
 $("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
+/* Autopilot: every function's machine draft, tried through the judge before any agent spends a token. */
+function renderAutopilot(ov) {
+  const box = $("autopilot"), ap = ov.autopilot;
+  const canRun = ov.kind !== "fork" && ov.functions - ov.matched > 0;
+  box.hidden = !ap && !canRun;
+  if (box.hidden) return;
+  const running = ap && ap.state === "running";
+  box.classList.toggle("on", !!running);
+  $("apBar").hidden = !running;
+  if (running) {
+    $("apTitle").textContent = `Autopilot: trying each function's machine draft · ${ap.matched.toLocaleString()} matched for free`;
+    $("apSub").textContent = `${ap.tried.toLocaleString()} of ${ap.total.toLocaleString()} tried${ap.near ? ` · ${ap.near} more are 90%+ there` : ""}. Agents work alongside it.`;
+    $("apBar").firstElementChild.style.width = `${(100 * ap.tried) / Math.max(1, ap.total)}%`;
+    $("apBtn").textContent = "Stop";
+  } else if (ap) {
+    $("apTitle").textContent = ap.matched ? `Autopilot matched ${ap.matched.toLocaleString()} function${ap.matched === 1 ? "" : "s"} for free` : "Autopilot found no free matches this time";
+    $("apSub").textContent = `${ap.tried.toLocaleString()} machine drafts tried${ap.near ? `; ${ap.near} more are 90%+ there, a head start for your agents` : ""}. Run it again after agents add types and names: drafts get better.`;
+    $("apBtn").textContent = "Run again";
+  } else {
+    $("apTitle").textContent = "Free matches first";
+    $("apSub").textContent = "Autopilot tries every function's machine draft (m2c) through the judge; whatever already matches costs no agent time.";
+    $("apBtn").textContent = "Run autopilot";
+  }
+  $("apBtn").onclick = async () => {
+    $("apBtn").disabled = true;
+    try {
+      S.ov = await api("/api/autopilot", { method: "POST", body: { slug: S.slug, action: running ? "stop" : "start" } });
+      renderAutopilot(S.ov);
+    } catch (e) { toast(esc(e.message), "err"); } finally { $("apBtn").disabled = false; }
+  };
+}
+
 const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp" };
 const cwName = (c) => (c.startsWith("DS/") ? `CodeWarrior for DS ${c.slice(3)}` : `CodeWarrior ${c}`);
 

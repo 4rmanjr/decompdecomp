@@ -128,6 +128,7 @@ class RomNetwork(Network):
         self._remote_ids: dict[str, int] = {}
         self._ops: dict[int, dict] = {}  # project id -> look-alike index
         self._diffs: dict[tuple, dict] = {}  # (function, source, context, compiler) -> diff for the GUI
+        self.autopilots: dict[str, dict] = {}  # slug -> progress of trying every function's machine draft
         from .forkengine import ForkEngine  # forks build on this class's claims, attempts and live view
         self.forks = ForkEngine(self)
 
@@ -1039,7 +1040,7 @@ class RomNetwork(Network):
     def overview(self, slug: str) -> dict:
         proj = self._project(slug)
         last = self.store.one("SELECT MAX(created_at) AS t FROM events WHERE project_id=?", proj["id"])["t"]
-        return self._overview(slug, proj) | {"last_activity": last}
+        return self._overview(slug, proj) | {"last_activity": last, "autopilot": self.autopilot_status(slug)}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -1087,6 +1088,102 @@ class RomNetwork(Network):
                  "status": "matched" if r["status"] == "matched" else "working" if (r["agent"] or r["vram"] in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"]),
                  "matched_at": r["matched_at"]} for r in rows]
+
+    # ------------------------------------------------------------------ autopilot
+
+    def start_autopilot(self, slug: str, workers: int = 3) -> dict:
+        """Try every open function's machine draft (m2c, compilable form) through the judge, smallest first, in the
+        background. Whatever already matches is saved before any agent spends a token on it; drafts that compile
+        become the function's best attempt, so agents start from them. Agents and autopilot never collide: a
+        function is held only while its draft compiles, and claimed ones are skipped."""
+        if self.fork_slug(slug):
+            raise NetworkError("autopilot works on games started from scratch; a public decomp already has its code")
+        if not seeds.available():
+            raise NetworkError("autopilot needs m2c, the draft decompiler: install it in Setup")
+        proj = self._project(slug)
+        tc = self.cfg(proj)["compiler"]["toolchain"]
+        if not seeds.M2C_TARGETS.get(tc):
+            raise NetworkError("m2c can't read this project's code (no draft decompiler for it yet)")
+        state = self.autopilots.get(slug)
+        if state and state["state"] == "running":
+            return state
+        rows = self.store.all("SELECT id FROM functions WHERE project_id=? AND status='open' ORDER BY n_insns, vram",
+                              proj["id"])
+        state = {"state": "running", "total": len(rows), "tried": 0, "matched": 0, "near": 0, "started_at": time.time(),
+                 "stop": threading.Event()}
+        self.autopilots[slug] = state
+        threading.Thread(target=self._autopilot_run, args=(slug, [r["id"] for r in rows], state, workers),
+                         daemon=True, name=f"autopilot-{slug}").start()
+        return state
+
+    def stop_autopilot(self, slug: str) -> None:
+        if (state := self.autopilots.get(slug)) and state["state"] == "running":
+            state["stop"].set()
+
+    def autopilot_status(self, slug: str) -> dict | None:
+        state = self.autopilots.get(slug)
+        return {k: v for k, v in state.items() if k != "stop"} if state else None
+
+    def _autopilot_run(self, slug: str, ids: list[int], state: dict, workers: int) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        agent, _ = self.local_agent("autopilot")
+        proj = self._project(slug)
+
+        def one(fid: int) -> None:
+            if state["stop"].is_set():
+                return
+            try:
+                outcome = self._autopilot_one(agent, proj, fid)
+            except Exception:  # one odd function must not stop the rest
+                outcome = "fail"
+            state["tried"] += 1
+            if outcome in ("match", "near"):
+                state[{"match": "matched", "near": "near"}[outcome]] += 1
+
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                list(pool.map(one, ids))
+        finally:
+            state["state"] = "stopped" if state["stop"].is_set() else "done"
+            state["finished_at"] = time.time()
+            if state["matched"]:
+                with self.store.tx() as db:
+                    self._event(db, proj["id"], agent.id, "autopilot",
+                                f"{state['matched']} of {state['tried']} functions matched from machine drafts")
+
+    def _autopilot_one(self, agent, proj, fid: int) -> str:
+        """match | near | far | fail | skip, for one function's draft."""
+        now = time.time()
+        with self.store.tx() as db:
+            self._expire_claims(db)
+            fn = db.execute("SELECT * FROM functions WHERE id=?", (fid,)).fetchone()
+            if fn is None or fn["status"] != "open" or db.execute("SELECT 1 FROM claims WHERE function_id=?", (fid,)).fetchone():
+                return "skip"
+            db.execute("INSERT INTO claims VALUES(?,?,?,?)", (fid, agent.id, now, now + 300))
+        try:
+            self._seed_for(fn, proj)  # the readable draft, for the agents that come after
+            ctx = self._context(proj["id"], fn["unit"])
+            data_asm = "\n".join(self._jtbl_asm(proj, fn)) if "jtbl_" in (fn["asm"] or "") else None
+            draft = seeds.generate_from_asm(self._asm_text(fn, proj), fn["name"], self.cfg(proj)["compiler"]["toolchain"],
+                                            ctx["header"], data_asm, valid=True)
+            if not draft:
+                return "fail"
+            source = f"/* machine draft (m2c), tried by autopilot */\n{seeds.M2C_MACROS}\n{draft}\n"
+            result = self._compile(proj, ctx["header"], source)
+            if not result.ok:
+                return "fail"
+            cand, verdict, _ = self._evaluate(fn, proj, result.obj)
+            if cand is None:
+                return "fail"
+            d = scoring.diff(self._target_obj(fn, proj), cand)
+            if verdict is not None:
+                d = scoring.DiffResult(0 if verdict else max(1, d.score), d.max_score, d.rows, verdict)
+            self._record(fn, agent, d.score, source, ctx["version"], matched=d.bytes_match)
+            return "match" if d.bytes_match else "near" if d.percent >= 90 else "far"
+        finally:
+            with self.store.tx() as db:
+                db.execute("DELETE FROM claims WHERE function_id=? AND agent_id=?", (fid, agent.id))
 
     def function_diff(self, slug: str, name: str, which: str = "latest") -> dict:
         """The target next to an attempt, instruction by instruction, for the GUI: the matched C, else the latest

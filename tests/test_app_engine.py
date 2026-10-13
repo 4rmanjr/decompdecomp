@@ -140,3 +140,22 @@ def test_find_similar_on_the_rom(net):
     outs = [net.find_similar("demo-quest-64", n) for n in names]
     assert time.time() - t < 20
     assert all(o.startswith(("Functions that look like", "No look-alikes")) for o in outs)
+
+
+def test_autopilot_matches_machine_drafts_for_free(net):
+    import time
+
+    before = net.overview("demo-quest-64")["matched"]
+    net.start_autopilot("demo-quest-64")
+    for _ in range(600):
+        if net.autopilot_status("demo-quest-64")["state"] != "running":
+            break
+        time.sleep(0.1)
+    st = net.autopilot_status("demo-quest-64")
+    assert st["state"] == "done" and st["tried"] == st["total"] and st["matched"] > 0
+    ov = net.overview("demo-quest-64")
+    assert ov["matched"] == before + st["matched"] and ov["autopilot"]["matched"] == st["matched"]
+    by = net.store.one("SELECT COUNT(*) AS n FROM functions f JOIN agents a ON a.id=f.matched_agent_id "
+                       "WHERE a.name='autopilot'")["n"]
+    assert by == st["matched"]
+    assert not net.store.one("SELECT 1 FROM claims c JOIN agents a ON a.id=c.agent_id WHERE a.name='autopilot'")

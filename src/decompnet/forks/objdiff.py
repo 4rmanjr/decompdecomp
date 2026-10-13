@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,8 +32,25 @@ def _run(args: list[str], cwd: Path, timeout: float = 600) -> str:
 
 
 def report(project: Path, out: Path) -> dict:
-    """Progress report (objdiff report.proto as JSON) for a project with an objdiff.json."""
-    _run(["report", "generate", "-p", str(project), "-o", str(out)], cwd=project, timeout=1800)
+    """Progress report (objdiff report.proto as JSON) for a project with an objdiff.json.
+
+    objdiff-cli stops at the first unit whose compiled object is missing (work-in-progress source that doesn't
+    compile yet, or that the project's default build never compiles). Those units are measured from the game's
+    object alone, as not matched yet, the way the projects' own report scripts do it."""
+    cfg = json.loads((project / "objdiff.json").read_text())
+    missing = [u for u in cfg.get("units", []) if u.get("base_path") and not (project / u["base_path"]).is_file()]
+    if not missing:
+        _run(["report", "generate", "-p", str(project), "-o", str(out)], cwd=project, timeout=1800)
+        return json.loads(out.read_text())
+    for unit in cfg.get("units", []):
+        for key in ("target_path", "base_path"):
+            if unit.get(key):
+                unit[key] = str((project / unit[key]).resolve())
+    for unit in missing:
+        del unit["base_path"]
+    with tempfile.TemporaryDirectory(prefix="decompwtf-report-") as tmp:
+        (Path(tmp) / "objdiff.json").write_text(json.dumps(cfg))
+        _run(["report", "generate", "-p", tmp, "-o", str(out.resolve())], cwd=project, timeout=1800)
     return json.loads(out.read_text())
 
 

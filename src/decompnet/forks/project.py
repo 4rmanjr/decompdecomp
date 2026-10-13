@@ -319,6 +319,9 @@ class ForkProject:
             ok, tail = self.run(cmd, log=log)
             if not ok and cmd[0] != "make":  # a Makefile build often fails on purpose until things match
                 raise ForkError(f"setup step failed: {' '.join(cmd)}\n{tail}")
+        if (self.root / "objdiff.json").exists() and self._all_source():
+            log("compiling every source file, so objdiff can measure each one (some work in progress may not compile)")
+            self.build_all(log=log)
         if not (self.root / "objdiff.json").exists():
             raise ForkError("the project built, but has no objdiff.json, so decomp.wtf can't measure matches. "
                             "Some projects generate it with an extra step; check the README.")
@@ -359,9 +362,21 @@ class ForkProject:
         rel = os.path.relpath(unit.base, self.root)
         return self.run([tool, *cfg.get("custom_args", []), rel], log=log, timeout=600)
 
+    def _all_source(self) -> bool:
+        """dtk-template's `all_source`: every unit's source object, including units the game's link doesn't use yet
+        (the default build only compiles what the link needs, so objdiff would have nothing to measure them by)."""
+        try:
+            with open(self.root / "build.ninja", errors="replace") as f:
+                return any(line.startswith("build all_source:") for line in f)
+        except OSError:
+            return False
+
     def build_all(self, log=lambda *_: None) -> tuple[bool, str]:
         cfg = self.objdiff_config()
         make = cfg.get("custom_make") or "make"
+        if (make == "ninja" or Path(make).name.startswith("ninja")) and self._all_source():
+            # -k 0: keep going past work in progress that doesn't compile yet
+            return self.run([_tool(make) or make, *cfg.get("custom_args", []), "-k", "0", "all_source"], log=log)
         return self.run([_tool(make) or make, *cfg.get("custom_args", [])], log=log)
 
     def report(self) -> dict:

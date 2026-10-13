@@ -308,3 +308,22 @@ def test_a_project_made_from_scratch_builds_with_this_computers_tools(tmp_path, 
     cmds = ForkProject(tmp_path).setup_commands("abce")
     assert cmds[0][1:] == ["tools/configure.py", "abce", "--dsd", "/here/dsd", "--compilers", "/here/mw"]
     assert cmds[1] == ["ninja"]
+
+
+@needs_tools
+def test_a_unit_without_a_compiled_object_is_measured_as_not_matched(fork, tmp_path):
+    """Work in progress that doesn't compile, or units the default build never compiles: the report still works,
+    and those units count as not matched yet instead of stopping the whole measurement."""
+    from decompnet.forks import objdiff
+
+    net, slug, _ = fork
+    root = Path(net.project_row(slug)["root"])
+    copy = tmp_path / "copy"
+    shutil.copytree(root, copy, symlinks=True)
+    cfg = json.loads((copy / "objdiff.json").read_text())
+    unit = next(u for u in cfg["units"] if u.get("base_path") and (copy / u["base_path"]).is_file())
+    (copy / unit["base_path"]).unlink()
+    rep = objdiff.report(copy, tmp_path / "report.json")
+    got = next(u for u in rep["units"] if u["name"] == unit["name"])
+    assert all((f.get("fuzzy_match_percent") or 0) < 100 for f in got.get("functions", []))
+    assert len(rep["units"]) == len(cfg["units"])

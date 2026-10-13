@@ -110,6 +110,11 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     jobs = Jobs()
     settings = Settings(home / "settings.json")
     manager.budget = lambda: float(settings.data.get("budget_usd") or 0)
+
+    def remember(running: list[dict]) -> None:
+        settings.data["running_agents"] = running
+        settings.save()
+    manager.persist = remember
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def agent_of(ctx: Context):
@@ -121,8 +126,39 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             raise NetworkError("no project is open in decomp.wtf; open a ROM in the app first")
         return agent, slug
 
+    # helpers that were working when the app last stopped carry on
+    resume = [r for r in settings.data.get("running_agents", []) if isinstance(r, dict)]
+    for r in resume:
+        try:
+            net.project_row(r["slug"])
+            options = dict(r.get("options") or {})
+            if r["kind"] == "api":
+                options.update({k: v for k, v in settings.data.get("api", {}).items() if k == "api_key"})
+            manager.start(r["kind"], r["slug"], 1, options)
+        except (NetworkError, ValueError, KeyError):
+            continue
+
     mcp = tools.build_mcp(net, agent_of)
     chat.register(mcp, net, manager, jobs, settings, port, secret)
+
+    # Each agent sees the tools for its job: the agent you talk to sees everything; a helper only the work tools
+    # for its project's kind (fewer tool definitions in every request, nothing it shouldn't call).
+    from mcp_types import ListToolsResult, PaginatedRequestParams
+
+    async def scoped_tools(ctx, params):
+        everything = await mcp.list_tools()
+        auth = (getattr(ctx.request, "headers", None) or {}).get("authorization", "")
+        try:
+            agent = net.authenticate(auth.removeprefix("Bearer ").strip() or None)
+        except NetworkError:
+            return ListToolsResult(tools=everything)
+        if net.is_chat(agent):
+            return ListToolsResult(tools=everything)
+        slug = manager.project_of(agent.id) or settings.data.get("last_project")
+        keep = set(tools.tool_names(bool(slug and net.fork_slug(slug))))
+        return ListToolsResult(tools=[t for t in everything if t.name in keep])
+
+    mcp._lowlevel_server.add_request_handler("tools/list", PaginatedRequestParams, scoped_tools)
 
     def guard(request: Request, write: bool = False) -> Response | None:
         if request.headers.get("host") not in allowed_hosts:

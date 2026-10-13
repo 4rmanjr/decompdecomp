@@ -126,3 +126,17 @@ def test_agent_spend_is_read_from_their_output():
     assert ("usage", json.dumps({"tokens": 1000})) in codex
     opencode = agents.parse_line("opencode", json.dumps({"type": "step_finish", "part": {"cost": 0.01}}))
     assert ("usage", json.dumps({"usd": 0.01})) in opencode
+
+
+def test_helpers_are_remembered_to_resume(app):
+    client, net, manager = app
+    slug = net.store.one("SELECT slug FROM projects")["slug"]
+    seen = []
+    manager.persist = lambda running: seen.append([r["kind"] for r in running])
+    (sid,) = manager.start("api", slug, 1, {"base_url": "http://127.0.0.1:9/v1", "model": "m"})
+    assert seen[-1] == ["api"]
+    manager.stop()  # the app quitting: nothing is forgotten, they resume next time
+    assert seen[-1] == ["api"]
+    manager.stop(sid)  # you stopping it: forgotten
+    assert seen[-1] == []
+    manager.remove(sid)

@@ -244,6 +244,7 @@ class Manager:
         self.assignments: dict[int, str] = {}  # agent id -> project slug
         self._lock = threading.Lock()
         self.on_stop = lambda: None  # set by the server: close tunnels when the app quits
+        self.persist = lambda running: None  # set by the server: remember helpers to resume after a restart
 
     # -- control
 
@@ -264,9 +265,16 @@ class Manager:
                 self.sessions[sid] = s
                 threading.Thread(target=self._run, args=(s,), daemon=True, name=f"agent-{sid}").start()
                 ids.append(sid)
+        self.persist(self.running())
         return ids
 
+    def running(self) -> list[dict]:
+        """The helpers that should keep working: resumed by the server after the app restarts."""
+        return [{"kind": s.kind, "slug": s.slug, "options": {k: v for k, v in s.options.items() if k != "api_key"}}
+                for s in self.sessions.values() if s.state in ("starting", "working", "waiting") and not s.stop.is_set()]
+
     def stop(self, sid: str | None = None) -> None:
+        """Stop one helper (for good) or all of them (the app is quitting: they resume next time)."""
         for s in list(self.sessions.values()):
             if sid in (None, s.id):
                 s.stop.set()
@@ -274,6 +282,8 @@ class Manager:
                     _terminate(s.proc)
                 if s.state not in ("error",):
                     s.state = "stopped"
+        if sid is not None:
+            self.persist(self.running())
 
     def remove(self, sid: str) -> None:
         self.stop(sid)
@@ -355,6 +365,9 @@ class Manager:
             s.stop.wait(3 if ok else min(60, 5 * failures + max(0, 10 - (time.time() - t0))))
         if s.state != "error":
             s.state = "stopped"
+        if not s.stop.is_set():  # finished by itself (done, budget, errors): no need to resume it
+            s.stop.set()
+            self.persist(self.running())
         held = self.net.store.one("SELECT f.name FROM claims c JOIN functions f ON f.id=c.function_id WHERE c.agent_id=?", agent.id)
         link = self.net.links.get(s.slug)
         if held and link is not None:  # in a room, the host holds the real claim
@@ -367,6 +380,15 @@ class Manager:
 
     def prompt(self, s: Session) -> str:
         text = self._prompt(s)
+        # the know-how every session reads first, given up front (saves each session its first tool calls)
+        ov = self.net.overview(s.slug)
+        if ov.get("kind") == "fork":
+            topics = ["fork", "objdiff"]
+        else:
+            topics = ["workflow", {"psx": "psx", "ps2": "ps2", "gba": "agbcc"}.get(ov.get("platform")) or (
+                "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc")]
+        text += "\nKnow-how you'd otherwise read with guide() (more topics: guide()):\n\n" + "\n\n".join(
+            tools._guide(t) for t in topics)
         if (wish := self.net.instructions(s.slug)):
             text += f"\nThe user's instructions for this project (they come first):\n{wish}\n"
         return text

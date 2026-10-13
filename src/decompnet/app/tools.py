@@ -66,7 +66,7 @@ Use only the decomp tools. Repeat for up to {count} functions, then stop:
 2. get_context() shows the shared header every compile includes.
 3. Write the C function (same name as the assembly) and call compile_and_diff after every change.
    Read the diff: '<' '>' missing/extra instructions, 'i' operands, 'o' order, 'r' registers, 's' stack.
-   Fix structure first, registers last. guide("workflow") and guide("{compiler_guide}") have tricks.
+   Fix structure first, registers last. The workflow and {compiler_guide} guides are below.
    find_similar(function) shows look-alike functions; a matched one is the best starting point.
 4. Score 0 = matched and saved. Before moving on, share what you learned: edit_context for prototypes and
    structs you worked out, rename_symbol for functions/data whose purpose is now clear.

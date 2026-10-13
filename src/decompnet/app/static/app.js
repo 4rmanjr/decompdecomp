@@ -832,7 +832,7 @@ function layoutMap() {
 function applyClaims() {
   const working = new Map(S.claims.map((c) => [c.name, c.agent]));
   for (const f of S.map) {
-    if (f.status !== "matched") f.status = working.has(f.name) ? "working" : "open";
+    if (f.status !== "matched" && f.status !== "asm") f.status = working.has(f.name) ? "working" : "open";
     f.agent = working.get(f.name) || null;
     const sc = S.scores.get(f.name);
     if (sc) {
@@ -857,6 +857,7 @@ function drawMap() {
     const x = (i % cols) * (size + gap), y = Math.floor(i / cols) * (size + gap);
     let c, a = 1;
     if (f.status === "matched") c = colors.match;
+    else if (f.status === "asm") { c = colors.tried; a = 0.35; }
     else if (f.status === "working") { c = colors.work; a = 0.55 + 0.45 * Math.sin(now / 260 + i); live = true; }
     else if (f.best != null) c = mix(colors.tried, colors.hi, Math.pow(pctOf(f.best, f.insns) || 0, 3));
     else c = colors.open;
@@ -1351,12 +1352,12 @@ $("fnNext").onclick = () => stepFn(1);
 /* ------------------------------------------------------------------ function list */
 const L = { q: "", filter: "all", sort: "i", dir: 1, limit: 200, rows: [] };
 const FILTERS = [["all", "All"], ["open", "To do"], ["working", "Working"], ["tried", "Tried"], ["matched", "Matched"]];
-const fnState = (f) => (f.status === "matched" ? "matched" : f.status === "working" ? "working" : f.best != null ? "tried" : "open");
-const STATE_RANK = { working: 0, tried: 1, open: 2, matched: 3 };
+const fnState = (f) => (f.status === "matched" ? "matched" : f.status === "asm" ? "asm" : f.status === "working" ? "working" : f.best != null ? "tried" : "open");
+const STATE_RANK = { working: 0, tried: 1, open: 2, matched: 3, asm: 4 };
 
 function renderList() {
   if (!S.map.length || $("listView").hidden) return;
-  const counts = { all: S.map.length, open: 0, working: 0, tried: 0, matched: 0 };
+  const counts = { all: S.map.length, open: 0, working: 0, tried: 0, matched: 0, asm: 0 };
   for (const f of S.map) counts[fnState(f)]++;
   $("fnFilter").innerHTML = FILTERS.map(([k, label]) => `<button type="button" role="radio" aria-checked="${L.filter === k}" class="${L.filter === k ? "on" : ""}" data-filter="${k}">${label}<span>${counts[k].toLocaleString()}</span></button>`).join("");
   const q = L.q.trim().toLowerCase();
@@ -1372,7 +1373,7 @@ function renderList() {
   $("fnRows").innerHTML = rows.slice(0, L.limit).map((f) => {
     const st = fnState(f), p = pctOf(f.best, f.insns);
     const best = st === "matched" ? `<span class="ok">100%</span>` : p == null ? `<span class="dim">–</span>` : pctText(p);
-    const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
+    const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "asm" ? `<span class="st" title="hand-written assembly: no C compiles to it">assembly</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
       : st === "tried" ? `<span class="st tried">tried</span>` : `<span class="st">to do</span>`;
     return `<tr data-fn="${esc(f.name)}" class="${S.fn === f.name ? "sel" : ""}" tabindex="0"><td class="mono dim">${fork ? esc(f.unit || "") : hex8(f.vram)}</td>
       <td class="mono name">${esc(f.name)}</td><td class="r mono">${f.insns.toLocaleString()}</td><td class="r mono">${best}</td>

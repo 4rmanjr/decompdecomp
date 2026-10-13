@@ -354,13 +354,14 @@ class RomNetwork(Network):
                              (slug, info["title"], f"{info['game_code']} · {info['region']} · {len(fns)} functions",
                               "arm", 0, str(workdir), json.dumps(cfg))).lastrowid
             for f in fns:
+                name = f.asm_only or f.name  # known hand-written helpers keep their real name and stay assembly
                 db.execute(
-                    "INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                    (pid, f.name, len(f.code), f.n_insns, f.code, json.dumps([list(r) for r in f.refs or []]),
-                     f.asm, None, "rom", f.vram, f.rom))
+                    "INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset,status) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (pid, name, len(f.code), f.n_insns, f.code, json.dumps([list(r) for r in f.refs or []]),
+                     f.asm.replace(f.name, name), None, "rom", f.vram, f.rom, "asm" if f.asm_only else "open"))
                 db.execute("INSERT INTO symbols(project_id,name,address,size,kind,preview) VALUES(?,?,?,?,?,?)",
-                           (pid, f.name, f.vram, len(f.code), "func", None))
+                           (pid, name, f.vram, len(f.code), "func", None))
             db.execute("INSERT INTO context_versions(project_id,version,header,agent_id,message,created_at,unit) "
                        "VALUES(?,?,?,?,?,?,?)", (pid, 1, BASE_HEADER.format(title=info["title"]), None, "basic types", now, ""))
             self._event(db, pid, None, "import", f"{len(fns)} functions from {info['title']}")
@@ -1104,7 +1105,7 @@ class RomNetwork(Network):
             "ON a.id=c.agent_id WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
         remote = {c["vram"]: "@" + c["agent"] for c in (self.links[slug].claims if slug in self.links else [])}
         return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"], "unit": r["unit"],
-                 "status": "matched" if r["status"] == "matched" else "working" if (r["agent"] or r["vram"] in remote) else "open",
+                 "status": r["status"] if r["status"] in ("matched", "asm") else "working" if (r["agent"] or r["vram"] in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"]),
                  "matched_at": r["matched_at"]} for r in rows]
 

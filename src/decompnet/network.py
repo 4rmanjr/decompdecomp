@@ -24,7 +24,7 @@ from .store import Store
 
 CLAIM_TTL = 30 * 60
 STRATEGIES = {
-    "easiest": "f.abandons >= 3, f.n_insns ASC",
+    "easiest": "f.abandons > 0, f.n_insns ASC",
     "closest": "f.best_score IS NULL, CAST(f.best_score AS REAL) / (f.n_insns * 100) ASC",
     "hardest": "f.n_insns DESC",
     "random": "RANDOM()",
@@ -261,8 +261,10 @@ class Network:
             else:
                 fn = db.execute(
                     f"""SELECT f.* FROM functions f WHERE f.project_id=? AND f.status='open'
-                        AND f.id NOT IN (SELECT function_id FROM claims) ORDER BY {STRATEGIES[strategy]} LIMIT 1""",
-                    (proj["id"],),
+                        AND f.id NOT IN (SELECT function_id FROM claims)
+                        AND f.name NOT IN (SELECT detail FROM events WHERE project_id=? AND agent_id=? AND kind='release')
+                        ORDER BY {STRATEGIES[strategy]} LIMIT 1""",
+                    (proj["id"], proj["id"], agent.id),
                 ).fetchone()
                 if fn is None:
                     return None

@@ -73,6 +73,15 @@ def find_functions(rom_path: Path, workdir: Path, rounds: int = 4) -> tuple[str,
     return asm, found
 
 
+def call_via(code: bytes) -> str | None:
+    """libgcc's `_call_via_rN` thunks (`bx rN` and a nop): hand-written assembly no C compiles to."""
+    if len(code) in (2, 4) and code[1] == 0x47 and code[0] & 0x87 == 0 and code[2:] in (b"", b"\xc0\x46", b"\0\0"):
+        reg = (code[0] >> 3) & 0xF
+        if reg < 13:  # `bx lr` alone is also an empty C function
+            return f"_call_via_r{reg}"
+    return None
+
+
 @dataclass
 class GbaFunction:
     name: str
@@ -83,6 +92,7 @@ class GbaFunction:
     n_insns: int
     thumb: bool = True
     refs: list[tuple[int, int, int]] | None = None  # (offset, kind, address): 10 = call, 2 = data pointer
+    asm_only: str | None = None  # the name of a known hand-written assembly helper
 
 
 def _asm_blocks(asm: str) -> dict[int, tuple[str, bool]]:
@@ -144,6 +154,6 @@ def split(rom_path: Path, workdir: Path, log=print) -> list[GbaFunction]:
         text, thumb = blocks.get(addr, (f"\tthumb_func_start sub_{addr:08X}\n", True))
         code = rom[off:end]
         out.append(GbaFunction(f"sub_{addr:08X}", addr, off, code, text, max(1, len(code) // 2), thumb,
-                               _refs(code, addr, literals, off)))
+                               _refs(code, addr, literals, off), call_via(code)))
     log(f"found {len(out)} functions")
     return out

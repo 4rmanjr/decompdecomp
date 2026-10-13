@@ -320,6 +320,20 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 "json": json.dumps({"mcpServers": {"decomp": {"type": "http", "url": mcp_url,
                                                               "headers": {"Authorization": f"Bearer {token}"}}}}, indent=2)}
 
+    def p_try(slug, request, data):
+        """You, editing a function in the GUI: judged like an agent's attempt (and credited to "you")."""
+        agent, _ = net.local_agent("you")
+        res = net.attempt(agent, str(data.get("name", "")), str(data.get("source", "")), slug)
+        return {"score": res["score"], "matched": res["matched"], "text": res["text"][-4000:]}
+
+    def p_release(slug, request, data):
+        agent, _ = net.local_agent("you")
+        try:
+            net.release(agent, str(data.get("name", "")), "", slug)
+        except NetworkError:
+            pass  # not yours (any more): nothing to give back
+        return {"ok": True}
+
     routes = {
         "/api/project": (p_overview, ["GET"]), "/api/map": (lambda s, r, d: net.function_map(s), ["GET"]),
         "/api/live": (p_live, ["GET"]),
@@ -328,6 +342,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                                                         r.query_params.get("which", "latest")), ["GET"]),
         "/api/compiler": (p_compiler, ["POST"]), "/api/export": (p_export, ["POST"]), "/api/open": (p_open, ["POST"]),
         "/api/delete": (p_delete, ["POST"]), "/api/agents/manual": (p_manual, ["POST"]),
+        "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))

@@ -7,6 +7,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const hex8 = (n) => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(8, "0");
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const pctOf = (best, insns) => (best == null ? null : Math.max(0, 1 - best / Math.max(1, insns * 100)));
+/* A match percentage that never reads 100% before the function really matches (99.6% stays 99.6%). */
+const pctText = (p) => (p >= 0.99 ? `${(Math.floor(p * 1000) / 10).toFixed(1)}%` : `${Math.floor(p * 100)}%`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 function since(t) {
@@ -887,7 +889,7 @@ $("map").addEventListener("mousemove", (ev) => {
   if (i < 0) { tip.hidden = true; return; }
   const f = S.map[i];
   const p = pctOf(f.best, f.insns);
-  const status = f.status === "matched" ? "matched" : f.status === "working" ? `${esc(f.agent)} is on it` : f.best != null ? `best ${(p * 100).toFixed(0)}%` : "not started";
+  const status = f.status === "matched" ? "matched" : f.status === "working" ? `${esc(f.agent)} is on it` : f.best != null ? `best ${pctText(p)}` : "not started";
   tip.innerHTML = `<b>${esc(f.name)}</b><br>${hex8(f.vram)} · ${f.insns} instructions<br>${status}`;
   tip.hidden = false;
   const wrap = $("mapWrap").getBoundingClientRect();
@@ -922,7 +924,7 @@ function renderNow(claims) {
     const sc = S.scores.get(c.name) || [];
     const p = pctOf(c.best_score, c.n_insns);
     return `<div class="job" data-fn="${esc(c.name)}"><div class="job-top"><span class="job-name">${esc(c.name)}</span><span class="job-who">${esc(c.agent)}</span></div>
-      ${spark(sc)}<div class="job-foot"><span>${c.n_insns} insns · ${c.attempts} tries</span><b>${p == null ? "starting" : (p * 100).toFixed(0) + "%"}</b></div></div>`;
+      ${spark(sc)}<div class="job-foot"><span>${c.n_insns} insns · ${c.attempts} tries</span><b>${p == null ? "starting" : pctText(p)}</b></div></div>`;
   }).join("");
   box.querySelectorAll(".job").forEach((j) => { j.onclick = () => openFn(j.dataset.fn); });
 }
@@ -984,10 +986,10 @@ function groupHtml(g) {
   const who = `<span class="who">${esc(g.agent || "")}</span>`;
   const p = pctOf(g.best, g.insns);
   if (g.matched) return `<span class="ok">✓</span> ${who} matched ${fnLink(g.fn)}${g.tries ? ` <span class="score">after ${plural(g.tries, "compile")}</span>` : ""}`;
-  if (g.released) return `${who} set ${fnLink(g.fn)} aside, with notes for the next agent${g.tries ? ` <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${(p * 100).toFixed(0)}%` : ""}</span>` : ""}`;
+  if (g.released) return `${who} set ${fnLink(g.fn)} aside, with notes for the next agent${g.tries ? ` <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${pctText(p)}` : ""}</span>` : ""}`;
   if (!g.tries) return `${who} started ${fnLink(g.fn)}`;
   const last = g.lastScore === undefined ? "" : g.lastScore === null ? ` · <span class="bad">last one didn't compile</span>` : "";
-  return `${who} working on ${fnLink(g.fn)} <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${(p * 100).toFixed(0)}%` : ""}</span>${last}`;
+  return `${who} working on ${fnLink(g.fn)} <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${pctText(p)}` : ""}</span>${last}`;
 }
 function addLine(t, html, first) {
   const list = $("activity");
@@ -1090,6 +1092,7 @@ function highlightC(text) {
 
 async function openFn(name) {
   const again = S.fn === name && !$("drawer").hidden;
+  if (!again) { giveBack(name); S.editDirty = false; $("tryMsg").hidden = true; }
   S.fn = name;
   $("drawer").hidden = false;
   if (!again) { S.ftab = null; S.which = "latest"; S.diffKey = null; $("diff").innerHTML = ""; $("diffSum").textContent = ""; }
@@ -1103,7 +1106,7 @@ function fnBadge(d = S.fnDetail) {
   const working = S.claims.find((c) => c.name === d.name);
   const st = $("fnStatus");
   st.className = "badge " + (d.status === "matched" ? "matched" : working ? "working" : "");
-  st.textContent = d.status === "matched" ? "matched" : working ? `${working.agent} working` : d.best != null ? `best ${(pctOf(d.best, d.insns) * 100).toFixed(0)}%` : "not started";
+  st.textContent = d.status === "matched" ? "matched" : working ? `${working.agent} working` : d.best != null ? `best ${pctText(pctOf(d.best, d.insns))}` : "not started";
 }
 
 function showFnTab(tab) {
@@ -1137,8 +1140,8 @@ async function refreshFn(first) {
     $("fnAsm").innerHTML = highlightAsm(d.asm);
     const kinds = { matched: "Matching C", best: "Best attempt so far", latest: S.ov.kind === "fork" ? "In the source now" : "Latest attempt", draft: "Machine draft (m2c)" };
     $("fnSrcKind").textContent = kinds[d.source_kind] || "No C yet";
-    $("fnSrc").innerHTML = d.source ? highlightC(d.source) : `<span class="cm">/* no attempt yet */</span>`;
-    $("copySrc").onclick = () => navigator.clipboard.writeText(d.source || "").then(() => toast("Copied."));
+    if (!S.editDirty || first) setEditor(d.source || "", d);
+    $("copySrc").onclick = () => navigator.clipboard.writeText($("fnEdit").value).then(() => toast("Copied."));
     renderFnChart(d);
     $("diffWhich").hidden = d.status === "matched" || S.ov.kind === "fork" || d.scores.filter((x) => x.score != null).length < 2;
     const xr = [];
@@ -1152,6 +1155,67 @@ async function refreshFn(first) {
   } catch (e) {
     if (first) toast(esc(e.message), "err");
   } finally { fnBusy = false; }
+}
+
+/* Editing a function yourself: a highlighted editor over a textarea, judged like an agent's attempt. */
+function setEditor(source, d) {
+  const ta = $("fnEdit");
+  ta.value = source || (d && d.status !== "matched" ? `/* write ${d.name} here */\n` : "");
+  paintEditor();
+  S.editDirty = false;
+}
+function paintEditor() {
+  const ta = $("fnEdit");
+  $("fnSrc").innerHTML = highlightC(ta.value) + "\n";
+  $("fnSrc").scrollTop = ta.scrollTop; $("fnSrc").scrollLeft = ta.scrollLeft;
+}
+$("fnEdit").addEventListener("input", () => { S.editDirty = true; paintEditor(); });
+$("fnEdit").addEventListener("scroll", () => { $("fnSrc").scrollTop = $("fnEdit").scrollTop; $("fnSrc").scrollLeft = $("fnEdit").scrollLeft; });
+$("fnEdit").addEventListener("keydown", (e) => {
+  const ta = e.target;
+  if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault();
+    const { selectionStart: a, selectionEnd: b } = ta;
+    ta.setRangeText("    ", a, b, "end");
+    S.editDirty = true; paintEditor();
+  } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    tryIt();
+  }
+});
+$("tryBtn").onclick = () => tryIt();
+
+async function tryIt() {
+  const name = S.fn, source = $("fnEdit").value, msg = $("tryMsg");
+  if (!name || !source.trim() || $("tryBtn").disabled) return;
+  $("tryBtn").disabled = true;
+  msg.hidden = false; msg.className = "try-msg"; msg.textContent = "Compiling…";
+  try {
+    const r = await api("/api/try", { method: "POST", body: { slug: S.slug, name, source } });
+    if (r.matched) {
+      S.myClaim = null;
+      msg.className = "try-msg ok"; msg.textContent = "Byte-identical. Saved as a match, credited to you.";
+      toast(`<code>${esc(name)}</code>&nbsp;matched by you`, "match");
+    } else {
+      S.myClaim = name;
+      msg.className = "try-msg" + (r.score == null ? " bad" : "");
+      msg.textContent = r.score == null ? "It didn't compile:" : (r.text.split("\n")[0] || `score ${r.score}`);
+      if (r.score == null) msg.textContent += "\n" + r.text.split("\n").slice(1, 12).join("\n");
+    }
+    S.editDirty = false;
+    S.diffKey = null;
+    await refreshFn(false);
+    if (r.score != null) { S.ftab = "diff"; showFnTab("diff"); }
+  } catch (e) {
+    msg.className = "try-msg bad"; msg.textContent = e.message;
+  } finally { $("tryBtn").disabled = false; }
+}
+/* The function stays yours only while you're on it: give it back when you move on. */
+function giveBack(next) {
+  if (S.myClaim && S.myClaim !== next && S.slug) {
+    api("/api/release", { method: "POST", body: { slug: S.slug, name: S.myClaim } }).catch(() => {});
+    S.myClaim = null;
+  }
 }
 
 /* Score per compile, as a match percentage: dots for each compile, a line for the best so far. */
@@ -1185,7 +1249,7 @@ function renderFnChart(d) {
   svg.innerHTML = out;
   const fails = pts.filter((p) => p.score == null).length;
   const bp = best == null ? null : pctOf(best, d.insns);
-  $("fnChartNote").innerHTML = `<b>${plural(n, "compile")}</b>${bp != null ? ` · best ${best === 0 ? "byte-identical" : (bp * 100).toFixed(1) + "%"}` : ""}${fails ? ` · ${fails} didn't compile` : ""}${agents.length > 1 ? ` · ${agents.map(esc).join(", ")}` : ` · ${esc(agents[0] || "")}`}`;
+  $("fnChartNote").innerHTML = `<b>${plural(n, "compile")}</b>${bp != null ? ` · best ${best === 0 ? "byte-identical" : pctText(bp)}` : ""}${fails ? ` · ${fails} didn't compile` : ""}${agents.length > 1 ? ` · ${agents.map(esc).join(", ")}` : ` · ${esc(agents[0] || "")}`}`;
 }
 
 /* The judge's diff: target and attempt side by side, instruction by instruction. */
@@ -1288,7 +1352,7 @@ function renderList() {
   const fork = S.ov && S.ov.kind === "fork";
   $("fnRows").innerHTML = rows.slice(0, L.limit).map((f) => {
     const st = fnState(f), p = pctOf(f.best, f.insns);
-    const best = st === "matched" ? `<span class="ok">100%</span>` : p == null ? `<span class="dim">–</span>` : `${(p * 100).toFixed(0)}%`;
+    const best = st === "matched" ? `<span class="ok">100%</span>` : p == null ? `<span class="dim">–</span>` : pctText(p);
     const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
       : st === "tried" ? `<span class="st tried">tried</span>` : `<span class="st">to do</span>`;
     return `<tr data-fn="${esc(f.name)}" class="${S.fn === f.name ? "sel" : ""}" tabindex="0"><td class="mono dim">${fork ? esc(f.unit || "") : hex8(f.vram)}</td>
@@ -1343,16 +1407,17 @@ function renderProgress() {
 
 /* ------------------------------------------------------------------ sheets */
 function closeAll() {
+  if (!$("drawer").hidden) giveBack(null);
   for (const id of ["drawer", "agentSheet", "setupSheet", "dialog"]) $(id).hidden = true;
   S.fn = null;
   if (S.map.length) drawMap();
 }
 document.querySelectorAll(".drawer").forEach((d) => {
-  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) { d.hidden = true; if (d.id === "drawer") { S.fn = null; drawMap(); } } });
+  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) { if (d.id === "drawer") giveBack(null); d.hidden = true; if (d.id === "drawer") { S.fn = null; drawMap(); } } });
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { closeAll(); return; }
-  if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;  // typing
   if (!$("drawer").hidden && (e.key === "j" || e.key === "k")) { e.preventDefault(); stepFn(e.key === "j" ? 1 : -1); return; }
   if (e.key === "/" && !$("project").hidden && $("drawer").hidden) { e.preventDefault(); showView("list"); $("fnSearch").focus(); }
 });

@@ -472,3 +472,15 @@ button { cursor: pointer; border: 0; background: none; }
 .logbox { width: 100%; text-align: left; }
 .logbox summary { font-size: 12px; color: var(--muted); cursor: pointer; width: max-content; margin: 0 auto 8px; }
 .logbox summary:hover { color: var(--ink); }
+
+/* ------------------------------------------------------------------ editing a function yourself */
+.editor { position: relative; height: min(58vh, 560px); border-radius: 10px; background: var(--code-bg); border: 1px solid var(--line-soft); overflow: hidden; }
+.editor:focus-within { border-color: color-mix(in srgb, var(--match) 55%, var(--line)); }
+.editor pre, .editor textarea { position: absolute; inset: 0; margin: 0; padding: 14px 16px; border: 0; border-radius: 0; max-height: none; font: 12.5px/1.6 var(--mono); white-space: pre; tab-size: 4; overflow: auto; }
+.editor pre { pointer-events: none; overflow: hidden; background: none; }
+.editor textarea { color: transparent; background: transparent; caret-color: var(--ink); resize: none; outline: none; }
+.editor textarea::selection { background: color-mix(in srgb, var(--match) 30%, transparent); color: transparent; }
+.edit-bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.try-msg { margin-top: 10px; font: 12.5px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; }
+.try-msg.ok { color: var(--match); }
+.try-msg.bad { color: var(--miss); }

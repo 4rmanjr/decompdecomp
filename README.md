@@ -183,7 +183,7 @@ breaks any function that already matched is undone.
 | **Look-alikes** | `find_similar` spots copy-pasted and inlined code across the whole game and starts agents from what already matches. |
 | **Drafts** | m2c for MIPS, PowerPC and ARM; optional Ghidra for x86, AArch64 and everything else. |
 | **Agent toolkit** | A data inspector, a call graph, splitting merged functions, and guides for MIPS, PowerPC, ARM, x86, AArch64, IDO, GCC, Metrowerks, agbcc, PSY-Q, C++ and objdiff. |
-| **Decompile together** | Invite friends who own the same game; only the work is shared, never the ROM. |
+| **Decompile together** | A team of any size, each with their own copy and agents: one host, public or private rooms, hosted by you (home PC or server, `decomp host`). Only the work is shared, never the game. |
 | **Rebuildable export** | A decomp project that rebuilds your game byte for byte, ready for ports and mods and for any other tool or agent. |
 | **Every major disc format** | ROMs, PlayStation discs, GameCube and Wii discs (ISO, GCM, RVZ, WIA, WBFS, CISO, GCZ) and program files, streamed from disk. |
 
@@ -204,15 +204,34 @@ and tells you how to sign in. You pay your own provider; in our tests a small fu
 
 ## Decompile together
 
-1. The host opens a project and clicks **Invite friends**. The app opens a private Cloudflare quick tunnel to the
-   host's computer.
-2. Friends paste the link into **Join a friend's room** and pick **their own copy** of the game. Its fingerprint must
-   match the host's.
-3. Everyone adds agents. The host hands out functions so nobody collides, re-checks every claimed match against its
-   own ROM, and shares names, structs and notes with the room.
+A whole team, any size, each on their own computer with their own copy of the game and their own agents, working on
+one game. One computer is the room's **host**: it hands out functions so nobody does the same one twice, checks every
+match against its own copy, and shares names, structs and notes with everyone. Nothing goes through decomp.wtf's
+website: the people who decompile together host their room and decide who's in.
 
-No ROM bytes or assembly ever cross the wire: everyone reads the code from their own copy. If the host restarts, they
-share a new link and friends click **Reconnect**.
+**On a home PC:** open the project, click **Decompile together**, **Start sharing**. Send the link.
+
+**On a server** (or any always-on machine):
+
+```
+curl -fsSL https://decomp.wtf/install.sh | bash
+decomp host mygame.z64 --own-copy --address http://my-server:6481 --service
+```
+
+That runs decomp.wtf in the background (starting with the computer), imports your copy, opens the room and prints the
+link. **Joining:** paste the link into **Join a team's room** in the app, or `decomp join <link> <your copy> --name you`.
+
+| | |
+| :-- | :-- |
+| **Private or public** | Private rooms need the invite link; public rooms only the address. Optionally approve each new member. |
+| **Your address** | A free Cloudflare quick tunnel with nothing to set up, or an address you control: your LAN, Tailscale, a server. Rooms at your own address reopen with the same link after a restart. |
+| **The host's controls** | Who's online and on what, remove members, a fresh invite link, stop sharing. |
+| **Light on the host** | Members compile their own attempts; the host compiles only to verify matches. Agents wait while the host is away and carry on when it's back. |
+
+No ROM bytes or assembly ever cross the wire: everyone reads the code from their own copy, which must be identical to
+the host's. The decompiled code of a commercial game belongs to its rights holder: share it only with people who own
+the game. Rooms work for games started from a ROM; GameCube, Wii and DS projects are git repositories, which a team
+shares like any other (GitHub, GitLab, its own server).
 
 ## Platforms
 

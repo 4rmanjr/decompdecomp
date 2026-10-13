@@ -14,7 +14,7 @@
 # Options: --no-start (install only)
 set -euo pipefail
 
-VERSION="0.8.0"
+VERSION="0.8.1"
 WHEEL="${DECOMP_WHEEL:-https://decomp.wtf/dl/decompnet-${VERSION}-py3-none-any.whl}"
 START=1
 for arg in "$@"; do
@@ -59,6 +59,9 @@ uv tool update-shell >/dev/null 2>&1 || true
 
 step "downloading the compilers and tools"
 "$BIN/decomp" setup
+
+# an older decomp.wtf still running from before this upgrade: stop it, so the new version takes over
+"$BIN/decomp" stop >/dev/null 2>&1 || true
 
 "$BIN/decomp" shortcut >/dev/null 2>&1 && step "added decomp.wtf to your apps" || true
 

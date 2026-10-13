@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 from .. import __version__
-from .cli import _alive, home_dir
+from .cli import _alive, home_dir, replace_older
 
 
 def _log(msg: str) -> None:
@@ -38,7 +38,7 @@ def ensure_app(home: Path) -> dict:
     """The running app's {port, secret}, starting it in the background first if needed."""
     internal = home / ".decomp"
     state = internal / "server.json"
-    if (info := _running(state)):
+    if replace_older(state, log=_log) and (info := _running(state)):  # an older version is restarted as this one
         return info
     internal.mkdir(parents=True, exist_ok=True)
     _log("starting decomp.wtf in the background")
@@ -92,8 +92,12 @@ async def proxy(port: int, token: str) -> None:
 
 
 def main(name: str = "chat") -> int:
-    info = ensure_app(home_dir())
-    token = mint(info, name)
+    try:
+        info = ensure_app(home_dir())
+        token = mint(info, name)
+    except (OSError, ValueError, KeyError) as e:
+        _log(f"couldn't connect to decomp.wtf: {e}. Try `decomp stop`, then use this again.")
+        return 1
     try:
         asyncio.run(proxy(info["port"], token))
     except KeyboardInterrupt:

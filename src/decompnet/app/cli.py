@@ -24,11 +24,45 @@ def home_dir() -> Path:
 
 
 def _alive(port: int) -> bool:
+    return _running_version(port) is not None
+
+
+def _running_version(port: int) -> str | None:
+    """The version of the decomp.wtf answering on this port ("" when it doesn't say), or None."""
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1.5) as r:
-            return json.loads(r.read()).get("app") == "decomp-wtf"
+            data = json.loads(r.read())
+            return str(data.get("version") or "") if data.get("app") == "decomp-wtf" else None
     except (OSError, ValueError):
-        return False
+        return None
+
+
+def replace_older(state_file: Path, log=print) -> dict | None:
+    """The running app's {port, secret} when it's this version. An older one (still running after an upgrade) is
+    stopped, so the new version starts in its place: returns None then, and when nothing runs."""
+    try:
+        prev = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        return None
+    running = _running_version(prev.get("port") or 0)
+    if running is None:
+        return None
+    mine = __import__("decompnet").__version__
+    if running == mine:
+        return prev
+    log(f"decomp.wtf {running} is still running; restarting it as {mine}")
+    req = urllib.request.Request(f"http://127.0.0.1:{prev['port']}/api/quit", method="POST", data=b"{}",
+                                 headers={"Cookie": f"decomp_live={prev['secret']}", "X-Decomp": "1",
+                                          "Host": f"127.0.0.1:{prev['port']}", "Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except OSError:
+        pass
+    for _ in range(100):
+        if _running_version(prev["port"]) is None:
+            break
+        time.sleep(0.1)
+    return None
 
 
 def _listen(start: int) -> socket.socket:
@@ -65,11 +99,8 @@ def run(args) -> int:
     internal = home / ".decomp"
     internal.mkdir(parents=True, exist_ok=True)
     state_file = internal / "server.json"
-    try:
-        prev = json.loads(state_file.read_text())
-    except (OSError, ValueError):
-        prev = {}
-    if prev.get("port") and _alive(prev["port"]):
+    prev = replace_older(state_file)
+    if prev:
         url = f"http://127.0.0.1:{prev['port']}/?k={prev['secret']}"
         print(f"decomp.wtf is already running: {url}")
         if not args.no_browser:

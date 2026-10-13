@@ -140,3 +140,38 @@ def test_helpers_are_remembered_to_resume(app):
     manager.stop(sid)  # you stopping it: forgotten
     assert seen[-1] == []
     manager.remove(sid)
+
+
+def test_an_older_app_still_running_after_an_upgrade_is_replaced(tmp_path):
+    """After an upgrade the old version may still be running: `decomp` and `decomp mcp` stop it and start the new
+    one, instead of talking to an app that doesn't know the new endpoints."""
+    import http.server
+    import threading
+
+    from decompnet.app.cli import replace_older
+
+    quit_called = threading.Event()
+
+    class Old(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"ok": True, "app": "decomp-wtf", "version": "0.4.2"}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            quit_called.set()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Old)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    state = tmp_path / "server.json"
+    state.write_text(json.dumps({"port": server.server_address[1], "secret": "s"}))
+    assert replace_older(state, log=lambda *_: None) is None and quit_called.is_set()
+    server.server_close()

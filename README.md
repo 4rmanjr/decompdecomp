@@ -42,8 +42,8 @@ Point the AI agent you already use at a game you own. **decomp.wtf** hands it th
 compiles every attempt with the game's **original compiler**, and checks the result **byte for byte**. Score 0, or
 it doesn't count. There are two ways in:
 
-- **Start from scratch.** Drop in a game for N64, PlayStation 1 or 2, GameCube, Wii or Game Boy Advance: a ROM,
-  a disc image or the program file. decomp.wtf finds every function and your agents take it from there. The
+- **Start from scratch.** Drop in a game for N64, PlayStation 1 or 2, GameCube, Wii, Game Boy Advance or DS: a
+  ROM, a disc image or the program file. decomp.wtf finds every function and your agents take it from there. The
   result is a project that rebuilds your game byte for byte: the base for ports and mods.
 - **Continue a public decomp.** Pick one of the [245 projects on decomp.dev](https://decomp.dev) for GameCube, Wii,
   PlayStation 1 and 2, N64, GBA, DS, Switch, PC, Xbox 360 and more, add your own copy of its game, and your agents
@@ -196,22 +196,26 @@ share a new link and friends click **Reconnect**.
 | **PlayStation 2** | ✓ disc or ELF | EE-GCC 2.96 | ✓ export | ✓ |
 | **GameCube · Wii** | ✓ disc (ISO, RVZ, WBFS…) or DOL | CodeWarrior GC 1.0 – Wii 1.7 | ✓ dtk-template | ✓ |
 | **Game Boy Advance** | ✓ ROM | agbcc | ✓ export | ✓ |
-| **DS · 3DS · PSP · Switch · PC · Xbox · Xbox 360** | coming | | | ✓ |
+| **Nintendo DS** | ✓ ROM (.nds) | CodeWarrior for DS 1.2 – DSi 1.6 | ✓ ds-decomp | ✓ |
+| **3DS · PSP · Switch · PC · Xbox · Xbox 360** | coming | | | ✓ |
 
 **From scratch.** splat and spimdisasm split MIPS games, decomp-toolkit analyses GameCube and Wii programs inside a
-generated [dtk-template](https://github.com/encounter/dtk-template) project, and Game Boy Advance ROMs are split
-by [luvdis](https://github.com/aarant/luvdis) plus decomp.wtf's own pass for code nothing calls. Every attempt is
+generated [dtk-template](https://github.com/encounter/dtk-template) project, [ds-decomp](https://github.com/AetiasHax/ds-decomp)
+analyses DS ROMs (ARM9, ITCM, DTCM, overlays) inside a generated project of the same kind, and Game Boy Advance
+ROMs are split by [luvdis](https://github.com/aarant/luvdis) plus decomp.wtf's own pass for code nothing calls. Every attempt is
 compiled with the game's compiler and checked byte for byte: linked at its address in the original (MIPS, ARM)
-or judged by objdiff inside the project's own build (GameCube, Wii).
+or judged by objdiff inside the project's own build (GameCube, Wii, DS).
 
-**The base for ports and mods.** *Export project* writes a normal decomp tree (matched functions as C, the rest
-as assembly from splat or luvdis, a linker script and `build.py`) and proves it rebuilds your game byte for byte. GameCube and Wii
-projects are dtk-template projects that rebuild the game on every build. Game code and data stay out of git:
-they're regenerated from your own copy, so the tree can be shared and continued with any tool or agent.
+**The base for ports and mods.** *Export project* writes a normal decomp tree (matched functions as C, the rest as
+assembly from splat or luvdis, a linker script and `build.py`) and proves it rebuilds your game byte for byte.
+GameCube and Wii projects are dtk-template projects and DS projects are ds-decomp projects; both rebuild the game on
+every build. Game code and data stay out of git: they're regenerated from your own copy, so the tree can be shared
+and continued with any tool or agent.
 
-**Proprietary compilers** (IDO, CodeWarrior) are only installed after you accept that. Heavy tools run with a
-memory cap, so a runaway analysis can't take your computer down. KMC GCC, EE-GCC and agbcc are Linux programs
-(the app runs them in a sandbox); on macOS and Windows those platforms work through public decomps for now.
+**Proprietary compilers** (IDO, CodeWarrior, CodeWarrior for DS) are only installed after you accept that. Heavy
+tools run with a memory cap, so a runaway analysis can't take your computer down. KMC GCC, EE-GCC and agbcc are
+Linux programs (the app runs them in a sandbox); on macOS and Windows those platforms work through public decomps
+for now.
 
 ## Development
 

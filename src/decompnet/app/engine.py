@@ -42,12 +42,16 @@ COMPILERS = {
 SHORT_NAMES = {"gcc-2.7.2-kmc": "KMC GCC 2.7.2", "ido-7.1": "IDO 7.1", "ido-5.3": "IDO 5.3",
                "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)", "ee-gcc-2.96": "EE-GCC 2.96",
                "agbcc": "agbcc"}
-# CodeWarrior versions in the `mwcc` pack, for GameCube and Wii games started from scratch.
+# CodeWarrior versions in the `mwcc` pack (GameCube, Wii) and the `mwccarm` pack (DS), for games started from scratch.
 MW_VERSIONS = {
     "gc": ["GC/1.0", "GC/1.1", "GC/1.1p1", "GC/1.2.5", "GC/1.2.5n", "GC/1.3", "GC/1.3.2", "GC/1.3.2r", "GC/2.0",
            "GC/2.0p1", "GC/2.5", "GC/2.6", "GC/2.7", "GC/3.0a3", "GC/3.0a3.2", "GC/3.0a3.3", "GC/3.0a3.4", "GC/3.0a5",
            "GC/3.0a5.2"],
     "wii": ["Wii/0x4201_127", "Wii/1.0RC1", "Wii/1.0a", "Wii/1.0", "Wii/1.1", "Wii/1.3", "Wii/1.5", "Wii/1.6", "Wii/1.7"],
+    "ds": ["DS/1.2/base", "DS/1.2/sp2", "DS/1.2/sp2p3", "DS/1.2/sp3", "DS/1.2/sp4", "DS/2.0/base", "DS/2.0/sp1",
+           "DS/2.0/sp1p2", "DS/2.0/sp1p5", "DS/2.0/sp1p6", "DS/2.0/sp1p7", "DS/2.0/sp2", "DS/2.0/sp2p2", "DS/2.0/sp2p3",
+           "DS/2.0/sp2p4", "DS/dsi/1.1", "DS/dsi/1.1p1", "DS/dsi/1.2", "DS/dsi/1.2p1", "DS/dsi/1.2p2", "DS/dsi/1.3",
+           "DS/dsi/1.3p1", "DS/dsi/1.6sp1", "DS/dsi/1.6sp2"],
 }
 
 # Tools shown in Setup besides the compilers.
@@ -56,6 +60,8 @@ TOOLS = {
     "objdiff-cli": "judges forks of public decomps, function by function",
     "ghidra": "drafts for PC, Switch and other platforms m2c can't read (540 MB, needs Java 21+)",
     "mwcc": "CodeWarrior, the compilers of GameCube and Wii games (proprietary)",
+    "mwccarm": "CodeWarrior for DS, the compilers of DS games (proprietary)",
+    "dsd": "ds-decomp: analyses DS ROMs and rebuilds them",
 }
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
                       "ps2": ["ee-gcc-2.96"], "gba": ["agbcc"]}
@@ -237,10 +243,10 @@ class RomNetwork(Network):
         as a target. Returns the slug."""
         if not confirmed:
             raise NetworkError("confirm that this is your own legally obtained copy of the game")
-        nintendo = self._gamecube_or_wii(data, name)
-        if nintendo is not None:  # a dtk-template project, worked on like a fork
-            compiler = toolchain if toolchain and toolchain.startswith(("GC/", "Wii/")) else None
-            return self.forks.create_scratch(nintendo, compiler=compiler, log=log)
+        project_file = self._community_layout(data, name)
+        if project_file is not None:  # a dtk-template or ds-decomp project, worked on like a fork
+            compiler = toolchain if toolchain and toolchain.startswith(("GC/", "Wii/", "DS/")) else None
+            return self.forks.create_scratch(project_file, compiler=compiler, log=log)
         picked = detect.identify(data, name)
         rom, info = picked.data, picked.info
         for p in self.store.all("SELECT slug, config FROM projects"):
@@ -360,19 +366,22 @@ class RomNetwork(Network):
         log(f"ready: {len(fns)} functions to decompile")
         return slug
 
-    def _gamecube_or_wii(self, data: bytes | Path, name: str = "") -> Path | None:
-        """The file, when it's a GameCube/Wii program (DOL) or disc image; bytes are saved to a file first."""
-        from ..forks import scratch_dtk
+    def _community_layout(self, data: bytes | Path, name: str = "") -> Path | None:
+        """The file, when the game starts as a community-layout project: a GameCube/Wii program (DOL) or disc image
+        (dtk-template), or a DS ROM (ds-decomp). Bytes are saved to a file first."""
+        from ..forks import scratch_dsd, scratch_dtk
 
         head = Path(data).open("rb").read(0x440) if isinstance(data, (str, Path)) else bytes(data[:0x440])
         small = Path(data).read_bytes() if isinstance(data, (str, Path)) and Path(data).stat().st_size < 64 << 20 else data
-        if scratch_dtk.disc_kind(head) is None and not (isinstance(small, (bytes, bytearray)) and scratch_dtk.is_dol(small)):
+        nds = scratch_dsd.is_nds(head)
+        if not nds and scratch_dtk.disc_kind(head) is None and not (isinstance(small, (bytes, bytearray))
+                                                                   and scratch_dtk.is_dol(small)):
             return None
         if isinstance(data, (str, Path)):
             return Path(data)
         uploads = self.workspace / ".decomp" / "uploads"
         uploads.mkdir(parents=True, exist_ok=True)
-        path = uploads / (Path(name).name or ("main.dol" if scratch_dtk.is_dol(data) else "game.iso"))
+        path = uploads / (Path(name).name or ("game.nds" if nds else "main.dol" if scratch_dtk.is_dol(data) else "game.iso"))
         path.write_bytes(data)
         return path
 

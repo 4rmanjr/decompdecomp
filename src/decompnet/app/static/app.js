@@ -166,7 +166,19 @@ function parseRom(buf) {
 
 /* What the user dropped, from its first bytes (nothing is uploaded until they confirm). */
 const PLATFORM_NAME = { n64: "Nintendo 64", psx: "PlayStation", ps2: "PlayStation 2", playstation: "PlayStation 1 or 2",
-  gc: "GameCube", wii: "Wii", gcwii: "GameCube or Wii", gba: "Game Boy Advance" };
+  gc: "GameCube", wii: "Wii", gcwii: "GameCube or Wii", gba: "Game Boy Advance", nds: "Nintendo DS" };
+const CW_PACK = {
+  gcwii: { id: "mwcc", text: "Install CodeWarrior, the compilers GameCube and Wii games were built with (about 80 MB). It's proprietary software, kept by the decomp community: only if you accept that." },
+  nds: { id: "mwccarm", text: "Install CodeWarrior for DS, the compilers DS games were built with (about 50 MB). It's proprietary software, kept by the decomp community: only if you accept that." },
+};
+function crc16(bytes, from, to) {
+  let crc = 0xffff;
+  for (let i = from; i < to; i++) {
+    crc ^= bytes[i];
+    for (let k = 0; k < 8; k++) crc = crc & 1 ? (crc >>> 1) ^ 0xa001 : crc >>> 1;
+  }
+  return crc;
+}
 const MB = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KiB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MiB`);
 
 function identifyHead(head, file) {
@@ -180,6 +192,10 @@ function identifyHead(head, file) {
     let sum = 0;
     for (let i = 0xa0; i < 0xbd; i++) sum += head[i];
     if (((-(sum + 0x19)) & 0xff) === head[0xbd]) return { ...base, platform: "gba", order: "ROM", code: ascii(0xac, 0xb0), title: ascii(0xa0, 0xac) || stem };
+  }
+  if (head.length >= 0x200 && crc16(head, 0, 0x15e) === dv.getUint16(0x15e, true)) {  // DS: the header's own checksum
+    const ram = dv.getUint32(0x28, true), entry = dv.getUint32(0x24, true);
+    if (ram >= 0x02000000 && ram < 0x02400000 && entry >= ram) return { ...base, platform: "nds", order: "ROM", code: ascii(12, 16), title: ascii(0, 12) || stem, entry };
   }
   if (text(0x8001, 0x8006) === "CD001" || text(0x9319, 0x931e) === "CD001") return { ...base, platform: "playstation", order: "disc image" };
   if (text(0, 4) === "\x7fELF" && head[5] === 1 && dv.getUint16(18, true) === 8) return { ...base, platform: "ps2", order: "ELF program", entry: dv.getUint32(24, true) };
@@ -212,6 +228,7 @@ async function pickFile(file) {
     }
   }
   picked = { buf, info, name: file.name };
+  if (!S.st) await loadState().catch(() => {});  // dropped before the page finished loading: the compiler lists
   $("romFile").textContent = file.name;
   $("romTitle").textContent = info.title;
   const p = info.platform;
@@ -220,7 +237,7 @@ async function pickFile(file) {
        ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]]
     : [["Platform", PLATFORM_NAME[p]], ["Format", info.order], ["Size", MB(info.size)],
        info.code ? ["Game ID", info.code] : ["Entry", info.entry != null ? hex8(info.entry) : "from the disc"],
-       ["Project", ["gc", "wii", "gcwii"].includes(p) ? "dtk-template" : p === "gba" ? "luvdis" : "splat"]];
+       ["Project", ["gc", "wii", "gcwii"].includes(p) ? "dtk-template" : p === "nds" ? "ds-decomp" : p === "gba" ? "luvdis" : "splat"]];
   $("romFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
   setupCompilers(info);
   $("dropIdle").hidden = true;
@@ -230,7 +247,7 @@ async function pickFile(file) {
 
 function setupCompilers(info) {
   const p = info.platform, select = $("compilerPick"), note = $("compilerNote");
-  const cw = S.st?.codewarrior || { installed: false, gc: [], wii: [] };
+  const cw = S.st?.codewarrior || { installed: false, ds_installed: false, gc: [], wii: [], ds: [] };
   $("compilerRow").hidden = false; note.hidden = true; $("mwConsent").hidden = true; $("mwAccept").checked = false;
   if (p === "n64") fillCompilers(select, info.compiler === "IDO" ? "ido-7.1" : "gcc-2.7.2-kmc", "N64");
   else if (p === "psx") fillCompilers(select, "gcc-2.7.2-psx", "PS1");
@@ -239,7 +256,14 @@ function setupCompilers(info) {
   else if (p === "playstation") {
     $("compilerRow").hidden = true; note.hidden = false;
     note.textContent = "The compiler is picked from the disc: PSY-Q-era GCC for PlayStation, EE-GCC for PlayStation 2. You can change it later.";
+  } else if (p === "nds") {
+    select.innerHTML = `<optgroup label="Nintendo DS">${cw.ds.map((v) => `<option value="${esc(v)}" ${v === "DS/2.0/sp1p5" ? "selected" : ""}>CodeWarrior for DS ${esc(v.slice(3))}</option>`).join("")}</optgroup>`;
+    note.hidden = false;
+    note.textContent = "Not sure? Keep the default; you can change it later in tools/configure.py if functions don't match.";
+    $("mwText").textContent = CW_PACK.nds.text;
+    $("mwConsent").hidden = cw.ds_installed;
   } else {
+    $("mwText").textContent = CW_PACK.gcwii.text;
     const group = (label, list, dflt) => `<optgroup label="${label}">${list.map((v) => `<option value="${esc(v)}" ${v === dflt ? "selected" : ""}>CodeWarrior ${esc(v)}</option>`).join("")}</optgroup>`;
     select.innerHTML = (p !== "wii" ? group("GameCube", cw.gc, "GC/1.3.2") : "") + (p !== "gc" ? group("Wii", cw.wii, p === "wii" ? "Wii/1.0" : "") : "");
     note.hidden = false;
@@ -298,7 +322,8 @@ async function runImport(query, file, title, name = "") {
 async function ensureCodeWarrior() {
   if ($("mwConsent").hidden) return;
   $("busyTitle").textContent = "Installing CodeWarrior…";
-  const { job } = await api("/api/toolchain", { method: "POST", body: { id: "mwcc", accept_license: true } });
+  const pack = picked && picked.info.platform === "nds" ? CW_PACK.nds : CW_PACK.gcwii;
+  const { job } = await api("/api/toolchain", { method: "POST", body: { id: pack.id, accept_license: true } });
   await followJob(job, $("jobLog"));
   await loadState();
 }
@@ -670,7 +695,7 @@ function renderFork(ov) {
   n.hidden = false;
   const repo = (ov.repo_url || "").replace(/^https?:\/\//, "");
   n.innerHTML = ov.origin === "scratch"
-    ? `<span><b>Started from scratch</b> · a ${ov.platform === "gc" || ov.platform === "wii" ? "dtk-template" : "decomp"} project that rebuilds your game byte for byte on every build${ov.compiler_name ? ` (CodeWarrior ${esc(ov.compiler_name)})` : ""}. Matches are committed to git in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button>`
+    ? `<span><b>Started from scratch</b> · a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game byte for byte on every build${ov.compiler_name ? ` (${esc(cwName(ov.compiler_name))})` : ""}. Matches are committed to git in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button>`
     : `<span><b>Fork of ${esc(repo)}</b> · matches are committed to the <code>decomp-wtf</code> branch in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button><a class="ghost small-btn as-btn" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">Repository</a>`;
   $("forkMeasure").onclick = async () => {
     toast("Measuring the whole project with objdiff…");
@@ -1442,6 +1467,9 @@ function dialog(title, html) {
 
 $("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
+const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp" };
+const cwName = (c) => (c.startsWith("DS/") ? `CodeWarrior for DS ${c.slice(3)}` : `CodeWarrior ${c}`);
+
 /* The project as source code: the base for ports and mods. */
 function renderSource(ov) {
   const ex = ov.export, fork = ov.kind === "fork";
@@ -1449,7 +1477,7 @@ function renderSource(ov) {
   $("srcWhen").textContent = !fork && ex ? `exported ${since(ex.t)}` : "";
   if (fork) {
     $("srcText").innerHTML = ov.origin === "scratch"
-      ? "This project <b>is</b> the source tree: a decomp-toolkit project that rebuilds your game on every build. Every match is committed to git."
+      ? `This project <b>is</b> the source tree: a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game on every build. Every match is committed to git.`
       : "This project <b>is</b> the source tree. Every match is committed to the <code>decomp-wtf</code> branch, ready to send upstream.";
     $("srcState").innerHTML = "";
     return;

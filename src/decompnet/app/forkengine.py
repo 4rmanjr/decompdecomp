@@ -21,7 +21,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .. import similarity
-from ..forks import catalog, csource, drafts, ghidra, scratch_dtk
+from ..forks import catalog, csource, drafts, ghidra, scratch_dsd, scratch_dtk
 from ..forks.objdiff import ObjdiffError
 from ..forks.project import STATE, ForkError, ForkProject
 from ..network import Agent, Network, NetworkError
@@ -139,17 +139,21 @@ class ForkEngine:
             self.net._event(db, pid, None, "fork", event)
 
     def create_scratch(self, game: Path, *, compiler: str | None = None, log=print) -> str:
-        """A GameCube or Wii game, from scratch: generate a dtk-template project for it and open it like a fork."""
-        info = scratch_dtk.game_info(game)
-        sha1 = hashlib.sha1(info["dol"]).hexdigest()
+        """A GameCube, Wii or DS game, from scratch: generate the community's project layout for it (dtk-template,
+        ds-decomp) and open it like a fork."""
+        with open(game, "rb") as f:
+            ds = scratch_dsd.is_nds(f.read(0x200))
+        maker = scratch_dsd if ds else scratch_dtk
+        info = maker.game_info(game)
+        sha1 = info["sha1"] if ds else hashlib.sha1(info["dol"]).hexdigest()
         for p in self.net.store.all("SELECT slug, config FROM projects"):
             if json.loads(p["config"]).get("program_sha1") == sha1:
                 log(f"already set up as {p['slug']}")
                 return p["slug"]
-        slug = self._free_slug(_slug(f"{info['title']} {info['id']}" if info["kind"] == "disc" else info["title"]))
+        slug = self._free_slug(_slug(f"{info['title']} {info['id']}" if info.get("kind") != "dol" else info["title"]))
         dest = self.net.workspace / slug
         try:
-            facts = scratch_dtk.create(dest, game, compiler=compiler, log=log)
+            facts = maker.create(dest, game, compiler=compiler, log=log)
         except BaseException:
             shutil.rmtree(dest, ignore_errors=True)
             raise

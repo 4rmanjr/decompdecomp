@@ -193,7 +193,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         return {"version": __version__, "platform": toolchains.current_platform(), "home": str(home.parent),
                 "projects": projects, "toolchains": tcs, "agents": agents.detect(),
                 "api_presets": agents.API_PRESETS, "settings": settings.public(), "mcp_url": mcp_url,
-                "codewarrior": {"installed": toolchains.installed("mwcc") is not None, **MW_VERSIONS}}
+                "codewarrior": {"installed": toolchains.installed("mwcc") is not None,
+                                "ds_installed": toolchains.installed("mwccarm") is not None, **MW_VERSIONS}}
 
     @mcp.custom_route("/api/state", methods=["GET"])
     async def api_state(request: Request) -> Response:

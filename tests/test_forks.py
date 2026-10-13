@@ -327,3 +327,26 @@ def test_a_unit_without_a_compiled_object_is_measured_as_not_matched(fork, tmp_p
     got = next(u for u in rep["units"] if u["name"] == unit["name"])
     assert all((f.get("fuzzy_match_percent") or 0) < 100 for f in got.get("functions", []))
     assert len(rep["units"]) == len(cfg["units"])
+
+
+def test_two_functions_of_the_same_name_in_one_unit_both_get_a_row(tmp_path, monkeypatch):
+    """Mario Party 6 has two static `_langGetNbrSpeechUnit` in one unit: measuring must not trip over that."""
+    from decompnet.forks.project import ForkProject
+
+    net = RomNetwork(tmp_path / "decomp.db", tmp_path / "ws")
+    root = tmp_path / "ws" / "p"
+    root.mkdir(parents=True)
+    (root / "objdiff.json").write_text(json.dumps({"units": []}))
+    net.forks._register("p", "P", "fork", root, {"kind": "fork", "version": "X", "fork_kind": "objdiff", "ready": False}, "x")
+    fn = lambda name, addr, pct=None: {"name": name, "size": "12", "metadata": {"virtual_address": str(addr)},
+                                       **({"fuzzy_match_percent": pct} if pct is not None else {})}
+    report = {"measures": {}, "units": [
+        {"name": "main/lang", "functions": [fn("_lang", 1, 100.0), fn("_lang", 2), fn("init", 3)]},
+        {"name": "main/other", "functions": [fn("init", 4)]}]}
+    monkeypatch.setattr(ForkProject, "report", lambda self: report)
+    monkeypatch.setattr(ForkProject, "units", lambda self: [])
+    for _ in range(2):  # measuring again updates the same rows
+        net.forks.sync("p", log=lambda *_: None)
+    rows = {r["name"]: r for r in net.store.all("SELECT name, vram, status FROM functions")}
+    assert set(rows) == {"_lang@main/lang", "_lang@main/lang#2", "init@main/lang", "init@main/other"}
+    assert rows["_lang@main/lang"]["vram"] == 1 and rows["_lang@main/lang#2"]["vram"] == 2

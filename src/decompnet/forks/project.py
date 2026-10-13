@@ -14,6 +14,7 @@ that's how its progress is reported.
 
 from __future__ import annotations
 
+import collections
 import functools
 import hashlib
 import json
@@ -65,6 +66,11 @@ def _git_env(root: Path) -> dict | None:
         return None
     who = {"GIT_AUTHOR_NAME": "decomp.wtf", "GIT_AUTHOR_EMAIL": "noreply@decomp.wtf"}
     return {**os.environ, **who, "GIT_COMMITTER_NAME": who["GIT_AUTHOR_NAME"], "GIT_COMMITTER_EMAIL": who["GIT_AUTHOR_EMAIL"]}
+
+
+# CodeWarrior's linker warns about every FORCEACTIVE symbol and unknown section: harmless, and thousands of lines
+_NOISE = re.compile(r"^#{1,3}\s*(mwldeppc\.exe Linker Warning:|FORCEACTIVE symbol|(doesn't )?exist\.\s+Ignored\.|"
+                    r"Section '\.note\.split' is unknown)")
 
 
 def _tool(name: str) -> str | None:
@@ -267,16 +273,22 @@ class ForkProject:
                                     stderr=subprocess.STDOUT, text=True, errors="replace")
         except FileNotFoundError:
             return False, f"{cmd[0]} isn't installed"
-        out = []
+        out, seen, quiet = [], collections.Counter(), 0
         for line in proc.stdout:
-            out.append(line.rstrip())
-            if len(out) <= 400 or len(out) % 50 == 0:
-                log(line.rstrip())
+            line = line.rstrip()
+            out.append(line)
+            seen[line] += 1
+            if seen[line] > 2 or _NOISE.match(line):  # the same line again, or CodeWarrior's linker chatter
+                quiet += 1
+            elif len(out) <= 400 or len(out) % 50 == 0:
+                log(line)
         try:
             code = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
             return False, "timed out"
+        if quiet:
+            log(f"({quiet} repeated lines and linker warnings not shown)")
         if killed_for_memory(code):
             out.append("stopped: it used more memory than decomp.wtf allows a single tool, so it was stopped "
                        "before it could slow down or freeze your computer")

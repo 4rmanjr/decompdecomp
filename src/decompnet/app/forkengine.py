@@ -229,23 +229,32 @@ class ForkEngine:
         counts: dict[str, int] = defaultdict(int)
         for _, f in rows:
             counts[f["name"]] += 1
-        existing = {(r["unit"], self._meta(r).get("symbol")): r
-                    for r in self.net.store.all("SELECT * FROM functions WHERE project_id=?", proj["id"])}
+        all_rows = self.net.store.all("SELECT * FROM functions WHERE project_id=?", proj["id"])
+        existing = {(r["unit"], self._meta(r).get("symbol"), self._meta(r).get("nth", 0)): r for r in all_rows}
+        used = {r["name"] for r in all_rows}
+        nth: dict[tuple[str, str], int] = defaultdict(int)  # a unit can hold two functions of the same name
         with self.net.store.tx() as db:
             for uname, f in rows:
                 sym = f["name"]
+                k = nth[(uname, sym)]
+                nth[(uname, sym)] += 1
                 fuzzy = f.get("fuzzy_match_percent")
                 size = int(f.get("size", 0))
                 n = max(1, size // 4)
                 u = units.get(uname)
                 md = f.get("metadata") or {}
                 meta = {"symbol": sym, "demangled": md.get("demangled_name"), "source": u.source if u else None}
+                if k:
+                    meta["nth"] = k
                 status = "matched" if fuzzy is not None and fuzzy >= 100 else "open" if u and u.source else "nosource"
                 score = None if fuzzy is None else scaled(fuzzy, n)
                 vram = md.get("virtual_address")
-                old = existing.get((uname, sym))
+                old = existing.get((uname, sym, k))
                 if old is None:
-                    name = sym if counts[sym] == 1 else f"{sym}@{uname}"
+                    name = sym if counts[sym] == 1 else f"{sym}@{uname}" + (f"#{k + 1}" if k else "")
+                    while name in used:
+                        name += "'"
+                    used.add(name)
                     db.execute("INSERT INTO functions(project_id,name,size,n_insns,status,best_score,unit,vram,meta,asm) "
                                "VALUES(?,?,?,?,?,?,?,?,?,?)", (proj["id"], name, size, n, status, score, uname,
                                                               int(vram) if vram else None, json.dumps(meta), ""))

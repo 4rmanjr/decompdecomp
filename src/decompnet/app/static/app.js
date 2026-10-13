@@ -682,6 +682,17 @@ function renderNext(ov) {
     box.innerHTML = `<div class="next-text"><b>Every function matches.</b><span class="muted small">Export the project: a source tree that rebuilds your game byte for byte.</span></div><a class="primary small-btn as-btn" href="#/p/${esc(S.slug)}/source">Export</a>`;
     return;
   }
+  if (ov.kind === "fork" && ov.ready && !ov.functions) {
+    box.hidden = false;
+    box.innerHTML = `<div class="next-text"><b>Not measured yet</b><span class="muted small">objdiff compares every unit of the project with your game: it takes a moment.</span></div><button class="primary" id="nextMeasure" type="button">Measure now</button>`;
+    $("nextMeasure").onclick = async () => {
+      $("nextMeasure").disabled = true;
+      toast("Measuring the whole project with objdiff…");
+      try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Measured.", "match"); await refreshMap(); }
+      catch (e) { toast(esc(e.message), "err"); $("nextMeasure").disabled = false; }
+    };
+    return;
+  }
   if (w.n || !compilerOk || !S.st) { box.hidden = true; return; }
   launcherInit();
   const a = S.st.agents.find((x) => x.id === LZ.kind);
@@ -1005,6 +1016,8 @@ async function renderForkSetup() {
       openProject(S.slug);
     } catch (e) {
       toast(esc(e.message), "err");
+      $("fsLog").textContent += `\n\n✕ ${e.message}`;  // stays visible after the toast is gone
+      $("fsLog").scrollTop = $("fsLog").scrollHeight;
       box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
       if ($("fsOwn")) $("fsGo").disabled = !$("fsOwn").checked;
     }

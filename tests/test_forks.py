@@ -94,6 +94,8 @@ def test_near_miss_gets_a_diff_and_release_restores_the_best(fork):
     assert near != good and worse != good
     first = net.attempt(agent, "count_alive_entities", near, slug)
     assert not first["matched"] and first["score"] and "TARGET" in first["text"]
+    d = net.function_diff(slug, "count_alive_entities")
+    assert d["kind"] == "latest" and 0 < d["percent"] < 100 and any(r[0] != " " for r in d["rows"])
     second = net.attempt(agent, "count_alive_entities", worse, slug)
     assert second["score"] is not None
     net.release(agent, "count_alive_entities", "testing release", slug)

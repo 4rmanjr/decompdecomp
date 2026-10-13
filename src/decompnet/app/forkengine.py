@@ -771,6 +771,20 @@ class ForkEngine:
             "measures": m,
         }
 
+    def function_diff(self, slug: str, name: str) -> dict:
+        """objdiff's diff of the function as it is in the source tree now."""
+        proj, fp, cfg = self.get(slug)
+        fn = self._fn(slug, name)
+        meta = self._meta(fn)
+        try:
+            d = fp.diff(fp.unit(fn["unit"]), meta.get("symbol") or fn["name"])
+        except (ObjdiffError, ForkError) as e:
+            return {"kind": None, "rows": None, "error": f"objdiff: {e}"}
+        if d.match_percent is None:
+            return {"kind": None, "rows": None}
+        return {"kind": "matched" if fn["status"] == "matched" else "latest", "rows": [list(r) for r in d.rows],
+                "score": None, "percent": round(d.match_percent, 1), "problems": []}
+
     def function_detail(self, slug: str, name: str) -> dict:
         proj, fp, cfg = self.get(slug)
         fn = self._fn(slug, name)

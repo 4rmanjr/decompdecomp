@@ -58,12 +58,17 @@
       <div class="drop-busy" id="dropBusy" hidden>
         <div class="spinner" aria-hidden="true"></div>
         <p class="drop-title" id="busyTitle">Analysing…</p>
+        <p class="busy-step"><span id="busyStep">starting</span><span class="muted" id="busyTime"></span></p>
         <div class="upbar" id="impUp" hidden><i></i></div>
-        <pre class="joblog" id="jobLog"></pre>
+        <details class="logbox"><summary>Details</summary><pre class="joblog" id="jobLog"></pre></details>
       </div>
     </div>
   </section>
   <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 2.5 3v4.2c0 3.3 2.3 6.3 5.5 7.3 3.2-1 5.5-4 5.5-7.3V3L8 1Zm0 1.6 4 1.5v3.1c0 2.5-1.6 4.8-4 5.7-2.4-.9-4-3.2-4-5.7V4.1l4-1.5Z"/></svg>Your game never leaves this computer. Only your AI agent's provider sees the assembly and code it works on. <button class="link-btn" id="pathPick" type="button">Big disc? Use its path instead</button></p>
+  <section id="recent" hidden>
+    <h3 class="section-title">Your projects</h3>
+    <div class="cards" id="projects"></div>
+  </section>
   <a class="fork-row" href="#/catalog">
     <div class="fork-plats" aria-hidden="true"><span>GC</span><span>Wii</span><span>PS1</span><span>PS2</span><span>GBA</span><span>DS</span><span>N64</span><span>Switch</span><span>PC</span><span>360</span></div>
     <div class="fork-text">
@@ -85,10 +90,6 @@
       <p class="muted">Join a friend's room with their invite link. You'll need your own copy of the same game; only the C, names and notes are shared.</p>
     </div>
     <button class="ghost" id="joinBtn" type="button">Join a friend's room</button>
-  </section>
-  <section id="recent" hidden>
-    <h3 class="section-title">Your projects</h3>
-    <div class="cards" id="projects"></div>
   </section>
 </main>
 
@@ -115,8 +116,9 @@
   <section class="stats" id="stats">
     <div class="stat big">
       <span class="label">Matched code</span>
-      <span class="num"><span id="pct">0</span><small>%</small></span>
+      <div class="big-row"><span class="num"><span id="pct">0</span><small>%</small></span><svg id="progress" class="progress" viewBox="0 0 200 44" preserveAspectRatio="none" aria-label="Matched code over time"></svg></div>
       <div class="meter"><i id="pctBar"></i></div>
+      <span class="sub" id="pctSub"></span>
     </div>
     <div class="stat"><span class="label">Functions</span><span class="num mono" id="fnCount">0</span><span class="sub" id="fnSub"></span></div>
     <div class="stat"><span class="label">Compiles</span><span class="num mono" id="compiles">0</span><span class="sub" id="rate"></span></div>
@@ -131,24 +133,56 @@
   <div class="grid" id="grid">
     <section class="panel map-panel">
       <header class="panel-head">
-        <h2><span id="mapTitle">ROM map</span> <span class="muted small" id="mapHint">every square is a function, in ROM order</span></h2>
+        <div class="tabs" role="tablist" aria-label="View">
+          <button role="tab" class="tab on" data-view="map" type="button" id="mapTitle">ROM map</button>
+          <button role="tab" class="tab" data-view="list" type="button">Functions <span class="count" id="fnTabCount"></span></button>
+        </div>
         <div class="legend"><span><i class="sw open"></i>to do</span><span><i class="sw tried"></i>tried</span><span><i class="sw work"></i>working</span><span><i class="sw match"></i>matched</span></div>
       </header>
-      <div class="map-wrap" id="mapWrap">
-        <canvas id="map" aria-label="Function map"></canvas>
-        <div class="tip" id="tip" hidden></div>
+      <div id="mapView">
+        <p class="muted small map-hint" id="mapHint">every square is a function, in ROM order</p>
+        <div class="map-wrap" id="mapWrap">
+          <canvas id="map" aria-label="Function map"></canvas>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+      </div>
+      <div id="listView" hidden>
+        <div class="list-tools">
+          <input id="fnSearch" class="search" type="search" placeholder="Find a function or address" aria-label="Find a function" autocomplete="off" spellcheck="false">
+          <div class="seg" id="fnFilter" role="radiogroup" aria-label="Show"></div>
+        </div>
+        <div class="fn-table-wrap">
+          <table class="fn-table">
+            <thead><tr>
+              <th data-sort="vram" id="thAddr">Address</th><th data-sort="name">Function</th><th data-sort="insns" class="r">Instructions</th>
+              <th data-sort="best" class="r">Best</th><th data-sort="attempts" class="r">Tries</th><th data-sort="status">Status</th>
+            </tr></thead>
+            <tbody id="fnRows"></tbody>
+          </table>
+        </div>
+        <div class="list-foot"><span class="muted small" id="fnShown"></span><button class="ghost small-btn" id="fnMore" type="button" hidden>Show more</button></div>
       </div>
       <div class="now" id="now"></div>
     </section>
 
-    <aside class="panel agents-panel">
-      <header class="panel-head"><h2>Agents</h2><button class="primary small-btn" id="addAgent" type="button">Add agent</button></header>
-      <div id="sessions" class="sessions"></div>
-      <div class="empty" id="noSessions">
-        <p>No agent is working yet.</p>
-        <p class="muted small">Add Claude Code, Codex, Gemini CLI, opencode, or any model with an API key (DeepSeek, OpenRouter, Ollama).</p>
-      </div>
-    </aside>
+    <div class="side">
+      <aside class="panel agents-panel">
+        <header class="panel-head"><h2>Agents</h2><button class="primary small-btn" id="addAgent" type="button">Add agent</button></header>
+        <div id="sessions" class="sessions"></div>
+        <div class="empty" id="noSessions">
+          <p>No agent is working yet.</p>
+          <p class="muted small">Add Claude Code, Codex, Gemini CLI, opencode, or any model with an API key (DeepSeek, OpenRouter, Ollama).</p>
+        </div>
+      </aside>
+      <section class="panel source-panel" id="sourcePanel">
+        <header class="panel-head"><h2>Source code</h2><span class="muted small" id="srcWhen"></span></header>
+        <div class="source-body">
+          <p class="small" id="srcText"></p>
+          <div class="src-state" id="srcState"></div>
+          <div class="row"><button class="primary small-btn" id="srcExport" type="button">Export project</button><button class="ghost small-btn" id="srcOpen" type="button">Open folder</button></div>
+        </div>
+      </section>
+    </div>
 
     <section class="panel feed-panel">
       <header class="panel-head">
@@ -164,7 +198,6 @@
   </div>
 
   <footer class="project-actions">
-    <button class="ghost" id="exportBtn" type="button">Export project</button>
     <button class="ghost" id="folderBtn" type="button">Open project folder</button>
     <button class="ghost" id="compilerBtn" type="button">Compiler settings</button>
     <button class="ghost" id="inviteBtn" type="button">Invite friends</button>
@@ -184,12 +217,26 @@
       </div>
       <div class="row">
         <span class="badge" id="fnStatus"></span>
-        <button class="ghost icon" data-close type="button" aria-label="Close">✕</button>
+        <button class="ghost icon" id="fnPrev" type="button" aria-label="Previous function" title="Previous function (K)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.3 2.7 11.4 3.8 7.2 8l4.2 4.2-1.1 1.1L5 8z"/></svg></button>
+        <button class="ghost icon" id="fnNext" type="button" aria-label="Next function" title="Next function (J)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.7 2.7 4.6 3.8 8.8 8l-4.2 4.2 1.1 1.1L11 8z"/></svg></button>
+        <button class="ghost icon" data-close type="button" aria-label="Close" title="Close (Esc)">✕</button>
       </div>
     </header>
     <div class="drawer-body">
-      <div class="spark-wrap"><svg id="fnSpark" viewBox="0 0 600 70" preserveAspectRatio="none" aria-label="Score per compile"></svg><span class="muted small" id="fnSparkNote"></span></div>
-      <div class="code-cols">
+      <div class="fn-chart" id="fnChartWrap"><svg id="fnChart" aria-label="Match per compile"></svg><div class="fn-chart-note" id="fnChartNote"></div></div>
+      <div class="fn-tabs">
+        <div class="tabs" role="tablist" aria-label="Function view">
+          <button role="tab" class="tab on" data-ftab="diff" type="button">Diff</button>
+          <button role="tab" class="tab" data-ftab="code" type="button">Assembly and C</button>
+        </div>
+        <div class="seg small" id="diffWhich" hidden><button type="button" data-which="latest" class="on">Latest attempt</button><button type="button" data-which="best">Best</button></div>
+      </div>
+      <div id="fnDiffView">
+        <p class="diff-sum" id="diffSum"></p>
+        <div class="diff" id="diff"></div>
+        <ul class="problems" id="diffProblems"></ul>
+      </div>
+      <div class="code-cols" id="fnCodeView" hidden>
         <div><p class="col-title">Target assembly (from your game)</p><pre class="code asm" id="fnAsm"></pre></div>
         <div><p class="col-title"><span id="fnSrcKind">C</span><button class="link-btn" id="copySrc" type="button">Copy</button></p><pre class="code c" id="fnSrc"></pre></div>
       </div>

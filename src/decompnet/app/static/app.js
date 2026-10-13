@@ -8,6 +8,14 @@ const hex8 = (n) => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(8, "0")
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const pctOf = (best, insns) => (best == null ? null : Math.max(0, 1 - best / Math.max(1, insns * 100)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+function since(t) {
+  if (!t) return "";
+  const s = Date.now() / 1000 - t;
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago`
+    : s < 172800 ? "yesterday" : `${Math.round(s / 86400)} days ago`;
+}
+function bytes(n) { return n >= 1 << 20 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`; }
 
 async function api(path, { method = "GET", body, raw } = {}) {
   const opts = { method, headers: {} };
@@ -30,10 +38,11 @@ function toast(html, kind = "") {
   setTimeout(() => t.remove(), kind === "err" ? 7500 : 4700);
 }
 
-async function followJob(id, logEl) {
+async function followJob(id, logEl, onUpdate) {
   for (;;) {
     const job = await api(`/api/job?id=${id}`);
     if (logEl) { logEl.textContent = job.log.join("\n"); logEl.scrollTop = logEl.scrollHeight; }
+    if (onUpdate) onUpdate(job.log);
     if (job.state === "done") return job.result;
     if (job.state === "error") throw new Error(job.error);
     await sleep(500);
@@ -98,10 +107,11 @@ async function showHome() {
     a.className = "card";
     a.href = `#/p/${p.slug}`;
     const meta = p.kind === "fork"
-      ? `${p.origin === "scratch" ? "from scratch" : "fork"} · ${esc(p.platform_name || "?")}${p.version ? " · " + esc(p.version) : ""}${p.ready ? "" : " · needs setup"}`
-      : `${esc(p.rom.game_code)} · ${esc(p.rom.region)} · ${esc(p.compiler.name)}`;
-    a.innerHTML = `<div><h4>${esc(p.title)}</h4><p class="meta">${meta}</p></div>
-      <div class="meter"><i></i></div><p class="meta">${p.matched} / ${p.functions} functions · ${pct.toFixed(1)}% of code</p>`;
+      ? `${p.origin === "scratch" ? "from scratch" : "public decomp"}${p.version ? " · " + esc(p.version) : ""}${p.ready ? "" : " · needs setup"}`
+      : `${esc(p.rom.game_code || "")}${p.rom.region ? " · " + esc(p.rom.region) : ""} · ${esc(p.compiler.name)}`;
+    a.innerHTML = `<div class="cc-top"><span class="plat">${esc(p.platform_name || "?")}</span><span class="meta">${esc(since(p.last_activity))}</span></div>
+      <div><h4>${esc(p.title)}</h4><p class="meta">${meta}</p></div>
+      <div class="meter"><i></i></div><p class="meta"><b>${pct < 10 ? pct.toFixed(2) : pct.toFixed(1)}%</b> of code · ${p.matched.toLocaleString()} / ${p.functions.toLocaleString()} functions</p>`;
     box.append(a);
     requestAnimationFrame(() => { a.querySelector(".meter i").style.width = pct + "%"; });
   }
@@ -257,8 +267,14 @@ async function runImport(query, file, title, name = "") {
   $("dropPicked").hidden = true;
   $("dropBusy").hidden = false;
   $("busyTitle").textContent = title;
+  $("busyStep").textContent = "starting";
   $("jobLog").textContent = "";
   $("impUp").hidden = !(file instanceof Blob);
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    $("busyTime").textContent = s >= 3 ? ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
+  }, 1000);
   try {
     let started;
     if (file instanceof Blob) {
@@ -268,12 +284,15 @@ async function runImport(query, file, title, name = "") {
       started = await api(`/api/import?${query}`, { method: "POST", raw: file ?? new ArrayBuffer(0) });
     }
     $("impUp").hidden = true;
-    const res = await followJob(started.job, $("jobLog"));
+    const res = await followJob(started.job, $("jobLog"), (log) => {
+      const last = log.filter((l) => l.trim()).pop();
+      if (last) $("busyStep").textContent = last.trim().replace(/\s+/g, " ").slice(0, 120);
+    });
     location.hash = `#/p/${res.slug}`;
   } catch (e) {
     toast(esc(e.message), "err");
     resetDrop();
-  }
+  } finally { clearInterval(tick); $("busyTime").textContent = ""; }
 }
 
 async function ensureCodeWarrior() {
@@ -328,8 +347,11 @@ async function openProject(slug) {
   $("crumb").innerHTML = `<b>${esc(S.ov.title)}</b>${S.ov.rom.game_code ? `<span class="code">${esc(S.ov.rom.game_code)}</span>` : ""}`;
   const fork = S.ov.kind === "fork";
   $("mapTitle").textContent = fork ? "Function map" : "ROM map";
-  $("mapHint").textContent = fork ? "every square is a function, grouped by source file" : "every square is a function, in ROM order";
-  for (const id of ["exportBtn", "compilerBtn", "inviteBtn"]) $(id).hidden = fork;
+  $("mapHint").textContent = fork ? "Every square is a function, grouped by source file. Click one to see it." : "Every square is a function, in ROM order. Click one to see it.";
+  $("thAddr").textContent = fork ? "File" : "Address";
+  groups.clear(); S.claimSig = "";
+  L.q = ""; L.filter = "all"; L.limit = 200; $("fnSearch").value = "";
+  for (const id of ["compilerBtn", "inviteBtn"]) $(id).hidden = fork;
   $("forkSetup").hidden = true;
   $("grid").hidden = false;
   $("stats").hidden = fork && !S.ov.ready;
@@ -346,7 +368,11 @@ async function refreshMap() {
   S.map = await api(`/api/map?slug=${S.slug}`);
   S.byName = new Map(S.map.map((f, i) => [f.name, i]));
   S.lastMapFetch = Date.now();
+  S.map.forEach((f, i) => { f.i = i; });
+  $("fnTabCount").textContent = S.map.length.toLocaleString();
   layoutMap();
+  renderList();
+  renderProgress();
 }
 
 let polling = false;
@@ -380,9 +406,17 @@ async function poll(first) {
     addThoughts(live.sessions, first);
     renderSessions(live.sessions);
     renderNow(live.claims);
+    const claimSig = live.claims.map((c) => c.name + "\u0000" + c.agent).join("\n");
     if (mapDirty || Date.now() - S.lastMapFetch > 8000) await refreshMap();
-    else applyClaims();
-    if (S.fn && !$("drawer").hidden) refreshFn(false);
+    else {
+      applyClaims();
+      if (claimSig !== S.claimSig || live.attempts.length) renderList();
+    }
+    S.claimSig = claimSig;
+    if (S.fn && !$("drawer").hidden) {
+      const touched = live.attempts.some((a) => a.function === S.fn) || live.events.some((e) => e.detail === S.fn);
+      if (touched) refreshFn(false); else fnBadge();
+    }
   } catch (e) {
     if (String(e.message).includes("Failed to fetch")) $("feedHint").textContent = "app not reachable";
   } finally {
@@ -394,12 +428,14 @@ function renderStats(ov) {
   const pct = ov.bytes ? (100 * ov.matched_bytes) / ov.bytes : 0;
   $("pct").textContent = pct < 10 ? pct.toFixed(2) : pct.toFixed(1);
   $("pctBar").style.width = pct + "%";
+  $("pctSub").textContent = (ov.bytes ? `${bytes(ov.matched_bytes)} of ${bytes(ov.bytes)}` : "") + (S.today ? ` · ${S.today} matched today` : "");
   $("fnCount").textContent = `${ov.matched} / ${ov.functions}`;
   $("fnSub").textContent = `${ov.functions - ov.matched} to go`;
   $("compiles").textContent = ov.attempts.toLocaleString();
   const recent = [...S.scores.values()].flat().filter((x) => x.t > Date.now() / 1000 - 600).length;
   $("rate").textContent = recent ? `${recent} in the last 10 minutes` : "each one checked against your ROM";
   renderRoom(ov);
+  renderSource(ov);
   if (ov.kind === "fork") { renderFork(ov); return; }
   $("forkNotice").hidden = true;
   $("compilerLabel").textContent = "Compiler";
@@ -884,6 +920,12 @@ function renderSessions(sessions) {
       <span class="state ${s.state === "error" ? "err" : ""}">${s.state === "error" ? esc(s.error) : esc(STATE_TEXT[s.state] || s.state)}${s.model ? " · " + esc(s.model) : ""}${s.runs ? ` · session ${s.runs}` : ""}</span>
       ${claim ? `<span class="last">on ${esc(claim.name)}</span>` : ""}</div>`;
   }).join("");
+  const own = new Set(sessions.map((s) => s.agent));
+  const outside = S.claims.filter((c) => !own.has(c.agent));
+  box.insertAdjacentHTML("beforeend", outside.map((c) => `<div class="session ext"><div class="session-top"><span class="dot on"></span><b>${esc(c.agent)}</b><span class="tag">${c.agent.startsWith("@") ? "in the room" : "connected"}</span></div>
+      <span class="last">on ${fnLink(c.name)}</span></div>`).join(""));
+  box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
+  $("noSessions").hidden = sessions.length + outside.length > 0;
   box.querySelectorAll("[data-stop]").forEach((b) => {
     b.onclick = async () => {
       await api("/api/agents/stop", { method: "POST", body: { id: b.dataset.stop, remove: !!b.dataset.remove } }).catch((e) => toast(esc(e.message), "err"));
@@ -911,27 +953,59 @@ function eventHtml(ev) {
     default: return `${who} ${esc(ev.kind)} ${esc(d)}`;
   }
 }
-function attemptHtml(at) {
-  const who = `<span class="who">${esc(at.agent || "")}</span>`;
-  if (at.score == null) return `${who} ${fnLink(at.function)} <span class="bad">didn't compile</span>`;
-  if (at.score === 0) return `${who} ${fnLink(at.function)} <span class="ok">score 0: byte-identical</span>`;
-  const p = pctOf(at.score, at.n_insns);
-  return `${who} compiled ${fnLink(at.function)} <span class="score">score ${at.score} · ${(p * 100).toFixed(0)}%</span>`;
+/* One line per agent and function, updated in place: "claude-1 · lerp · 4 compiles · best 87%" until it's matched. */
+const groups = new Map();
+function groupHtml(g) {
+  const who = `<span class="who">${esc(g.agent || "")}</span>`;
+  const p = pctOf(g.best, g.insns);
+  if (g.matched) return `<span class="ok">✓</span> ${who} matched ${fnLink(g.fn)}${g.tries ? ` <span class="score">after ${plural(g.tries, "compile")}</span>` : ""}`;
+  if (g.released) return `${who} set ${fnLink(g.fn)} aside, with notes for the next agent${g.tries ? ` <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${(p * 100).toFixed(0)}%` : ""}</span>` : ""}`;
+  if (!g.tries) return `${who} started ${fnLink(g.fn)}`;
+  const last = g.lastScore === undefined ? "" : g.lastScore === null ? ` · <span class="bad">last one didn't compile</span>` : "";
+  return `${who} working on ${fnLink(g.fn)} <span class="score">${plural(g.tries, "compile")}${p != null ? ` · best ${(p * 100).toFixed(0)}%` : ""}</span>${last}`;
+}
+function addLine(t, html, first) {
+  const list = $("activity");
+  const li = document.createElement("li");
+  if (!first) li.className = "fresh";
+  li.innerHTML = `<time>${clock(t)}</time><span>${html}</span>`;
+  list.querySelector(".placeholder")?.remove();
+  list.prepend(li);
+  return li;
+}
+function touchGroup(agent, fn, t, change, first) {
+  const key = agent + "\u0000" + fn;
+  let g = groups.get(key);
+  if (!g) { g = { agent, fn, tries: 0, best: null, insns: 1, li: null }; groups.set(key, g); }
+  change(g);
+  if (g.li && g.li.isConnected) {
+    g.li.querySelector("time").textContent = clock(t);
+    g.li.querySelector("span").innerHTML = groupHtml(g);
+    if (g.li !== $("activity").firstElementChild) $("activity").prepend(g.li);
+    if (!first) { g.li.classList.remove("fresh"); void g.li.offsetWidth; g.li.classList.add("fresh"); }
+  } else g.li = addLine(t, groupHtml(g), first);
+  if (g.matched || g.released) groups.delete(key);
 }
 
 function addActivity(events, attempts, first) {
-  const items = [...events.map((e) => ({ t: e.created_at, html: eventHtml(e) })), ...attempts.map((a) => ({ t: a.created_at, html: attemptHtml(a) }))];
+  const items = [...events.map((e) => ({ t: e.created_at, ev: e })), ...attempts.map((a) => ({ t: a.created_at, at: a }))];
   items.sort((a, b) => a.t - b.t);
-  const list = $("activity");
   for (const it of items) {
-    const li = document.createElement("li");
-    if (!first) li.className = "fresh";
-    li.innerHTML = `<time>${clock(it.t)}</time><span>${it.html}</span>`;
-    list.prepend(li);
+    if (it.at) {
+      const at = it.at;
+      touchGroup(at.agent, at.function, it.t, (g) => {
+        g.tries++; g.insns = at.n_insns; g.lastScore = at.score;
+        if (at.score != null) g.best = g.best == null ? at.score : Math.min(g.best, at.score);
+      }, first);
+    } else if (it.ev.kind === "claim") touchGroup(it.ev.agent, it.ev.detail, it.t, () => {}, first);
+    else if (it.ev.kind === "match") touchGroup(it.ev.agent, it.ev.detail, it.t, (g) => { g.matched = true; }, first);
+    else if (it.ev.kind === "release") touchGroup(it.ev.agent, it.ev.detail, it.t, (g) => { g.released = true; }, first);
+    else addLine(it.t, eventHtml(it.ev), first);
   }
+  const list = $("activity");
   while (list.children.length > 300) list.lastChild.remove();
   list.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
-  if (!list.children.length) list.innerHTML = `<li><time></time><span class="muted">Nothing yet. Add an agent and its work shows up here.</span></li>`;
+  if (!list.children.length) list.innerHTML = `<li class="placeholder"><time></time><span class="muted">Nothing yet. Add an agent and its work shows up here.</span></li>`;
 }
 
 /* Agents write Markdown. Escape everything first, then allow only **bold** and `code`. */
@@ -990,44 +1064,256 @@ function highlightC(text) {
 }
 
 async function openFn(name) {
+  const again = S.fn === name && !$("drawer").hidden;
   S.fn = name;
   $("drawer").hidden = false;
+  if (!again) { S.ftab = null; S.which = "latest"; S.diffKey = null; $("diff").innerHTML = ""; $("diffSum").textContent = ""; }
   drawMap();
+  document.querySelectorAll("#fnRows tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.fn === name));
   await refreshFn(true);
 }
+
+function fnBadge(d = S.fnDetail) {
+  if (!d) return;
+  const working = S.claims.find((c) => c.name === d.name);
+  const st = $("fnStatus");
+  st.className = "badge " + (d.status === "matched" ? "matched" : working ? "working" : "");
+  st.textContent = d.status === "matched" ? "matched" : working ? `${working.agent} working` : d.best != null ? `best ${(pctOf(d.best, d.insns) * 100).toFixed(0)}%` : "not started";
+}
+
+function showFnTab(tab) {
+  document.querySelectorAll("[data-ftab]").forEach((b) => b.classList.toggle("on", b.dataset.ftab === tab));
+  $("fnDiffView").hidden = tab !== "diff";
+  $("fnCodeView").hidden = tab !== "code";
+  if (tab === "diff") loadDiff();
+}
+document.querySelectorAll("[data-ftab]").forEach((b) => { b.onclick = () => { S.ftab = b.dataset.ftab; showFnTab(S.ftab); }; });
+document.querySelectorAll("#diffWhich [data-which]").forEach((b) => {
+  b.onclick = () => {
+    S.which = b.dataset.which;
+    document.querySelectorAll("#diffWhich [data-which]").forEach((x) => x.classList.toggle("on", x === b));
+    loadDiff();
+  };
+});
+
 let fnBusy = false;
 async function refreshFn(first) {
   if (fnBusy || !S.fn) return;
   fnBusy = true;
   try {
     const d = await api(`/api/function?slug=${S.slug}&name=${encodeURIComponent(S.fn)}`);
-    if (!first && d.status !== "matched" && !S.claims.some((c) => c.name === d.name)) return;
+    if (d.name !== S.fn) return;
+    S.fnDetail = d;
     $("fnAddr").textContent = S.ov.kind === "fork"
       ? `${d.unit} · ${d.insns} instructions${d.match_percent != null ? ` · ${d.match_percent.toFixed(1)}% now` : ""}`
       : `${hex8(d.vram)} · ROM 0x${d.rom_offset.toString(16).toUpperCase()} · ${d.insns} instructions`;
     $("fnName").textContent = d.name;
-    const working = S.claims.find((c) => c.name === d.name);
-    const st = $("fnStatus");
-    st.className = "badge " + (d.status === "matched" ? "matched" : working ? "working" : "");
-    st.textContent = d.status === "matched" ? "matched" : working ? `${working.agent} working` : d.best != null ? `best ${(pctOf(d.best, d.insns) * 100).toFixed(0)}%` : "not started";
+    fnBadge(d);
     $("fnAsm").innerHTML = highlightAsm(d.asm);
     const kinds = { matched: "Matching C", best: "Best attempt so far", latest: S.ov.kind === "fork" ? "In the source now" : "Latest attempt", draft: "Machine draft (m2c)" };
     $("fnSrcKind").textContent = kinds[d.source_kind] || "No C yet";
     $("fnSrc").innerHTML = d.source ? highlightC(d.source) : `<span class="cm">/* no attempt yet */</span>`;
     $("copySrc").onclick = () => navigator.clipboard.writeText(d.source || "").then(() => toast("Copied."));
-    const sc = d.scores.map((s) => ({ score: s.score }));
-    $("fnSpark").parentElement.hidden = !d.scores.length;
-    $("fnSpark").innerHTML = spark(sc, 600, 70).replace(/^<svg[^>]*>|<\/svg>$/g, "");
-    $("fnSparkNote").textContent = d.scores.length ? `${d.scores.length} compiles · score per compile, lower is better, 0 = byte-identical` : "no compiles yet";
+    renderFnChart(d);
+    $("diffWhich").hidden = d.status === "matched" || S.ov.kind === "fork" || d.scores.filter((x) => x.score != null).length < 2;
     const xr = [];
     if (d.calls.length) xr.push(`<div><b>calls</b>${d.calls.map(fnLink).join("")}</div>`);
     if (d.called_by.length) xr.push(`<div><b>called by</b>${d.called_by.map(fnLink).join("")}</div>`);
     $("fnXref").innerHTML = xr.join("");
     $("fnXref").querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn.split("+")[0]); });
     $("fnNotes").innerHTML = d.notes.length ? `<p class="col-title">Notes from agents</p>` + d.notes.map((n) => `<div class="note"><small>${esc(n.agent)} · ${clock(n.created_at)}</small>${esc(n.text)}</div>`).join("") : "";
+    const tab = S.ftab || (d.status === "matched" || !d.scores.length ? "code" : "diff");
+    showFnTab(tab);
   } catch (e) {
     if (first) toast(esc(e.message), "err");
   } finally { fnBusy = false; }
+}
+
+/* Score per compile, as a match percentage: dots for each compile, a line for the best so far. */
+function renderFnChart(d) {
+  const wrap = $("fnChartWrap"), svg = $("fnChart");
+  const pts = d.scores;
+  wrap.hidden = !pts.length;
+  if (!pts.length) return;
+  const w = Math.max(300, svg.clientWidth || 600), h = 92, padL = 34, padR = 10, padT = 8, padB = 16;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  const n = pts.length;
+  const X = (i) => padL + (n === 1 ? (w - padL - padR) / 2 : (i * (w - padL - padR)) / (n - 1));
+  const Y = (p) => padT + (1 - p) * (h - padT - padB);
+  let out = "";
+  for (const g of [0, 0.5, 1]) out += `<line class="grid" x1="${padL}" x2="${w - padR}" y1="${Y(g)}" y2="${Y(g)}"/><text class="axis" x="${padL - 6}" y="${Y(g) + 3.5}">${g * 100}%</text>`;
+  let best = null, path = "";
+  const agents = [...new Set(pts.map((p) => p.agent))];
+  pts.forEach((p, i) => {
+    if (p.score != null) best = best == null ? p.score : Math.min(best, p.score);
+    if (best != null) {
+      const y = Y(pctOf(best, d.insns));
+      path += path ? `H${X(i).toFixed(1)}V${y.toFixed(1)}` : `M${X(i).toFixed(1)},${y.toFixed(1)}`;
+    }
+  });
+  if (path) out += `<path class="bestline" d="${path}"/>`;
+  pts.forEach((p, i) => {
+    const title = `<title>${esc(p.agent || "")} · ${clock(p.t)} · ${p.score == null ? "didn't compile" : p.score === 0 ? "byte-identical" : `score ${p.score}`}</title>`;
+    if (p.score == null) out += `<g class="fail"><path d="M${X(i) - 3},${Y(0) + 5}l6,6m0,-6l-6,6"/>${title}</g>`;
+    else out += `<circle class="${p.score === 0 ? "hit" : "pt"} a${agents.indexOf(p.agent) % 4}" cx="${X(i).toFixed(1)}" cy="${Y(pctOf(p.score, d.insns)).toFixed(1)}" r="${p.score === 0 ? 4.5 : 3}">${title}</circle>`;
+  });
+  svg.innerHTML = out;
+  const fails = pts.filter((p) => p.score == null).length;
+  const bp = best == null ? null : pctOf(best, d.insns);
+  $("fnChartNote").innerHTML = `<b>${plural(n, "compile")}</b>${bp != null ? ` · best ${best === 0 ? "byte-identical" : (bp * 100).toFixed(1) + "%"}` : ""}${fails ? ` · ${fails} didn't compile` : ""}${agents.length > 1 ? ` · ${agents.map(esc).join(", ")}` : ` · ${esc(agents[0] || "")}`}`;
+}
+
+/* The judge's diff: target and attempt side by side, instruction by instruction. */
+const MARK = { " ": "eq", r: "arg", s: "arg", i: "arg", "|": "repl", "<": "del", ">": "ins", o: "mov" };
+const MARK_TEXT = { r: "registers differ", s: "stack offset differs", i: "operand differs", "|": "different instruction", "<": "missing in yours", ">": "extra in yours", o: "in a different place" };
+function insnHtml(text, other, cls) {
+  if (!text) return "";
+  const m = text.match(/^(\S+)(\s*)(.*)$/);
+  if (!m) return esc(text);
+  let ops = esc(m[3]);
+  if (cls === "arg" && other) {
+    const a = m[3].split(/(,\s*|\(|\))/), b = (other.match(/^\S+\s*(.*)$/) || [, ""])[1].split(/(,\s*|\(|\))/);
+    ops = a.map((tok, k) => (tok !== b[k] && !/^(,\s*|\(|\))$/.test(tok) ? `<mark>${esc(tok)}</mark>` : esc(tok))).join("");
+  }
+  return `<span class="op">${esc(m[1])}</span>${m[2] ? " " : ""}${ops}`;
+}
+function renderDiff(d) {
+  const sum = $("diffSum"), box = $("diff"), probs = $("diffProblems");
+  probs.innerHTML = "";
+  if (!d.rows) {
+    sum.innerHTML = d.error ? `<span class="bad">The ${d.kind === "best" ? "best" : "latest"} attempt didn't compile.</span>` : "No attempt yet. The diff appears after the first compile.";
+    box.innerHTML = d.error ? `<pre class="code errlog">${esc(d.error)}</pre>` : "";
+    return;
+  }
+  const rows = d.rows;
+  const same = rows.filter((r) => r[0] === " ").length, target = rows.filter((r) => r[1]).length;
+  const label = { matched: "Matching C", best: "Best attempt", latest: S.ov.kind === "fork" ? "The source now" : "Latest attempt" }[d.kind] || "Attempt";
+  sum.innerHTML = `<b>${label}</b> · ${d.percent === 100 && d.score === 0 ? `<span class="ok">byte-identical</span>` : `${d.percent}%${d.score != null ? ` · score ${d.score}` : ""}`} · ${same} of ${target} instructions identical
+    <span class="diff-key"><i class="k arg"></i>operands <i class="k repl"></i>different <i class="k mov"></i>moved</span>`;
+  const html = [];
+  let t = 0, run = [];
+  const rowHtml = (r) => {
+    const cls = MARK[r[0]] || "repl";
+    if (r[1]) t++;
+    return `<div class="dr ${cls}"${r[0] !== " " ? ` title="${MARK_TEXT[r[0]] || ""}"` : ""}><span class="dn">${r[1] ? t : ""}</span><code>${insnHtml(r[1], r[2], cls)}</code><span class="dm">${r[0] === " " ? "" : esc(r[0])}</span><code>${insnHtml(r[2], r[1], cls)}</code></div>`;
+  };
+  const flush = (end) => {
+    if (run.length > 10 && end !== "all") {
+      const head = run.slice(0, end === "start" ? 0 : 3), tail = run.slice(end === "end" ? run.length : run.length - 3);
+      const mid = run.slice(head.length, run.length - tail.length);
+      html.push(...head.map(rowHtml));
+      html.push(`<button class="dfold" type="button">··· ${mid.length} identical instructions ···</button><div class="dfolded" hidden>${mid.map(rowHtml).join("")}</div>`);
+      html.push(...tail.map(rowHtml));
+    } else html.push(...run.map(rowHtml));
+    run = [];
+  };
+  rows.forEach((r, i) => {
+    if (r[0] === " ") { run.push(r); return; }
+    flush(html.length ? "mid" : "start");
+    html.push(rowHtml(r));
+  });
+  flush(html.length ? "end" : "all");
+  box.innerHTML = `<div class="dh"><span></span><span>Target (your game)</span><span></span><span>${esc(label)}</span></div>` + html.join("");
+  box.querySelectorAll(".dfold").forEach((b) => { b.onclick = () => { b.nextElementSibling.hidden = false; b.remove(); }; });
+  probs.innerHTML = (d.problems || []).map((p) => `<li>${esc(p)}</li>`).join("");
+}
+async function loadDiff() {
+  const d0 = S.fnDetail;
+  if (!d0) return;
+  const key = `${d0.name}|${S.which}|${d0.scores.length}|${d0.status}`;
+  if (key === S.diffKey) return;
+  S.diffKey = key;
+  if (!$("diff").innerHTML) $("diffSum").textContent = "Compiling…";
+  try {
+    const d = await api(`/api/diff?slug=${S.slug}&name=${encodeURIComponent(d0.name)}&which=${S.which}`);
+    if (S.fnDetail && S.fnDetail.name === d0.name) renderDiff(d);
+  } catch (e) { $("diffSum").innerHTML = `<span class="bad">${esc(e.message)}</span>`; S.diffKey = null; }
+}
+
+function stepFn(delta) {
+  if (!S.fn || !S.map.length) return;
+  const order = !$("listView").hidden && L.rows.length ? L.rows : S.map;
+  const k = order.findIndex((f) => f.name === S.fn);
+  const next = order[(k + delta + order.length) % order.length];
+  if (next) openFn(next.name);
+}
+$("fnPrev").onclick = () => stepFn(-1);
+$("fnNext").onclick = () => stepFn(1);
+
+/* ------------------------------------------------------------------ function list */
+const L = { q: "", filter: "all", sort: "i", dir: 1, limit: 200, rows: [] };
+const FILTERS = [["all", "All"], ["open", "To do"], ["working", "Working"], ["tried", "Tried"], ["matched", "Matched"]];
+const fnState = (f) => (f.status === "matched" ? "matched" : f.status === "working" ? "working" : f.best != null ? "tried" : "open");
+const STATE_RANK = { working: 0, tried: 1, open: 2, matched: 3 };
+
+function renderList() {
+  if (!S.map.length || $("listView").hidden) return;
+  const counts = { all: S.map.length, open: 0, working: 0, tried: 0, matched: 0 };
+  for (const f of S.map) counts[fnState(f)]++;
+  $("fnFilter").innerHTML = FILTERS.map(([k, label]) => `<button type="button" role="radio" aria-checked="${L.filter === k}" class="${L.filter === k ? "on" : ""}" data-filter="${k}">${label}<span>${counts[k].toLocaleString()}</span></button>`).join("");
+  const q = L.q.trim().toLowerCase();
+  let rows = S.map.filter((f) => (L.filter === "all" || fnState(f) === L.filter)
+    && (!q || f.name.toLowerCase().includes(q) || hex8(f.vram).toLowerCase().includes(q) || (f.unit || "").toLowerCase().includes(q)));
+  const key = {
+    i: (f) => f.i, name: (f) => f.name.toLowerCase(), insns: (f) => f.insns, attempts: (f) => f.attempts || 0,
+    best: (f) => (f.status === "matched" ? 2 : f.best == null ? -1 : pctOf(f.best, f.insns)), status: (f) => STATE_RANK[fnState(f)],
+  }[L.sort === "vram" ? "i" : L.sort];
+  rows = rows.slice().sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : a.i - b.i) * L.dir; });
+  L.rows = rows;
+  const fork = S.ov && S.ov.kind === "fork";
+  $("fnRows").innerHTML = rows.slice(0, L.limit).map((f) => {
+    const st = fnState(f), p = pctOf(f.best, f.insns);
+    const best = st === "matched" ? `<span class="ok">100%</span>` : p == null ? `<span class="dim">–</span>` : `${(p * 100).toFixed(0)}%`;
+    const status = st === "matched" ? `<span class="st matched">matched</span>` : st === "working" ? `<span class="st working">${esc(f.agent || "working")}</span>`
+      : st === "tried" ? `<span class="st tried">tried</span>` : `<span class="st">to do</span>`;
+    return `<tr data-fn="${esc(f.name)}" class="${S.fn === f.name ? "sel" : ""}" tabindex="0"><td class="mono dim">${fork ? esc(f.unit || "") : hex8(f.vram)}</td>
+      <td class="mono name">${esc(f.name)}</td><td class="r mono">${f.insns.toLocaleString()}</td><td class="r mono">${best}</td>
+      <td class="r mono">${f.attempts || `<span class="dim">0</span>`}</td><td>${status}</td></tr>`;
+  }).join("") || `<tr class="none"><td colspan="6">No function matches${q ? ` “${esc(L.q)}”` : ""}.</td></tr>`;
+  $("fnShown").textContent = rows.length > L.limit ? `${L.limit.toLocaleString()} of ${rows.length.toLocaleString()} shown` : plural(rows.length, "function");
+  $("fnMore").hidden = rows.length <= L.limit;
+  document.querySelectorAll(".fn-table th").forEach((th) => {
+    th.classList.toggle("sorted", th.dataset.sort === L.sort);
+    th.classList.toggle("desc", th.dataset.sort === L.sort && L.dir < 0);
+  });
+}
+$("fnFilter").addEventListener("click", (e) => { const b = e.target.closest("[data-filter]"); if (b) { L.filter = b.dataset.filter; L.limit = 200; renderList(); } });
+$("fnSearch").addEventListener("input", () => { L.q = $("fnSearch").value; L.limit = 200; renderList(); });
+$("fnMore").onclick = () => { L.limit += 500; renderList(); };
+$("fnRows").addEventListener("click", (e) => { const tr = e.target.closest("tr[data-fn]"); if (tr) openFn(tr.dataset.fn); });
+$("fnRows").addEventListener("keydown", (e) => { const tr = e.target.closest("tr[data-fn]"); if (tr && e.key === "Enter") openFn(tr.dataset.fn); });
+document.querySelectorAll(".fn-table th[data-sort]").forEach((th) => {
+  th.onclick = () => {
+    const k = th.dataset.sort === "vram" ? "i" : th.dataset.sort;
+    if (L.sort === k || (k === "i" && L.sort === "vram")) L.dir = -L.dir;
+    else { L.sort = k; L.dir = ["best", "attempts", "insns"].includes(k) ? -1 : 1; }
+    renderList();
+  };
+});
+function showView(view) {
+  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  $("mapView").hidden = view !== "map";
+  $("listView").hidden = view !== "list";
+  if (view === "map") layoutMap(); else renderList();
+}
+document.querySelectorAll("[data-view]").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
+
+/* Matched code over time, from when each function was matched. */
+function renderProgress() {
+  const svg = $("progress"), total = S.map.reduce((n, f) => n + (f.size || 0), 0);
+  const done = S.map.filter((f) => f.status === "matched");
+  S.today = done.filter((f) => f.matched_at > Date.now() / 1000 - 86400).length;
+  const dated = done.filter((f) => f.matched_at).sort((a, b) => a.matched_at - b.matched_at);
+  if (!total || dated.length < 2) { svg.innerHTML = ""; return; }
+  let cum = done.filter((f) => !f.matched_at).reduce((n, f) => n + (f.size || 0), 0);
+  const t0 = dated[0].matched_at, t1 = Math.max(Date.now() / 1000, dated[dated.length - 1].matched_at + 1);
+  const top = cum + dated.reduce((n, f) => n + (f.size || 0), 0);  // scaled to what's done, so early progress shows
+  const X = (t) => (200 * (t - t0)) / (t1 - t0), Y = (v) => 42 - (40 * v) / Math.max(top, 1);
+  let line = `M0,${Y(cum).toFixed(1)}`;
+  for (const f of dated) { cum += f.size || 0; line += `H${X(f.matched_at).toFixed(1)}V${Y(cum).toFixed(1)}`; }
+  line += "H200";
+  svg.innerHTML = `<path class="area" d="${line}V44H0Z"/><path class="line" d="${line}"/>`;
+  S.today = done.filter((f) => f.matched_at > Date.now() / 1000 - 86400).length;
 }
 
 /* ------------------------------------------------------------------ sheets */
@@ -1039,7 +1325,12 @@ function closeAll() {
 document.querySelectorAll(".drawer").forEach((d) => {
   d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) { d.hidden = true; if (d.id === "drawer") { S.fn = null; drawMap(); } } });
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeAll(); return; }
+  if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!$("drawer").hidden && (e.key === "j" || e.key === "k")) { e.preventDefault(); stepFn(e.key === "j" ? 1 : -1); return; }
+  if (e.key === "/" && !$("project").hidden && $("drawer").hidden) { e.preventDefault(); showView("list"); $("fnSearch").focus(); }
+});
 
 function cmdBox(cmd) {
   return `<div class="cmd"><code>${esc(cmd)}</code><button type="button" data-copy="${esc(cmd)}">Copy</button></div>`;
@@ -1151,7 +1442,32 @@ function dialog(title, html) {
 
 $("inviteBtn").onclick = openInvite;
 $("joinBtn").onclick = openJoin;
-$("exportBtn").onclick = () => {
+/* The project as source code: the base for ports and mods. */
+function renderSource(ov) {
+  const ex = ov.export, fork = ov.kind === "fork";
+  $("srcExport").hidden = fork || !ov.exportable;
+  $("srcWhen").textContent = !fork && ex ? `exported ${since(ex.t)}` : "";
+  if (fork) {
+    $("srcText").innerHTML = ov.origin === "scratch"
+      ? "This project <b>is</b> the source tree: a decomp-toolkit project that rebuilds your game on every build. Every match is committed to git."
+      : "This project <b>is</b> the source tree. Every match is committed to the <code>decomp-wtf</code> branch, ready to send upstream.";
+    $("srcState").innerHTML = "";
+    return;
+  }
+  if (!ov.exportable) {
+    $("srcText").textContent = `Exporting a rebuildable project isn't available for ${ov.platform_name || "this platform"} yet. Your matched C is kept in the project.`;
+    $("srcState").innerHTML = "";
+    return;
+  }
+  $("srcText").innerHTML = "A decompilation project with the matched functions as C and the rest as assembly, proven to rebuild your game <b>byte for byte</b>. The base for ports and mods.";
+  const stale = ex && ex.matched != null && ex.matched < ov.matched;
+  $("srcState").innerHTML = !ex ? `<span class="muted small">Not exported yet.</span>`
+    : `<div class="src-line ${ex.identical === false ? "bad" : "ok"}">${ex.identical === false ? "✕ the last rebuild differed" : "✓ rebuilds byte for byte"}</div>
+       <div class="src-line">${ex.matched != null ? `${ex.matched.toLocaleString()} of ${ex.functions.toLocaleString()} functions in C` : ""}${stale ? ` · <b>${ov.matched - ex.matched} new matches since</b>` : ""}</div>`;
+  $("srcExport").textContent = ex ? "Export again" : "Export project";
+}
+$("srcOpen").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
+$("srcExport").onclick = () => {
   const body = dialog("Export a rebuildable project", `<p>decomp.wtf writes a complete decompilation project: the matched functions as C, everything else as assembly, a linker script and <code>build.py</code>. Then it builds it to prove it rebuilds your game <b>byte for byte</b>.</p>
     <p class="muted small">It's the base for ports and mods: keep working on it with any tool or agent. Game code and data stay out of git (they're regenerated from your copy), so the tree is safe to put in a repository.</p>
     <div class="row"><button class="primary" id="expGo" type="button">Export and build</button><button class="ghost" data-close type="button">Cancel</button></div>
@@ -1167,6 +1483,7 @@ $("exportBtn").onclick = () => {
         : `<div class="notice room"><span><b>Rebuilds byte for byte.</b> ${r.matched != null ? `${r.matched} of ${r.functions} functions are C.` : ""}</span><span class="grow"></span><button class="ghost small-btn" id="expOpen" type="button">Open folder</button></div>
            ${cmdBox(`cd "${r.path}" && python build.py`)}`;
       wireCopies($("expResult"));
+      api(`/api/project?slug=${S.slug}`).then((ov) => { S.ov = ov; renderSource(ov); }).catch(() => {});
       const open = $("expOpen");
       if (open) open.onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch(() => {});
     } catch (e) { toast(esc(e.message), "err"); $("expGo").disabled = false; }
@@ -1179,7 +1496,7 @@ $("compilerBtn").onclick = async () => {
     <label class="field"><span>Compiler</span><select id="dlgTc"></select></label>
     <label class="field"><span>Flags</span><input id="dlgFlags" class="mono" value="${esc(S.ov.compiler.flags.join(" "))}"></label>
     <div class="row"><button class="primary" id="dlgSave" type="button">Save</button><button class="ghost" id="dlgReset" type="button">Default flags</button></div>`);
-  fillCompilers($("dlgTc"), S.ov.compiler.toolchain, { n64: "N64", psx: "PS1" }[S.ov.platform]);
+  fillCompilers($("dlgTc"), S.ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[S.ov.platform]);
   $("dlgReset").onclick = () => { $("dlgFlags").value = ""; };
   body.querySelector("#dlgSave").onclick = async () => {
     try {

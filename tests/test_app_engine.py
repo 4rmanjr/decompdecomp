@@ -96,6 +96,16 @@ def test_wrong_code_gets_a_diff_and_link_notes(net):
     agent, _ = net.local_agent("tester3")
     out = net.compile_and_diff(agent, "func_80000A0C", "void func_80000A0C(s32 p) { mystery(p); }", "demo-quest-64")
     assert "score" in out and "mystery" in out
+    # the GUI's diff: the same judge, row by row, with the link problems
+    d = net.function_diff("demo-quest-64", "func_80000A0C")
+    assert d["kind"] == "latest" and d["score"] > 0 and any(r[0] != " " for r in d["rows"])
+    assert any("mystery" in p for p in d["problems"])
+    assert net.function_diff("demo-quest-64", "func_80000A0C") == d  # cached
+    net.compile_and_diff(agent, "func_80000A0C", "void func_80000A0C(s32 p) { p = }", "demo-quest-64")
+    broken = net.function_diff("demo-quest-64", "func_80000A0C")
+    assert broken["rows"] is None and broken["error"]
+    assert net.function_diff("demo-quest-64", "func_80000A0C", "best")["score"] == d["score"]
+    assert net.function_diff("demo-quest-64", "func_80000B3C")["rows"] is None  # nothing tried yet
     net.release(agent, "func_80000A0C", "not this", "demo-quest-64")
 
 
@@ -116,6 +126,10 @@ def test_export_and_live(net):
     assert sum(f["status"] == "matched" for f in fmap) >= 2
     detail = net.function_detail("demo-quest-64", "clamp_s32")
     assert detail["status"] == "matched" and detail["scores"]
+    d = net.function_diff("demo-quest-64", "clamp_s32")
+    assert d["kind"] == "matched" and d["score"] == 0 and all(r[0] == " " for r in d["rows"])
+    assert any(f["matched_at"] for f in fmap) and all("unit" in f for f in fmap)
+    assert net.overview("demo-quest-64")["last_activity"]
 
 
 def test_find_similar_on_the_rom(net):

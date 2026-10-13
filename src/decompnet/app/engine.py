@@ -13,6 +13,7 @@ Everything stays on this computer.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -21,7 +22,7 @@ import threading
 import time
 from pathlib import Path
 
-from .. import seeds, similarity, toolchains
+from .. import scoring, seeds, similarity, toolchains
 from ..elfobj import FunctionObj
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
@@ -120,6 +121,7 @@ class RomNetwork(Network):
         self.rooms: dict = {}  # slug -> collab.Room, for projects this computer shares
         self._remote_ids: dict[str, int] = {}
         self._ops: dict[int, dict] = {}  # project id -> look-alike index
+        self._diffs: dict[tuple, dict] = {}  # (function, source, context, compiler) -> diff for the GUI
         from .forkengine import ForkEngine  # forks build on this class's claims, attempts and live view
         self.forks = ForkEngine(self)
 
@@ -1011,14 +1013,26 @@ class RomNetwork(Network):
             return {"path": self._project(slug)["root"], "identical": None}
         from ..rom.export import export_rom
 
-        return export_rom(self, slug, Path(self._project(slug)["root"]) / "source", log=log)
+        proj = self._project(slug)
+        res = export_rom(self, slug, Path(proj["root"]) / "source", log=log)
+        with self.store.tx() as db:  # shown on the project page: what's in the tree and whether it rebuilds
+            cfg = json.loads(db.execute("SELECT config FROM projects WHERE id=?", (proj["id"],)).fetchone()["config"])
+            cfg["export"] = {"t": time.time(), "path": str(res["path"]), "identical": res.get("identical"),
+                             "matched": res.get("matched"), "functions": res.get("functions"),
+                             "fallback": len(res.get("fallback") or [])}
+            db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
+        return res
 
     # ------------------------------------------------------------------ for the GUI
 
     def overview(self, slug: str) -> dict:
+        proj = self._project(slug)
+        last = self.store.one("SELECT MAX(created_at) AS t FROM events WHERE project_id=?", proj["id"])["t"]
+        return self._overview(slug, proj) | {"last_activity": last}
+
+    def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
             return self.forks.overview(fork)
-        proj = self._project(slug)
         cfg = self.cfg(proj)
         agg = self.store.one(
             "SELECT COUNT(*) AS total, SUM(status='matched') AS matched, SUM(size) AS bytes, "
@@ -1037,6 +1051,8 @@ class RomNetwork(Network):
             "matched_bytes": agg["matched_bytes"] or 0, "attempts": agg["attempts"] or 0,
             "context_version": self._context(proj["id"])["version"],
             "folder": proj["root"],
+            "export": cfg.get("export"),
+            "exportable": cfg.get("platform", "n64") in ("n64", "psx", "ps2"),
             "room": self._room_info(proj["slug"]),
         }
 
@@ -1052,13 +1068,52 @@ class RomNetwork(Network):
     def function_map(self, slug: str) -> list[dict]:
         proj = self._project(slug)
         rows = self.store.all(
-            "SELECT f.name, f.vram, f.size, f.n_insns, f.status, f.best_score, f.attempts, a.name AS agent "
-            "FROM functions f LEFT JOIN claims c ON c.function_id=f.id LEFT JOIN agents a ON a.id=c.agent_id "
-            "WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
+            "SELECT f.name, f.vram, f.size, f.n_insns, f.status, f.best_score, f.attempts, f.unit, f.matched_at, "
+            "a.name AS agent FROM functions f LEFT JOIN claims c ON c.function_id=f.id LEFT JOIN agents a "
+            "ON a.id=c.agent_id WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
         remote = {c["vram"]: "@" + c["agent"] for c in (self.links[slug].claims if slug in self.links else [])}
-        return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"],
+        return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"], "unit": r["unit"],
                  "status": "matched" if r["status"] == "matched" else "working" if (r["agent"] or r["vram"] in remote) else "open",
-                 "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"])} for r in rows]
+                 "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"]),
+                 "matched_at": r["matched_at"]} for r in rows]
+
+    def function_diff(self, slug: str, name: str, which: str = "latest") -> dict:
+        """The target next to an attempt, instruction by instruction, for the GUI: the matched C, else the latest
+        (or best) attempt, compiled and linked like the judge does. Cached, so watching an agent costs nothing."""
+        if (fork := self.fork_slug(slug)):
+            return self.forks.function_diff(fork, name)
+        fn = self._function(name, slug)
+        proj = self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"])
+        latest = self.store.one("SELECT source FROM attempts WHERE function_id=? AND source IS NOT NULL "
+                                "ORDER BY id DESC LIMIT 1", fn["id"])
+        picks = [("matched", fn["matched_source"]), ("best", fn["best_source"]),
+                 ("latest", latest["source"] if latest else None)]
+        if which == "latest":
+            picks = [picks[0], picks[2], picks[1]]
+        kind, source = next(((k, v) for k, v in picks if v), (None, None))
+        if source is None:
+            return {"kind": None, "rows": None}
+        ctx = self._context(proj["id"], fn["unit"])
+        key = (fn["id"], hashlib.sha1(source.encode()).hexdigest(), ctx["version"], proj["config"])
+        if key in self._diffs:
+            return self._diffs[key] | {"kind": kind}
+        result = self._compile(proj, ctx["header"], source)
+        if not result.ok:
+            out = {"rows": None, "error": result.log.strip()[-3000:] or "it didn't compile", "source": source}
+        else:
+            cand, verdict, problems = self._evaluate(fn, proj, result.obj)
+            if cand is None:
+                out = {"rows": None, "error": f"the object has no function named `{fn['name']}`", "source": source}
+            else:
+                d = scoring.diff(self._target_obj(fn, proj), cand)
+                if verdict is not None:
+                    d = scoring.DiffResult(0 if verdict else max(1, d.score), d.max_score, d.rows, verdict)
+                out = {"rows": [list(r) for r in d.rows], "score": d.score, "percent": round(d.percent, 1),
+                       "problems": problems, "source": source}
+        if len(self._diffs) > 128:
+            self._diffs.pop(next(iter(self._diffs)))
+        self._diffs[key] = out
+        return out | {"kind": kind}
 
     def function_detail(self, slug: str, name: str) -> dict:
         if (fork := self.fork_slug(slug)):

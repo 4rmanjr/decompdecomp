@@ -17,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 
 from .. import toolchains
+from ..limits import capped
 
 
 def available() -> bool:
@@ -48,7 +49,7 @@ def decompile_object(obj: Path, cache_dir: Path, timeout: float = 900) -> dict[s
         argv = [str(_headless()), tmp, "decompwtf", "-import", str(target), "-scriptPath", str(scripts),
                 "-postScript", "DecompWtfExport.java", str(out), "-deleteProject"]
         try:
-            subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+            subprocess.run(capped(argv), capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.TimeoutExpired):
             return {}
         result = {}

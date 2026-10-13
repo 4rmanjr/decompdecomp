@@ -10,6 +10,7 @@ single match.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -20,7 +21,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .. import similarity
-from ..forks import catalog, csource, drafts, ghidra
+from ..forks import catalog, csource, drafts, ghidra, scratch_dtk
 from ..forks.objdiff import ObjdiffError
 from ..forks.project import STATE, ForkError, ForkProject
 from ..network import Agent, Network, NetworkError
@@ -104,9 +105,7 @@ class ForkEngine:
                 log(f"already forked as {p['slug']}")
                 return p["slug"]
         base = _slug(name or url.rstrip("/").split("/")[-1])
-        slug, n = base, 2
-        while self.net.store.one("SELECT 1 FROM projects WHERE slug=?", slug) or (self.net.workspace / slug).exists():
-            slug, n = f"{base}-{n}", n + 1
+        slug = self._free_slug(base)
         dest = self.net.workspace / slug
         log(f"cloning {url}")
         res = subprocess.run(["git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", url, str(dest)],
@@ -121,14 +120,48 @@ class ForkEngine:
         version = version if version in versions else (versions[0] if versions else version)
         cfg = {"kind": "fork", "repo_url": url, "platform": platform, "version": version, "fork_kind": kind,
                "ready": False, "legal": {"basis": "personal-copy", "license": "the project's own license"}}
-        title = name or url.rstrip("/").split("/")[-1]
+        self._register(slug, name or url.rstrip("/").split("/")[-1], f"fork of {url}", dest, cfg, f"cloned {url}")
+        log(f"cloned into {dest} ({kind} project)")
+        return slug
+
+    def _free_slug(self, base: str) -> str:
+        slug, n = base, 2
+        while self.net.store.one("SELECT 1 FROM projects WHERE slug=?", slug) or (self.net.workspace / slug).exists():
+            slug, n = f"{base}-{n}", n + 1
+        return slug
+
+    def _register(self, slug: str, title: str, description: str, root: Path, cfg: dict, event: str) -> None:
         with self.net.store.tx() as db:
             pid = db.execute("INSERT INTO projects(slug,name,description,arch,big_endian,root,config) VALUES(?,?,?,?,?,?,?)",
-                             (slug, title, f"fork of {url}", "", 0, str(dest), json.dumps(cfg))).lastrowid
+                             (slug, title, description, "", 0, str(root), json.dumps(cfg))).lastrowid
             db.execute("INSERT INTO context_versions(project_id,version,header,agent_id,message,created_at,unit) "
-                       "VALUES(?,?,?,?,?,?,?)", (pid, 1, "", None, "forks keep their headers in the project", time.time(), ""))
-            self.net._event(db, pid, None, "fork", f"cloned {url}")
-        log(f"cloned into {dest} ({kind} project)")
+                       "VALUES(?,?,?,?,?,?,?)", (pid, 1, "", None, "projects keep their headers in the tree", time.time(), ""))
+            self.net._event(db, pid, None, "fork", event)
+
+    def create_scratch(self, game: Path, *, compiler: str | None = None, log=print) -> str:
+        """A GameCube or Wii game, from scratch: generate a dtk-template project for it and open it like a fork."""
+        info = scratch_dtk.game_info(game)
+        sha1 = hashlib.sha1(info["dol"]).hexdigest()
+        for p in self.net.store.all("SELECT slug, config FROM projects"):
+            if json.loads(p["config"]).get("program_sha1") == sha1:
+                log(f"already set up as {p['slug']}")
+                return p["slug"]
+        slug = self._free_slug(_slug(f"{info['title']} {info['id']}" if info["kind"] == "disc" else info["title"]))
+        dest = self.net.workspace / slug
+        try:
+            facts = scratch_dtk.create(dest, game, compiler=compiler, log=log)
+        except BaseException:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise
+        cfg = {"kind": "fork", "origin": "scratch", "repo_url": None, "platform": facts["platform"],
+               "version": facts["id"], "fork_kind": "manifest", "ready": False, "compiler": facts["compiler"],
+               "program_sha1": sha1,
+               "legal": {"basis": "personal-copy", "license": "personal use only",
+                         "statement": "imported by the owner of this copy of the game, who confirmed it was legally obtained",
+                         "confirmed_at": time.time()}}
+        self._register(slug, facts["title"], f"{catalog.PLATFORMS[facts['platform']]} game {facts['id']}, from scratch",
+                       dest, cfg, f"started {facts['id']} from scratch")
+        self.check(slug, log=log)
         return slug
 
     def needs(self, slug: str) -> dict:
@@ -583,8 +616,8 @@ class ForkEngine:
                 fp.git("add", unit.source)
                 fp.git("commit", "-q", "-m", f"Match {meta.get('demangled') or symbol}\n\n"
                                               f"Decompiled by {agent.name} with decomp.wtf.")
-                return {"text": f"✅ MATCH! {fn['name']} is 100% identical to the original. Committed to the decomp-wtf "
-                                "branch. Call claim_function for the next one.", "score": 0, "matched": True}
+                return {"text": f"✅ MATCH! {fn['name']} is 100% identical to the original. Committed to git in the "
+                                "project. Call claim_function for the next one.", "score": 0, "matched": True}
         return {"text": f"{pct:.1f}% match (score {score}; 0 = identical).\n{d.render()}", "score": score, "matched": False}
 
     def _insert_in_order(self, proj, fp: ForkProject, unit, fn, text: str, code: str) -> str:
@@ -725,6 +758,7 @@ class ForkEngine:
             "slug": slug, "title": proj["name"], "description": proj["description"], "kind": "fork",
             "platform": cfg.get("platform"), "platform_name": catalog.PLATFORMS.get(cfg.get("platform"), cfg.get("platform") or ""),
             "repo_url": cfg.get("repo_url"), "fork_kind": cfg.get("fork_kind"), "version": cfg.get("version"),
+            "origin": cfg.get("origin"), "compiler_name": cfg.get("compiler"),
             "versions": fp.versions(), "ready": bool(cfg.get("ready")), "needs": need,
             "rom": {"game_code": cfg.get("version") or "", "region": catalog.PLATFORMS.get(cfg.get("platform"), ""),
                     "title": proj["name"]},

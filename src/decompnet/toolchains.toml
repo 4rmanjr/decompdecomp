@@ -391,3 +391,37 @@ platforms = ["macos-arm64"]
 url = "https://github.com/decompals/binutils-mips-ps2-decompals/releases/download/v0.10/binutils-mips-ps2-decompals-windows-x86-64.zip"
 sha256 = "2bb5904ee174e04f1600cc70ffdb3dc36b0efa4d1892ea446be588ba8dc6198c"
 platforms = ["windows-x86_64"]
+
+[mwcc]
+name = "Metrowerks CodeWarrior (GameCube, Wii) + ProDG + Xbox 360 MSVC"
+kind = "compiler-pack"
+platform = "GameCube/Wii"
+license = "proprietary"
+source = "files.decomp.dev compilers_20251118.zip (the decomp community's archive)"
+description = "Every CodeWarrior version GameCube and Wii games were built with (GC 1.0-3.0a5, Wii 0x4201-1.7), SN ProDG and the Xbox 360 compilers. Windows programs, run through wibo on Linux and macOS."
+[[mwcc.parts]]
+url = "https://files.decomp.dev/compilers_20251118.zip"
+sha256 = "69b0d4980a2eccea4ae6e70b486714b5190cb6c75e3bc7b8fb5878a8854d0d1c"
+
+[sjiswrap]
+name = "sjiswrap"
+kind = "tool"
+license = "Apache-2.0"
+source = "encounter/sjiswrap v1.2.2"
+description = "Lets CodeWarrior compile Shift-JIS (Japanese) source files; used by dtk-template projects."
+binary_name = "sjiswrap"
+[[sjiswrap.parts]]
+url = "https://github.com/encounter/sjiswrap/releases/download/v1.2.2/sjiswrap-windows-x86.exe"
+sha256 = "01d50fa1148cfc3c3b16658c6c9b1c0d9f5324cde79ed6c09ef8353af9d63adf"
+binary = "sjiswrap.exe"
+
+[dtk-template]
+name = "dtk-template"
+kind = "template"
+license = "CC0-1.0"
+source = "encounter/dtk-template @ 95a941f"
+description = "The community's project template for GameCube and Wii decomps, used to start a new one from scratch."
+[[dtk-template.parts]]
+url = "https://github.com/encounter/dtk-template/archive/95a941f755919ebe50c1725a4ce73524470e7a02.tar.gz"
+sha256 = "c49f889a4e092388beef4867340887ec6f0410bd1055d79a8f8850bea89ada61"
+subdir = "dtk-template-95a941f755919ebe50c1725a4ce73524470e7a02"

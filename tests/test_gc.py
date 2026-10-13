@@ -1,0 +1,67 @@
+"""GameCube from scratch: a dtk-template project generated for the user's game, worked on like a fork.
+
+Demo Quest GC (projects/demo-gc) is built like a GameCube game: CodeWarrior 1.3.2, linked by CodeWarrior's linker
+with the standard DOL layout. Importing it must produce a project that rebuilds the program byte for byte, and
+agents' C must be judged by the project's own build and objdiff. CodeWarrior is proprietary, so this runs only
+where the `mwcc` toolchain was installed with its license accepted.
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from elftools.elf.elffile import ELFFile
+
+from decompnet import toolchains
+from decompnet.app.engine import RomNetwork
+from decompnet.forks import csource
+
+ROOT = Path(__file__).resolve().parent.parent
+DEMO = ROOT / "projects" / "demo-gc"
+DOL, ELF = DEMO / "build" / "main.dol", DEMO / "build" / "demoq_gc.elf"
+GAME = ROOT / "projects" / "demo-n64" / "original" / "game.c"
+
+pytestmark = pytest.mark.skipif(
+    any(toolchains.installed(t) is None for t in ("mwcc", "dtk", "gc-wii-binutils", "objdiff-cli", "sjiswrap", "dtk-template"))
+    or (toolchains.get("wibo").supported and toolchains.installed("wibo") is None),
+    reason="needs CodeWarrior (mwcc, proprietary) and the GameCube toolbelt")
+
+
+@pytest.fixture(scope="module")
+def gc(tmp_path_factory):
+    if not DOL.exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py")], check=True)
+    work = tmp_path_factory.mktemp("gc")
+    net = RomNetwork(work / "app.db", work)
+    slug = net.import_rom(DOL, confirmed=True, log=lambda *_: None)
+    return net, slug
+
+
+def test_project_rebuilds_the_program(gc):
+    net, slug = gc
+    ov = net.overview(slug)
+    assert ov["kind"] == "fork" and ov["origin"] == "scratch" and ov["platform"] == "gc" and ov["ready"]
+    assert ov["functions"] > 80
+    root = Path(net.project_row(slug)["root"])
+    res = subprocess.run([str(Path(sys.executable).parent / "ninja")], cwd=root, capture_output=True, text=True)
+    assert res.returncode == 0, res.stdout[-2000:]
+    files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split()
+    assert files and not [f for f in files if f.startswith(("orig/", "build/"))]
+
+
+def test_agents_match_functions(gc):
+    net, slug = gc
+    syms = {s.name: s["st_value"] for s in ELFFile(open(ELF, "rb")).get_section_by_name(".symtab").iter_symbols()}
+    agent, _ = net.local_agent("gc-agent")
+    source = GAME.read_text()
+    for name in ("clamp_s32", "abs_s32", "lerp"):
+        auto = f"fn_{syms[name]:08X}"
+        code = csource.get(source, name).replace(name + "(", auto + "(", 1).replace("f32", "float")
+        res = net.attempt(agent, auto, code, slug)
+        assert res["matched"], res["text"]
+    wrong = net.attempt(agent, f"fn_{syms['player_take_damage']:08X}", f"void fn_{syms['player_take_damage']:08X}(int a) {{ }}", slug)
+    assert not wrong["matched"]
+    net.release(agent, f"fn_{syms['player_take_damage']:08X}", "", slug)
+    root = Path(net.project_row(slug)["root"])
+    assert "Match fn_" in subprocess.run(["git", "log", "--oneline"], cwd=root, capture_output=True, text=True).stdout

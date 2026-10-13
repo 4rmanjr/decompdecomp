@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..network import NetworkError
+from ..limits import capped, killed_for_memory
 from . import objdiff
 
 STATE = ".decomp-wtf"
@@ -242,8 +243,8 @@ class ForkProject:
         env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
         log("$ " + " ".join(Path(c).name if i == 0 else c for i, c in enumerate(cmd)))
         try:
-            proc = subprocess.Popen(cmd, cwd=self.root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, errors="replace")
+            proc = subprocess.Popen(capped(cmd), cwd=self.root, env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace")
         except FileNotFoundError:
             return False, f"{cmd[0]} isn't installed"
         out = []
@@ -256,6 +257,9 @@ class ForkProject:
         except subprocess.TimeoutExpired:
             proc.kill()
             return False, "timed out"
+        if killed_for_memory(code):
+            out.append("stopped: it used more memory than decomp.wtf allows a single tool, so it was stopped "
+                       "before it could slow down or freeze your computer")
         return code == 0, "\n".join(out[-60:])
 
     def setup(self, version: str | None = None, log=print) -> None:

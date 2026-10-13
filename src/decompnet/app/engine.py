@@ -214,6 +214,10 @@ class RomNetwork(Network):
         as a target. Returns the slug."""
         if not confirmed:
             raise NetworkError("confirm that this is your own legally obtained copy of the game")
+        nintendo = self._gamecube_or_wii(data, name)
+        if nintendo is not None:  # a dtk-template project, worked on like a fork
+            compiler = toolchain if toolchain and toolchain.startswith(("GC/", "Wii/")) else None
+            return self.forks.create_scratch(nintendo, compiler=compiler, log=log)
         picked = detect.identify(data, name)
         rom, info = picked.data, picked.info
         for p in self.store.all("SELECT slug, config FROM projects"):
@@ -293,6 +297,22 @@ class RomNetwork(Network):
             self._event(db, pid, None, "import", f"{len(res.functions)} functions from {info['title']}")
         log(f"ready: {len(res.functions)} functions to decompile")
         return slug
+
+    def _gamecube_or_wii(self, data: bytes | Path, name: str = "") -> Path | None:
+        """The file, when it's a GameCube/Wii program (DOL) or disc image; bytes are saved to a file first."""
+        from ..forks import scratch_dtk
+
+        head = Path(data).open("rb").read(0x440) if isinstance(data, (str, Path)) else bytes(data[:0x440])
+        small = Path(data).read_bytes() if isinstance(data, (str, Path)) and Path(data).stat().st_size < 64 << 20 else data
+        if scratch_dtk.disc_kind(head) is None and not (isinstance(small, (bytes, bytearray)) and scratch_dtk.is_dol(small)):
+            return None
+        if isinstance(data, (str, Path)):
+            return Path(data)
+        uploads = self.workspace / ".decomp" / "uploads"
+        uploads.mkdir(parents=True, exist_ok=True)
+        path = uploads / (Path(name).name or ("main.dol" if scratch_dtk.is_dol(data) else "game.iso"))
+        path.write_bytes(data)
+        return path
 
     @staticmethod
     def _asm_source(fn: split.RomFunction) -> str:

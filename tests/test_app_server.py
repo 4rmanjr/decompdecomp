@@ -43,6 +43,8 @@ def test_gui_needs_the_secret_and_the_right_host(app):
     # writes need the custom header too (a cross-site form can't send it)
     assert client.post("/api/settings", json={"per_session": 3}).status_code == 403
     assert client.post("/api/settings", json={"per_session": 3}, headers={"X-Decomp": "1"}).status_code == 200
+    # these tests script the agents themselves: no autopilot after the import
+    assert client.post("/api/settings", json={"autopilot": False}, headers={"X-Decomp": "1"}).json()["autopilot"] is False
 
 
 def test_import_demo_and_follow_it_live(app):

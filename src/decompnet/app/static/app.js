@@ -1533,10 +1533,12 @@ async function openSetup() {
     <div class="setup-group"><h3>Compilers and tools</h3>${tcs}</div>
     <div class="setup-group"><h3>AI agents on this computer</h3>${ags}<p class="muted small">Models with an API key (DeepSeek, OpenRouter, Ollama…) need no install: choose "API key" when adding an agent.</p></div>
     <div class="setup-group"><h3>Work rhythm</h3>
-      <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label></div>
+      <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
+      <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span>Autopilot after each import: try every function's machine draft first, so free matches cost no agent time.</span></label></div>
     <div class="setup-group"><h3>About</h3><p class="muted small">decomp.wtf ${esc(st.version)} on ${esc(st.platform)}. Projects live in <code>${esc(st.home)}</code>. Nothing is sent to us. Open source (MIT).</p></div>`;
   $("setupBody").querySelectorAll("[data-tc]").forEach((b) => { b.onclick = () => installToolchain(b.dataset.tc, !!b.dataset.prop); });
   $("perSession").onchange = () => api("/api/settings", { method: "POST", body: { per_session: Number($("perSession").value) } }).catch(() => {});
+  $("autopilotSet").onchange = () => api("/api/settings", { method: "POST", body: { autopilot: $("autopilotSet").checked } }).catch(() => {});
 }
 
 /* dialogs */

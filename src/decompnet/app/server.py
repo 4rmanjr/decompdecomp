@@ -82,7 +82,8 @@ class Settings:
         if api.get("api_key"):
             api["api_key"] = "•" * 8 + api["api_key"][-4:]
             api["has_key"] = True
-        return {"api": api, "per_session": self.data.get("per_session", 4), "last_project": self.data.get("last_project")}
+        return {"api": api, "per_session": self.data.get("per_session", 4), "last_project": self.data.get("last_project"),
+                "autopilot": self.data.get("autopilot", True)}
 
 
 def _static(name: str) -> bytes | None:
@@ -247,7 +248,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                     shutil.rmtree(game.parent, ignore_errors=True)
             settings.data["last_project"] = slug
             settings.save()
-            if not net.fork_slug(slug):  # free matches first: every function's machine draft, in the background
+            if settings.data.get("autopilot", True) and not net.fork_slug(slug):  # free matches first, in the background
                 try:
                     net.start_autopilot(slug)
                 except NetworkError:
@@ -541,6 +542,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 api.pop("api_key", None)
         if "per_session" in data:
             settings.data["per_session"] = max(1, min(int(data["per_session"]), 20))
+        if "autopilot" in data:
+            settings.data["autopilot"] = bool(data["autopilot"])
         settings.save()
         return JSONResponse(settings.public())
 

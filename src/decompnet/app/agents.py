@@ -340,6 +340,18 @@ class Manager:
             if (cap := self.over_budget(s.slug)) is not None:
                 s.push("info", f"stopping: the agents on this project have spent the ${cap:.2f} budget (Setup)")
                 break
+            link = self.net.links.get(s.slug)
+            if link is not None and (link.error or time.time() - link.last_ok > 30):
+                # in a room whose host is away (or that hasn't let us in yet): wait, don't fail
+                if s.state != "waiting" or not s.feed or "waiting for the room" not in s.feed[-1]["text"]:
+                    s.push("info", f"waiting for the room's host: {link.error or 'not reachable right now'}")
+                s.state = "waiting"
+                try:
+                    link.sync()
+                except Exception:
+                    pass
+                s.stop.wait(10)
+                continue
             s.state = "working"
             s.runs += 1
             t0 = time.time()

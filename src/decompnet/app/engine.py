@@ -885,15 +885,22 @@ class RomNetwork(Network):
             else:
                 res["text"] += "\nShared with the room: the host confirmed the match."
         elif before is None or res["score"] < before:
-            threading.Thread(target=lambda: self._report(link, agent, name, source), daemon=True).start()
+            threading.Thread(target=lambda: self._report(link, agent, name, source, res["score"]), daemon=True).start()
         return res
 
     @staticmethod
-    def _report(link, agent, name, source) -> None:
+    def _report(link, agent, name, source, score) -> None:
         try:
-            link.attempt(agent, name, source)
+            link.call("/collab/best", agent, function=name, source=source, score=score)
         except NetworkError:
             pass
+
+    def apply_reported_best(self, slug: str, name: str, score: int, source: str, agent: Agent) -> None:
+        """Host side: a room member's better attempt, as they report it (their own compile scored it)."""
+        fn = self._function(name, slug)
+        if fn["status"] != "open" or score <= 0 or (fn["best_score"] is not None and score >= fn["best_score"]):
+            return
+        self._record(fn, agent, score, source, self._context(fn["project_id"], fn["unit"])["version"], via="room")
 
     def release(self, agent: Agent, function: str, notes: str, project: str | None = None) -> str:
         if (fork := self.fork_slug(project)):

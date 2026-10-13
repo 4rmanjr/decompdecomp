@@ -147,3 +147,71 @@ def test_closing_the_room_locks_guests_out(room):
     host.rooms[slug].close()
     with pytest.raises(NetworkError):
         collab.join_room(RomNetwork(":memory:", __import__("pathlib").Path("/tmp")), link, "late", b"", client=client, start=False)
+
+
+def _host(built, tmp_path, **settings):  # noqa: F811
+    host = RomNetwork(tmp_path / "h.db", tmp_path / "h")
+    slug = host.import_rom(built, confirmed=True, log=lambda *_: None)
+    room = collab.Room(host, slug)
+    room.configure(**settings)
+    host.rooms[slug] = room
+    code = room.open_invite()
+    client = TestClient(collab.host_app(host, host.rooms), base_url="http://192.168.1.20:6481")
+    return host, slug, room, code, client
+
+
+def _guest(tmp_path, name, link, built, client):  # noqa: F811
+    g = RomNetwork(tmp_path / f"{name}.db", tmp_path / name)
+    return g, collab.join_room(g, link, name, built, log=lambda *_: None, client=client, start=False)
+
+
+def test_public_rooms_need_no_invite_code(built, tmp_path):  # noqa: F811
+    host, slug, room, code, client = _host(built, tmp_path, visibility="public")
+    g, gslug = _guest(tmp_path, "pub", f"http://192.168.1.20:6481/join/open#room={slug}", built, client)
+    assert [m["name"] for m in room.members()] == ["pub"]
+    room.configure(visibility="private")  # back to private: the bare address isn't enough any more
+    with pytest.raises(NetworkError, match="no longer valid"):
+        _guest(tmp_path, "late", f"http://192.168.1.20:6481/join/open#room={slug}", built, client)
+
+
+def test_the_host_lets_people_in_and_can_take_them_out(built, tmp_path):  # noqa: F811
+    host, slug, room, code, client = _host(built, tmp_path, approve=True)
+    link = f"http://192.168.1.20:6481/join/{code}#room={slug}"
+    g, gslug = _guest(tmp_path, "kim", link, built, client)
+    assert [p["name"] for p in room.pending()] == ["kim"] and room.members() == []
+    with pytest.raises(NetworkError, match="waiting for the host"):
+        g.links[gslug].sync()
+    room.approve("kim")
+    g.links[gslug].sync()
+    assert [m["name"] for m in room.members()] == ["kim"]
+    room.remove("kim")
+    with pytest.raises(NetworkError):
+        g.links[gslug].sync()
+    assert room.members() == []
+
+
+def test_better_attempts_reach_the_host_without_a_compile_there(built, tmp_path):  # noqa: F811
+    host, slug, room, code, client = _host(built, tmp_path)
+    g, gslug = _guest(tmp_path, "lee", f"http://192.168.1.20:6481/join/{code}#room={slug}", built, client)
+    agent, _ = g.local_agent("claude-1")
+    g.claim(agent, gslug, "func_800007F4")
+    res = g.attempt(agent, "func_800007F4", "s32 func_800007F4(s32 v) { return v + 1; }", gslug)
+    assert res["score"] and not res["matched"]
+    for _ in range(50):  # reported from a background thread
+        row = host.store.one("SELECT best_score, best_source FROM functions WHERE name='func_800007F4'")
+        if row["best_score"] is not None:
+            break
+        __import__("time").sleep(0.1)
+    assert row["best_score"] == res["score"] and "v + 1" in row["best_source"]
+    assert host.store.one("SELECT via FROM attempts ORDER BY id DESC LIMIT 1")["via"] == "room"
+
+
+def test_a_crowd_in_one_room(built, tmp_path):  # noqa: F811
+    host, slug, room, code, client = _host(built, tmp_path, visibility="public")
+    link = f"http://192.168.1.20:6481/join/open#room={slug}"
+    guests = [_guest(tmp_path, f"m{i}", link, built, client) for i in range(12)]
+    agents = [g.local_agent("claude-1")[0] for g, _ in guests]
+    claimed = [g.claim(a, s).splitlines()[0] for (g, s), a in zip(guests, agents)]
+    assert len(set(claimed)) == len(claimed)  # never the same function twice
+    members = room._members_now()  # members() is cached for a few seconds: everyone polls it
+    assert len(members) == 12 and all(m["working"] for m in members)

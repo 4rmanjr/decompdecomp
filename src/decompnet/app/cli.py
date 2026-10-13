@@ -10,6 +10,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -163,6 +164,48 @@ def connect_agents(args) -> int:
     return 0
 
 
+def _api(path: str, body: dict | None = None) -> dict:
+    """Call the running app's API (for commands that act on it, like `decomp share`)."""
+    state = home_dir() / ".decomp" / "server.json"
+    try:
+        info = json.loads(state.read_text())
+    except (OSError, ValueError):
+        raise SystemExit("decomp.wtf isn't running: start it with `decomp --no-browser`") from None
+    if not _alive(info.get("port", 0)):
+        raise SystemExit("decomp.wtf isn't running: start it with `decomp --no-browser`")
+    req = urllib.request.Request(f"http://127.0.0.1:{info['port']}{path}", method="POST" if body is not None else "GET",
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Cookie": f"decomp_live={info['secret']}", "X-Decomp": "1",
+                                          "Host": f"127.0.0.1:{info['port']}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise SystemExit(json.loads(e.read() or b"{}").get("error") or str(e)) from None
+
+
+def share(args) -> int:
+    """Share a project with a team from this computer or a server (decomp --no-browser keeps running)."""
+    state = _api("/api/state")
+    slugs = [p["slug"] for p in state["projects"]]
+    if args.project not in slugs:
+        raise SystemExit(f"no project {args.project!r}; projects here: {', '.join(slugs) or 'none'}")
+    body = {"slug": args.project, "visibility": "public" if args.public else "private", "approve": args.approve,
+            "mode": "address" if args.address else "tunnel", "address": args.address or "", "port": args.port}
+    job = _api("/api/collab/start", body)["job"]
+    for _ in range(240):
+        st = _api(f"/api/job?id={job}")
+        if st["state"] != "running":
+            break
+        time.sleep(0.5)
+    if st["state"] != "done":
+        raise SystemExit(st.get("error") or "sharing failed")
+    print(f"Sharing {args.project} ({body['visibility']}{', you approve each member' if args.approve else ''}).")
+    print(f"Invite link: {st['result']['link']}")
+    print("Teammates open decomp.wtf, choose Join a friend's room, paste the link and pick their own copy of the game.")
+    return 0
+
+
 def shortcut(args) -> int:
     from .launcher import install_launcher
 
@@ -181,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("connect", help="give your AI agents (Claude Code, Codex, Gemini CLI, opencode) decomp.wtf's tools")
     c.add_argument("agents", nargs="*", metavar="agent", help="claude, codex, gemini or opencode (default: every one installed)")
     c.add_argument("--list", action="store_true", help="only show which are connected")
+    sh = sub.add_parser("share", help="share a project with your team (the app must be running)")
+    sh.add_argument("project", help="the project's slug (see the app, or `decomp share x` lists them)")
+    sh.add_argument("--address", help="the address teammates use, e.g. http://my-server:6481 (default: a quick tunnel)")
+    sh.add_argument("--port", type=int, default=6481, help="port for --address (default 6481)")
+    sh.add_argument("--public", action="store_true", help="anyone with the address can join (default: invite link)")
+    sh.add_argument("--approve", action="store_true", help="you let each new member in")
     m = sub.add_parser("mcp", help="serve decomp.wtf to the AI agent you talk to (stdio MCP; starts the app if needed)")
     m.add_argument("--name", default=os.environ.get("DECOMP_AGENT_NAME") or "chat",
                    help="how this agent shows up in the app (e.g. claude-code; or set DECOMP_AGENT_NAME)")
@@ -188,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "mcp":
         from .bridge import main as bridge
         return bridge(args.name)
-    return {"setup": setup, "stop": stop, "shortcut": shortcut, "connect": connect_agents}.get(args.cmd, run)(args)
+    return {"setup": setup, "stop": stop, "shortcut": shortcut, "connect": connect_agents, "share": share}.get(args.cmd, run)(args)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import os
 import secrets
 import shutil
@@ -654,30 +655,69 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     # ------------------------------------------------------------------ rooms (collab.py)
     # The tunnel only ever reaches this separate little server, never the GUI or the MCP endpoint above.
 
-    share = {"server": None, "port": None, "tunnel": None, "links": {}}
-    for p in net.store.all("SELECT slug FROM projects"):
-        collab.Room(net, p["slug"]).close()  # invites don't survive a restart: the tunnel address changes
-    net.restore_links()
+    share = {"servers": {}, "tunnel": None, "links": {}}
 
-    def collab_server() -> int:
-        if share["server"] is not None:
-            return share["port"]
+    def collab_server(public_port: int | None = None) -> int:
+        """The room server: on 127.0.0.1 behind a quick tunnel, or on every network interface at `public_port` for
+        a room shared at an address the host controls (LAN, Tailscale, a server). Only the room's API is served
+        there, never the GUI or the agents' endpoint."""
         import socket
 
         import uvicorn
 
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            port = sock.getsockname()[1]
-        server = uvicorn.Server(uvicorn.Config(collab.host_app(net, net.rooms), host="127.0.0.1", port=port,
-                                               log_level="warning"))
-        threading.Thread(target=server.run, daemon=True, name="collab-server").start()
+        key = ("0.0.0.0", public_port) if public_port else ("127.0.0.1", None)
+        if key in share["servers"]:
+            return share["servers"][key][1]
+        host = key[0]
+        if public_port:
+            port = public_port
+        else:
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(collab.host_app(net, net.rooms), host=host, port=port, log_level="warning"))
+        threading.Thread(target=server.run, daemon=True, name=f"collab-{port}").start()
         for _ in range(100):
             if server.started:
                 break
+            if getattr(server, "should_exit", False):
+                break
             time.sleep(0.05)
-        share.update(server=server, port=port)
+        if not server.started:
+            raise NetworkError(f"couldn't open port {port} for the room (is something else using it?)")
+        share["servers"][key] = (server, port)
         return port
+
+    def open_room(slug: str, mode: str, address: str = "", port: int = 0, log=print, keep: bool = False) -> str:
+        room = net.rooms.get(slug) or collab.Room(net, slug)
+        if mode == "address":
+            address = address.strip().rstrip("/")
+            if not re.match(r"^https?://[^/\s]+$", address):
+                raise NetworkError("the address teammates use, like http://192.168.1.20:6481 or https://decomp.example.org")
+            collab_server(port or 6481)
+            code = room.open_invite(keep=keep, mode="address", address=address, port=port or 6481)
+            base = address
+        else:
+            local = collab_server()
+            code = room.open_invite(keep=keep, mode="tunnel")
+            if share["tunnel"] is None or share["tunnel"].proc is None or share["tunnel"].proc.poll() is not None:
+                log("opening a private tunnel to this computer (Cloudflare quick tunnel, no account needed)")
+                share["tunnel"] = collab.Tunnel(local)
+                share["tunnel"].start(log)
+            base = share["tunnel"].url
+        net.rooms[slug] = room
+        link = f"{base}/join/{'open' if room.settings['visibility'] == 'public' else code}#room={slug}"
+        share["links"][slug] = link
+        return link
+
+    # rooms shared at an address of the host's own come back when the app starts, with the same invite
+    for p in net.store.all("SELECT slug, config FROM projects"):
+        c = json.loads(p["config"]).get("collab") or {}
+        if c.get("open") and c.get("mode") == "address" and c.get("address"):
+            try:
+                open_room(p["slug"], "address", c["address"], int(c.get("port") or 6481), keep=True)
+            except (NetworkError, OSError):
+                pass
 
     @mcp.custom_route("/api/collab", methods=["GET"])
     async def api_collab(request: Request) -> Response:
@@ -688,33 +728,67 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             info = await call(net._room_info, slug)
         except NetworkError as e:
             return fail(e)
-        return JSONResponse({"sharing": slug in net.rooms, "link": share["links"].get(slug), "room": info,
+        room = net.rooms.get(slug)
+        cfg = (json.loads(net.project_row(slug)["config"]).get("collab") or {}) if slug else {}
+        return JSONResponse({"sharing": room is not None, "link": share["links"].get(slug), "room": info,
+                             "settings": room.settings if room else {"visibility": cfg.get("visibility", "private"),
+                                                                       "approve": bool(cfg.get("approve"))},
+                             "pending": room.pending() if room else [],
+                             "mode": cfg.get("mode", "tunnel"), "address": cfg.get("address", ""), "port": cfg.get("port", 6481),
+                             "was_sharing": bool(cfg.get("open")) and room is None,
+                             "addresses": await anyio.to_thread.run_sync(collab.local_addresses),
                              "tunnel_supported": collab.cloudflared_available()})
 
     @mcp.custom_route("/api/collab/start", methods=["POST"])
     async def api_collab_start(request: Request) -> Response:
         if (bad := guard(request, write=True)):
             return bad
-        slug = str((await body(request)).get("slug", ""))
+        data = await body(request)
+        slug = str(data.get("slug", ""))
         if slug in net.links:
             return fail(ValueError("this project belongs to a friend's room; only its host can invite people"))
         if net.fork_slug(slug):
-            return fail(ValueError("rooms are for ROM projects. To work on a fork together, push its decomp-wtf "
-                                   "branch and share it through git"))
+            return fail(ValueError("rooms are for games started from a ROM. To work on a git project together, share "
+                                   "its repository (GitHub, GitLab, your own server)"))
+        mode = "address" if data.get("mode") == "address" else "tunnel"
 
         def work(log):
-            port = collab_server()
             room = net.rooms.get(slug) or collab.Room(net, slug)
-            code = room.open_invite()
-            net.rooms[slug] = room
-            if share["tunnel"] is None or share["tunnel"].proc is None or share["tunnel"].proc.poll() is not None:
-                log("opening a private tunnel to this computer (Cloudflare quick tunnel, no account needed)")
-                share["tunnel"] = collab.Tunnel(port)
-                share["tunnel"].start(log)
-            link = f"{share['tunnel'].url}/join/{code}#room={slug}"
-            share["links"][slug] = link
-            return {"link": link}
+            room.configure(data.get("visibility"), data.get("approve"))
+            return {"link": open_room(slug, mode, str(data.get("address", "")), int(data.get("port") or 6481), log=log,
+                                      keep=bool(data.get("keep")))}
         return JSONResponse({"job": jobs.start("share", work)})
+
+    @mcp.custom_route("/api/collab/manage", methods=["POST"])
+    async def api_collab_manage(request: Request) -> Response:
+        """The host's controls: who's in, public or private, a fresh invite link."""
+        if (bad := guard(request, write=True)):
+            return bad
+        data = await body(request)
+        slug, action, name = str(data.get("slug", "")), str(data.get("action", "")), str(data.get("name", ""))
+        room = net.rooms.get(slug)
+        if room is None:
+            return fail(ValueError("this project isn't being shared"))
+        try:
+            if action == "remove":
+                room.remove(name)
+            elif action in ("approve", "decline"):
+                room.approve(name, action == "approve")
+            elif action == "settings":
+                room.configure(data.get("visibility"), data.get("approve"))
+                c = room.cfg.get("collab") or {}
+                share["links"][slug] = open_room(slug, c.get("mode", "tunnel"), c.get("address", ""),
+                                                 int(c.get("port") or 6481), keep=True)
+            elif action == "rotate":
+                c = room.cfg.get("collab") or {}
+                share["links"][slug] = open_room(slug, c.get("mode", "tunnel"), c.get("address", ""),
+                                                 int(c.get("port") or 6481), keep=False)
+            else:
+                return fail(ValueError("unknown action"))
+        except NetworkError as e:
+            return fail(e)
+        return JSONResponse({"ok": True, "link": share["links"].get(slug), "members": room.members(),
+                             "pending": room.pending(), "settings": room.settings})
 
     @mcp.custom_route("/api/collab/stop", methods=["POST"])
     async def api_collab_stop(request: Request) -> Response:

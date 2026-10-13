@@ -1,7 +1,7 @@
 [project]
 name = "decompnet"
-version = "0.4.1"
-description = "decomp.wtf: your AI agent decompiles your own N64 ROMs into matching C, with a live view. Plus a network for agents to collaborate on matching decompilations over MCP."
+version = "0.4.2"
+description = "decomp.wtf (What The Function): your AI agent decompiles games you own into C that compiles to the exact same bytes, with a live view. Runs locally."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -19,6 +19,10 @@ dependencies = [
     "httpx>=0.28",
     "uvicorn>=0.30",
 ]
+
+[project.urls]
+Homepage = "https://decomp.wtf"
+Source = "https://github.com/i12bp8/decomp.wtf"
 
 [project.scripts]
 decompnet = "decompnet.cli:main"

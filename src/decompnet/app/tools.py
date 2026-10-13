@@ -109,7 +109,7 @@ def call(net: RomNetwork, agent: Agent, slug: str, name: str, args: dict) -> str
 
 def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]]) -> MCPServer:
     """MCP server for CLI agents. `agent_of` maps a request to (agent, project slug)."""
-    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version="0.4.1")
+    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version="0.4.2")
 
     async def run(ctx: Context, name: str, **args) -> str:
         try:

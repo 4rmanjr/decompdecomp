@@ -1,0 +1,94 @@
+"""Machine-generated starting points: run m2c on a function's target code to give the first agent
+a C draft instead of bare assembly.
+
+m2c (GPL-3.0) is installed as a separate pinned tool (`decompnet toolchain install m2c`) and run as a
+program, never imported. It reads GNU-as syntax, which we rebuild from the target object: capstone
+disassembly with relocations shown as %hi/%lo/symbols and branch targets turned into labels.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+from . import scoring, toolchains
+from .elfobj import FunctionObj
+
+# m2c target triple per toolchain (platform-compiler-language).
+M2C_TARGETS = {
+    "gcc-2.7.2-kmc": "mips-gcc-c",
+    "ee-gcc-2.96": "mipsee-gcc-c",
+    "ido-7.1": "mips-ido-c",
+    "ido-5.3": "mips-ido-c",
+    "gcc-2.7.2-psx": "mipsel-gcc-c",
+    "gcc-2.8.1-psx": "mipsel-gcc-c",
+}
+_BRANCH = re.compile(r"^(b|beq|bne|beqz|bnez|bgtz|blez|bltz|bgez|bltzal|bgezal|beql|bnel|beqzl|bnezl|bgtzl|blezl|"
+                     r"bltzl|bgezl|bc1t|bc1f|bc1tl|bc1fl|j)$")
+
+
+def available() -> bool:
+    return toolchains.installed("m2c") is not None
+
+
+def gnu_asm(fn: FunctionObj) -> str:
+    """The function as a GNU as source file m2c understands."""
+    insns = scoring.disassemble(fn)
+    targets: set[int] = set()
+    body = []
+    for ins in insns:
+        ops = ins.operands
+        parts = [p.strip() for p in ops.split(",")] if ops else []
+        if _BRANCH.match(ins.mnemonic) and parts and re.fullmatch(r"0x[0-9a-f]+|\d+", parts[-1]):
+            target = int(parts[-1], 0)
+            targets.add(target)
+            parts[-1] = f".L{fn.name}_{target:X}"
+            ops = ", ".join(parts)
+        body.append((ins.offset, f"{ins.mnemonic} {ops}".rstrip()))
+    lines = [".set noat", ".set noreorder", ".set gp=64", "", f"glabel {fn.name}"]
+    for off, text in body:
+        if off in targets:
+            lines.append(f".L{fn.name}_{off:X}:")
+        lines.append(f"/* {off:06X} */ {text}")
+    return "\n".join(lines) + "\n"
+
+
+def _context_for_m2c(header: str) -> str:
+    # m2c parses the context with pycparser and does not run a preprocessor.
+    return "\n".join(line for line in header.splitlines() if not line.lstrip().startswith("#"))
+
+
+def generate(fn: FunctionObj, toolchain_id: str | None, context_header: str = "", timeout: float = 20) -> str | None:
+    """C draft for one function, or None when m2c or the target is unavailable or m2c fails."""
+    return generate_from_asm(gnu_asm(fn), fn.name, toolchain_id, context_header, timeout=timeout)
+
+
+def generate_from_asm(asm_text: str, name: str, toolchain_id: str | None, context_header: str = "",
+                      data_asm: str | None = None, timeout: float = 20) -> str | None:
+    """C draft from GNU/splat-style assembly text (plus optional data, for jump tables and strings)."""
+    target = M2C_TARGETS.get(toolchain_id or "")
+    if not target or not available():
+        return None
+    m2c = toolchains.venv_bin(toolchains.path("m2c") / "venv", "m2c")
+    with tempfile.TemporaryDirectory(prefix="decompnet-m2c-") as tmp:
+        asm = Path(tmp) / f"{name}.s"
+        asm.write_text(asm_text)
+        argv = [str(m2c), "-t", target, "-f", name, str(asm)]
+        if data_asm:
+            (Path(tmp) / "data.s").write_text(data_asm)
+            argv.append(str(Path(tmp) / "data.s"))
+        if context_header.strip():
+            ctx = Path(tmp) / "context.c"
+            ctx.write_text(_context_for_m2c(context_header))
+            argv[1:1] = ["--context", str(ctx)]
+        try:
+            res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None
+        if res.returncode != 0 and "--context" in argv:  # an unparsable context must not cost us the seed
+            i = argv.index("--context")
+            res = subprocess.run(argv[:i] + argv[i + 2:], capture_output=True, text=True, timeout=timeout)
+        out = res.stdout.strip()
+        return out if res.returncode == 0 and out else None

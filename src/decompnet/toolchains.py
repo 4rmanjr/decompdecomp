@@ -1,0 +1,239 @@
+"""Pinned compiler toolchains: registry, verified install, and lookup for the compile sandbox.
+
+A toolchain is one or more upstream archives, each verified against a pinned sha256 and
+extracted into its own directory. Projects name a toolchain in project.toml; the compiler
+sandbox mounts that directory (and any runtime it requires) read-only.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import platform as _platform
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import tomllib
+import urllib.request
+from dataclasses import dataclass, field
+from importlib import resources
+from pathlib import Path
+
+MANIFEST = ".decompnet-toolchain.json"
+
+
+class ToolchainError(RuntimeError):
+    pass
+
+
+@dataclass
+class Toolchain:
+    id: str
+    name: str
+    license: str
+    source: str
+    description: str = ""
+    kind: str = "compiler"  # compiler | runtime | tool
+    platform: str = ""
+    arch: str = ""
+    cc: list[str] = field(default_factory=list)
+    flags: list[str] = field(default_factory=list)
+    requires: list[str] = field(default_factory=list)
+    parts: list[dict] = field(default_factory=list)
+    git: str = ""
+    commit: str = ""
+
+    @property
+    def proprietary(self) -> bool:
+        return self.license.lower() == "proprietary"
+
+    def parts_for(self, plat: str | None = None) -> list[dict]:
+        plat = plat or current_platform()
+        return [p for p in self.parts if plat in p.get("platforms", [plat])]
+
+    @property
+    def supported(self) -> bool:
+        """Whether this toolchain can be installed on this computer."""
+        return bool(self.git) or bool(self.parts_for())
+
+
+def current_platform() -> str:
+    """linux-x86_64, linux-aarch64, macos-x86_64, macos-arm64 or windows-x86_64."""
+    os_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux" if sys.platform.startswith("linux") else sys.platform)
+    machine = _platform.machine().lower()
+    machine = {"amd64": "x86_64", "x64": "x86_64", "arm64": "arm64" if os_name == "macos" else "aarch64",
+               "aarch64": "aarch64" if os_name != "macos" else "arm64"}.get(machine, machine)
+    return f"{os_name}-{machine}"
+
+
+def registry() -> dict[str, Toolchain]:
+    data = tomllib.loads(resources.files("decompnet").joinpath("toolchains.toml").read_text())
+    return {tid: Toolchain(id=tid, **spec) for tid, spec in data.items()}
+
+
+def get(tid: str) -> Toolchain:
+    reg = registry()
+    if tid not in reg:
+        raise ToolchainError(f"unknown toolchain {tid!r}; known: {', '.join(sorted(reg))}")
+    return reg[tid]
+
+
+def data_dir() -> Path:
+    """Per-user data directory for decompnet (toolchains, caches)."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "decompnet"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "decompnet"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "decompnet"
+
+
+def root() -> Path:
+    env = os.environ.get("DECOMPNET_TOOLCHAINS")
+    return Path(env).expanduser() if env else data_dir() / "toolchains"
+
+
+def path(tid: str) -> Path:
+    return root() / tid
+
+
+def installed(tid: str) -> dict | None:
+    m = path(tid) / MANIFEST
+    return json.loads(m.read_text()) if m.exists() else None
+
+
+def require(tid: str) -> Path:
+    """Directory of an installed toolchain, or a clear error telling the operator how to install it."""
+    if installed(tid) is None:
+        raise ToolchainError(f"toolchain {tid!r} is not installed: run `decompnet toolchain install {tid}`")
+    return path(tid)
+
+
+def runtime_dirs(tid: str) -> tuple[Path, ...]:
+    """The toolchain plus everything it requires, for mounting into the sandbox."""
+    tc = get(tid)
+    return (require(tid), *(require(dep) for dep in tc.requires))
+
+
+# ---------------------------------------------------------------------------- install
+
+def _sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _download(url: str, dest: Path, log) -> None:
+    log(f"  downloading {url}")
+    req = urllib.request.Request(url, headers={"User-Agent": "decompnet-toolchain-installer"})
+    with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+        shutil.copyfileobj(r, f)
+
+
+def _extract(archive: Path, dest: Path, subdir: str | None) -> None:
+    with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
+        if archive.name.endswith(".zst"):
+            # GNU tar picks the zstd decompressor itself; never restore owners from the archive.
+            subprocess.run(["tar", "-xf", str(archive), "-C", tmp, "--no-same-owner", "--no-same-permissions"],
+                           check=True, capture_output=True)
+        else:
+            # gz/xz in pure Python, so this works on Windows and macOS too. The "data" filter refuses
+            # absolute paths, links out of the tree and device files, and drops setuid bits.
+            with tarfile.open(archive) as t:
+                t.extractall(tmp, filter="data")
+        src = Path(tmp) / subdir if subdir else Path(tmp)
+        if not src.is_dir():
+            raise ToolchainError(f"archive {archive.name} has no {subdir}/")
+        for item in src.iterdir():
+            target = dest / item.name
+            if target.exists():
+                shutil.rmtree(target) if target.is_dir() and not target.is_symlink() else target.unlink()
+            shutil.move(str(item), target)
+
+
+def install(tid: str, *, accept_license: bool = False, force: bool = False, log=print) -> Path:
+    tc = get(tid)
+    for dep in tc.requires:
+        if installed(dep) is None or force:
+            install(dep, accept_license=accept_license, force=force, log=log)
+    if installed(tid) and not force:
+        log(f"{tid}: already installed at {path(tid)}")
+        return path(tid)
+    if not tc.supported:
+        raise ToolchainError(f"{tid} ({tc.name}) has no build for this computer ({current_platform()})")
+    if tc.proprietary and not accept_license:
+        raise ToolchainError(
+            f"{tid} ({tc.name}) is proprietary software. Running it on your coordinator is your own licensing "
+            f"decision; re-run with --accept-license if you accept that.")
+
+    dest = path(tid)
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    log(f"{tid}: installing {tc.name} [{tc.license}]")
+    pinned = []
+    try:
+        if tc.git:
+            _install_git_tool(tc, dest, log)
+        downloads = root() / ".downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        for part in tc.parts_for():
+            archive = downloads / Path(part["url"]).name
+            if not archive.exists() or (part.get("sha256") and _sha256(archive) != part["sha256"]):
+                _download(part["url"], archive, log)
+            digest = _sha256(archive)
+            if part.get("sha256") and digest != part["sha256"]:
+                archive.unlink()
+                raise ToolchainError(f"checksum mismatch for {part['url']}: expected {part['sha256']}, got {digest}")
+            if not part.get("sha256"):
+                log(f"  no pinned checksum in the registry; pinning on first use: sha256 {digest}")
+            if part.get("binary"):  # a plain executable, not an archive
+                shutil.copyfile(archive, dest / part["binary"])
+                os.chmod(dest / part["binary"], 0o755)
+            else:
+                _extract(archive, dest, part.get("subdir"))
+            pinned.append({"url": part["url"], "sha256": digest})
+    except BaseException:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
+    (dest / MANIFEST).write_text(json.dumps({
+        "id": tid, "name": tc.name, "license": tc.license, "source": tc.source,
+        "parts": pinned, "commit": tc.commit or None, "installed_at": time.time(),
+        "license_accepted": bool(tc.proprietary and accept_license),
+    }, indent=2))
+    log(f"{tid}: installed at {dest}")
+    return dest
+
+
+def venv_bin(venv: Path, name: str) -> Path:
+    """Path of an executable inside a virtual environment, on any OS."""
+    return venv / "Scripts" / f"{name}.exe" if sys.platform == "win32" else venv / "bin" / name
+
+
+def _install_git_tool(tc: Toolchain, dest: Path, log) -> None:
+    uv = shutil.which("uv")
+    if not uv:
+        raise ToolchainError(f"{tc.id} needs `uv` to create its isolated environment")
+    if not shutil.which("git"):
+        # uv can fetch the pinned commit as an archive when git is missing
+        spec = f"{tc.id} @ {tc.git.removesuffix('.git')}/archive/{tc.commit}.zip"
+    else:
+        spec = f"{tc.id} @ git+{tc.git}@{tc.commit}"
+    log(f"  creating an isolated environment for {tc.git} @ {tc.commit[:10]}")
+    subprocess.run([uv, "venv", "--quiet", "--python", "3.12", str(dest / "venv")], check=True)
+    subprocess.run([uv, "pip", "install", "--quiet", "--python", str(venv_bin(dest / "venv", "python")), spec], check=True)
+
+
+def status() -> list[dict]:
+    rows = []
+    for tc in registry().values():
+        m = installed(tc.id)
+        rows.append({"id": tc.id, "name": tc.name, "kind": tc.kind, "platform": tc.platform, "license": tc.license,
+                     "installed": m is not None, "supported": tc.supported, "description": tc.description,
+                     "pinned": all(p.get("sha256") for p in tc.parts) or bool(tc.commit)})
+    return rows

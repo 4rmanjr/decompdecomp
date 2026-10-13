@@ -1,0 +1,117 @@
+"""The local app: GUI API security, demo import, live feed, agent output parsing, the built-in API agent."""
+
+import json
+import shutil
+import time
+
+import httpx
+import pytest
+from starlette.testclient import TestClient
+
+from decompnet import toolchains
+from decompnet.app import agents
+from decompnet.app.engine import RomNetwork
+from decompnet.app.server import build
+
+pytestmark = pytest.mark.skipif(toolchains.installed("gcc-2.7.2-kmc") is None or not shutil.which("ld.lld"),
+                                reason="needs gcc-2.7.2-kmc")
+PORT, SECRET = 6499, "s3cret-for-tests"
+
+
+@pytest.fixture(scope="module")
+def app(tmp_path_factory):
+    home = tmp_path_factory.mktemp("home")
+    (home / ".decomp").mkdir()
+    net = RomNetwork(home / ".decomp" / "decomp.db", home)
+    mcp, manager, security = build(net, home / ".decomp", PORT, SECRET)
+    app = mcp.streamable_http_app(transport_security=security, host="127.0.0.1")
+    client = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
+    client.cookies.set("decomp_live", SECRET)
+    return client, net, manager
+
+
+def test_gui_needs_the_secret_and_the_right_host(app):
+    client, _, _ = app
+    anon = TestClient(client.app, base_url=f"http://127.0.0.1:{PORT}")
+    assert anon.get("/api/state").status_code == 401
+    assert anon.get("/").status_code == 401
+    r = anon.get(f"/?k={SECRET}", follow_redirects=False)
+    assert r.status_code == 303 and "decomp_live" in r.headers["set-cookie"] and "samesite=strict" in r.headers["set-cookie"].lower()
+    evil = TestClient(client.app, base_url="http://evil.example:6499")
+    evil.cookies.set("decomp_live", SECRET)
+    assert evil.get("/api/state").status_code == 403
+    # writes need the custom header too (a cross-site form can't send it)
+    assert client.post("/api/settings", json={"per_session": 3}).status_code == 403
+    assert client.post("/api/settings", json={"per_session": 3}, headers={"X-Decomp": "1"}).status_code == 200
+
+
+def test_import_demo_and_follow_it_live(app):
+    client, net, _ = app
+    h = {"X-Decomp": "1"}
+    assert client.post("/api/import?confirmed=0", content=b"x" * 10, headers=h).status_code == 400
+    job = client.post("/api/import?demo=1", content=b"", headers=h).json()["job"]
+    for _ in range(200):
+        j = client.get(f"/api/job?id={job}").json()
+        if j["state"] != "running":
+            break
+        time.sleep(0.1)
+    assert j["state"] == "done", j
+    slug = j["result"]["slug"]
+    st = client.get("/api/state").json()
+    assert st["projects"][0]["slug"] == slug and any(a["id"] == "api" for a in st["agents"])
+    assert len(client.get(f"/api/map?slug={slug}").json()) >= 95
+    live = client.get(f"/api/live?slug={slug}").json()
+    assert live["overview"]["functions"] >= 95 and live["events"][0]["kind"] == "import"
+    detail = client.get(f"/api/function?slug={slug}&name=func_80000460").json()
+    assert "glabel" in detail["asm"]
+
+
+def test_settings_never_echo_the_api_key(app):
+    client, _, _ = app
+    out = client.post("/api/settings", json={"api": {"provider": "deepseek", "api_key": "sk-abcdef123456"}},
+                      headers={"X-Decomp": "1"}).json()
+    assert "sk-abcdef" not in json.dumps(out) and out["api"]["has_key"]
+    assert "sk-abcdef" not in json.dumps(client.get("/api/state").json())
+
+
+def test_parse_agent_output():
+    claude = json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Matched it."},
+        {"type": "tool_use", "name": "mcp__decomp__compile_and_diff", "input": {"function": "f", "source": "a\nb"}}]}})
+    assert agents.parse_line("claude", claude) == [("text", "Matched it."), ("tool", "compile_and_diff(f, 2 lines of C)")]
+    codex = json.dumps({"type": "item.started", "item": {"type": "mcp_tool_call", "server": "decomp", "tool": "claim_function",
+                                                        "arguments": {"strategy": "easiest"}}})
+    assert agents.parse_line("codex", codex) == [("tool", "claim_function(easiest)")]
+    gemini = json.dumps({"type": "tool_use", "tool_name": "read_data", "parameters": {"what": "D_80001234"}})
+    assert agents.parse_line("gemini", gemini) == [("tool", "read_data(D_80001234)")]
+    opencode = json.dumps({"type": "text", "part": {"text": "done"}})
+    assert agents.parse_line("opencode", opencode) == [("text", "done")]
+    assert agents.parse_line("claude", "not json at all") == [("info", "not json at all")]
+
+
+def test_builtin_api_agent_matches_a_function(app, monkeypatch):
+    """A scripted OpenAI-compatible model: claim, compile the right C, stop. The tool loop must do the rest."""
+    client, net, manager = app
+    slug = net.store.one("SELECT slug FROM projects")["slug"]
+    script = iter([
+        {"tool_calls": [{"id": "1", "type": "function", "function": {"name": "claim_function", "arguments": json.dumps({"function": "func_800007F4"})}}]},
+        {"tool_calls": [{"id": "2", "type": "function", "function": {"name": "compile_and_diff", "arguments": json.dumps(
+            {"function": "func_800007F4", "source": "s32 func_800007F4(s32 v) { return v < 0 ? -v : v; }"})}}]},
+        {"content": "Matched."},
+    ])
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        assert request.headers["authorization"] == "Bearer test-key" and body["tools"]
+        msg = {"role": "assistant", "content": None} | next(script)
+        return httpx.Response(200, json={"choices": [{"message": msg}]})
+
+    real = httpx.Client
+    monkeypatch.setattr(agents.httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    s = agents.Session("api-t", "api", "Test", slug, "api-test", {"base_url": "http://mock/v1", "model": "m", "api_key": "test-key"})
+    agent, _ = net.local_agent("api-test")
+    assert manager._run_api(s, agent) is True
+    assert net._function("func_800007F4", slug)["status"] == "matched"
+    assert "byte-identical" in seen[-1]["messages"][-1]["content"]

@@ -10,6 +10,7 @@ import anyio
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from .. import __version__
 from ..network import Agent, NetworkError
 from .engine import RomNetwork
 
@@ -179,7 +180,7 @@ def call(net: RomNetwork, agent: Agent, slug: str, name: str, args: dict) -> str
 
 def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]]) -> MCPServer:
     """MCP server for CLI agents. `agent_of` maps a request to (agent, project slug)."""
-    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version="0.5.0")
+    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version=__version__)
 
     async def run(ctx: Context, name: str, **args) -> str:
         try:

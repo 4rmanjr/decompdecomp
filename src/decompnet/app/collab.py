@@ -257,6 +257,8 @@ def host_app(net, rooms: dict[str, Room]) -> Starlette:
 
     def room_for(request: Request) -> Room:
         slug = request.query_params.get("room") or request.headers.get("x-room", "")
+        if not slug and len(rooms) == 1:  # a public room's bare address
+            slug = next(iter(rooms))
         room = rooms.get(slug)
         if room is None:
             raise NetworkError("this room is closed")
@@ -419,7 +421,9 @@ class Tunnel:
 
 def parse_invite(link: str) -> tuple[str, str]:
     """(base url, invite code) from a link like https://abc.trycloudflare.com/join/CODE#room=slug"""
-    link = link.strip()
+    link = link.strip().rstrip("/")
+    if re.match(r"^https?://[^/\s]+$", link):  # a public room's bare address
+        return link, "open"
     m = re.match(r"^(https?://[^/\s]+(?::\d+)?)/join/([A-Za-z0-9_-]{4,})(?:#room=([\w-]+))?$", link)
     if not m:
         raise NetworkError("that doesn't look like a decomp.wtf invite link")

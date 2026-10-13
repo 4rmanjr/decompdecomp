@@ -417,7 +417,7 @@ async function poll(first) {
       if (["match", "split", "rename"].includes(ev.kind)) mapDirty = true;
       if (ev.kind === "match" && !first) {
         S.flash.set(ev.detail, performance.now());
-        if (ev.agent !== AUTO) toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");
+        if (ev.agent !== AUTO && ev.agent !== "@" + AUTO) toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");
       }
       if (ev.kind === "autopilot" && !first) toast(`Autopilot: ${esc(ev.detail)}`, "match");
     }
@@ -491,16 +491,22 @@ function renderRoom(ov) {
   $("inviteBtn").hidden = (room && room.role === "guest") || ov.kind === "fork";
   if (!room) { n.hidden = true; return; }
   n.hidden = false;
-  const people = (room.members || []).map((m) => `<span class="member">${esc(m.name)}${m.matched ? ` · ${m.matched}` : ""}</span>`).join("");
+  const members = room.members || [];
   if (room.role === "host") {
+    const online = members.filter((m) => m.online).length;
+    const working = members.reduce((k, m) => k + ((m.working || []).length ? 1 : 0), 0);
     n.className = "notice room";
-    n.innerHTML = `<span><b>Sharing this project.</b> ${room.members.length ? "In the room:" : "Nobody has joined yet."}</span><span class="members">${people}</span><span class="grow"></span><button class="ghost small-btn" id="roomManage" type="button">Invite link</button>`;
+    n.innerHTML = `<span><b>Sharing this project.</b> ${members.length ? `${members.length} member${members.length === 1 ? "" : "s"}, ${online} online, ${working} working right now.` : "Nobody has joined yet."}</span><span class="members">${members.filter((m) => m.online).slice(0, 8).map((m) => `<span class="member">${esc(m.name)}${m.matched ? ` · ${m.matched}` : ""}</span>`).join("")}</span><span class="grow"></span><button class="ghost small-btn" id="roomManage" type="button">Team</button>`;
     $("roomManage").onclick = openInvite;
   } else {
-    const others = (room.members || []).filter((m) => m.name !== room.member).map((m) => `<span class="member">${esc(m.name)}</span>`).join("");
+    const waiting = /waiting for the host/i.test(room.error || "");
+    const others = members.filter((m) => m.name !== room.member && m.online);
     n.className = "notice room" + (room.connected ? "" : " off");
-    n.innerHTML = `<span><b>${room.connected ? "In a friend's room" : "Room offline"}</b> as ${esc(room.member)}. ${room.connected ? "Your agents share their work with the host" + (others ? " and" : ".") : esc(room.error || "Waiting for the host…")}</span><span class="members">${room.connected ? others : ""}</span><span class="grow"></span><button class="ghost small-btn" id="roomReconnect" type="button">${room.connected ? "New link?" : "Reconnect"}</button><button class="ghost small-btn" id="roomLeave" type="button">Leave room</button>`;
-    $("roomReconnect").onclick = openReconnect;
+    n.innerHTML = waiting
+      ? `<span><b>Waiting for the host to let you in</b> as ${esc(room.member)}. Your agents start working with the room as soon as they do.</span><span class="grow"></span><button class="ghost small-btn" id="roomLeave" type="button">Cancel</button>`
+      : `<span><b>${room.connected ? "In a team room" : "Room offline"}</b> as ${esc(room.member)}. ${room.connected ? `${members.length} member${members.length === 1 ? "" : "s"}${others.length ? `, ${others.length} others online` : ""}; your agents share their work with the host.` : esc(room.error || "Waiting for the host…") + " Your agents wait and carry on when it's back."}</span><span class="members">${room.connected ? others.slice(0, 8).map((m) => `<span class="member">${esc(m.name)}</span>`).join("") : ""}</span><span class="grow"></span><button class="ghost small-btn" id="roomReconnect" type="button">${room.connected ? "New link?" : "Reconnect"}</button><button class="ghost small-btn" id="roomLeave" type="button">Leave room</button>`;
+    const rc = $("roomReconnect");
+    if (rc) rc.onclick = openReconnect;
     $("roomLeave").onclick = async () => {
       if (!confirm("Leave this room? Your local copy of the project stays; it stops syncing.")) return;
       await api("/api/collab/leave", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
@@ -512,43 +518,91 @@ let inviteTimer = null;
 async function openInvite() {
   const info = await api(`/api/collab?slug=${S.slug}`).catch((e) => { toast(esc(e.message), "err"); return null; });
   if (!info) return;
-  const body = dialog("Invite friends", `<p>Friends join this project from their own decomp.wtf. Each of them needs <b>their own copy of exactly this game</b>: the app checks that their ROM is identical to yours.</p>
-    <p class="muted small">Only the work is shared: which function each agent is on, the C attempts, matches, names, structs and notes. No ROM data or assembly is ever sent; everyone's agents read the code from their own copy. Every match is checked against your ROM before it counts. Keep the room private: the decompiled code of a commercial game belongs to its rights holder.</p>
+  const body = dialog("Decompile together", `<p>Your team works on this game from their own computers, each with <b>their own copy of exactly this game</b> (decomp.wtf checks it's identical) and their own agents. This computer is the room's host: it keeps the shared work and checks every match against your copy.</p>
+    <p class="muted small">Only the work travels: who's on which function, C attempts, matches, names, structs and notes; never ROM data or assembly. You host the room and decide who's in. The decompiled code of a commercial game belongs to its rights holder: keep it among people who own the game.</p>
     <div id="inviteBody"></div>`);
+  const box = body.querySelector("#inviteBody");
+  const opts = (inf) => `<div class="setup-group"><h3>Who can join</h3>
+      <div class="seg" id="visSeg"><button type="button" data-vis="private" class="${inf.settings.visibility !== "public" ? "on" : ""}">Private: invite link</button><button type="button" data-vis="public" class="${inf.settings.visibility === "public" ? "on" : ""}">Public: anyone with the address</button></div>
+      <label class="check"><input type="checkbox" id="apprChk" ${inf.settings.approve ? "checked" : ""}><span>I let each new member in (they wait until you approve)</span></label></div>`;
   const render = (inf) => {
-    const box = body.querySelector("#inviteBody");
-    if (!box) return;
+    if (!box.isConnected) return;
     if (!inf.sharing) {
-      box.innerHTML = `<div class="row"><button class="primary" id="startShare" type="button" ${inf.tunnel_supported ? "" : "disabled"}>Start sharing</button>
-        <span class="muted small">Opens a private tunnel to this computer while the app runs (Cloudflare quick tunnel, free, no account).</span></div><pre class="joblog" id="shareLog" hidden></pre>`;
+      const sugg = (inf.addresses || []).map((a) => `<button type="button" class="chip" data-addr="${esc(a.address)}">${esc(a.label)}: <span>${esc(a.address)}</span></button>`).join("");
+      box.innerHTML = `${inf.was_sharing ? `<div class="notice"><span>This room was shared before the app restarted. Share it again: members keep their place.</span></div>` : ""}
+        <div class="setup-group"><h3>How teammates reach this computer</h3>
+          <label class="check"><input type="radio" name="mode" value="tunnel" ${inf.mode !== "address" ? "checked" : ""} ${inf.tunnel_supported ? "" : "disabled"}><span><b>Quick tunnel</b>: works from anywhere, nothing to set up (Cloudflare's free tunnel). The address changes when the app restarts; members then paste the new link.</span></label>
+          <label class="check"><input type="radio" name="mode" value="address" ${inf.mode === "address" ? "checked" : ""}><span><b>An address you control</b>: this network, Tailscale, or a server with its own domain. It stays the same, so the room reopens by itself after a restart.</span></label>
+          <div id="addrBox" ${inf.mode === "address" ? "" : "hidden"}>
+            <label class="field"><span>The address teammates use (the room listens on port <input id="addrPort" class="mono port" type="number" value="${inf.port || 6481}">)</span><input id="addrIn" class="mono" placeholder="http://192.168.1.20:6481" value="${esc(inf.address || "")}"></label>
+            <div class="chips">${sugg}</div></div></div>
+        ${opts(inf)}
+        <div class="row"><button class="primary" id="startShare" type="button">Start sharing</button></div><pre class="joblog" id="shareLog" hidden></pre>`;
+      box.querySelectorAll('[name="mode"]').forEach((r) => { r.onchange = () => { box.querySelector("#addrBox").hidden = r.value !== "address" || !r.checked; }; });
+      box.querySelectorAll("[data-addr]").forEach((b) => { b.onclick = () => { box.querySelector("#addrIn").value = b.dataset.addr; }; });
+      box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => box.querySelectorAll("[data-vis]").forEach((x) => x.classList.toggle("on", x === b)); });
       box.querySelector("#startShare").onclick = async () => {
+        const mode = box.querySelector('[name="mode"]:checked')?.value || "tunnel";
+        const visibility = box.querySelector("[data-vis].on")?.dataset.vis || "private";
         box.querySelector("#shareLog").hidden = false;
         box.querySelector("#startShare").disabled = true;
         try {
-          const { job } = await api("/api/collab/start", { method: "POST", body: { slug: S.slug } });
+          const { job } = await api("/api/collab/start", { method: "POST", body: { slug: S.slug, mode, visibility,
+            approve: box.querySelector("#apprChk").checked, address: box.querySelector("#addrIn")?.value || "",
+            port: Number(box.querySelector("#addrPort")?.value) || 6481, keep: inf.was_sharing } });
           await followJob(job, box.querySelector("#shareLog"));
           render(await api(`/api/collab?slug=${S.slug}`));
         } catch (e) { toast(esc(e.message), "err"); box.querySelector("#startShare").disabled = false; }
       };
       return;
     }
-    const people = (inf.room?.members || []).map((m) => `<div class="line-item"><div class="txt"><b>${esc(m.name)}</b><span>${m.agents.length ? esc(m.agents.join(", ")) : "no agents yet"} · ${m.matched} matched</span></div></div>`).join("");
-    box.innerHTML = `<label class="field"><span>Invite link (send it to friends who own this game)</span></label>${cmdBox(inf.link || "")}
-      <div class="setup-group"><h3>In the room</h3>${people || `<p class="muted small">Nobody yet. The link works while decomp.wtf is open on this computer.</p>`}</div>
-      <div class="row"><button class="ghost danger" id="stopShare" type="button">Stop sharing</button></div>`;
+    const members = inf.room?.members || [];
+    const online = members.filter((m) => m.online).length;
+    const people = members.map((m) => `<div class="line-item"><span class="dot ${m.online ? "on" : ""}"></span><div class="txt"><b>${esc(m.name)}</b>
+        <span>${m.agents.length ? esc(m.agents.join(", ")) : "no agents yet"} · ${m.matched} matched${m.working.length ? ` · on ${esc(m.working.slice(0, 3).join(", "))}` : ""}</span></div>
+        <button class="ghost small-btn danger" data-remove="${esc(m.name)}" type="button">Remove</button></div>`).join("");
+    const waiting = (inf.pending || []).map((p) => `<div class="line-item"><div class="txt"><b>${esc(p.name)}</b><span>asks to join</span></div>
+        <button class="primary small-btn" data-approve="${esc(p.name)}" type="button">Let in</button><button class="ghost small-btn" data-decline="${esc(p.name)}" type="button">Decline</button></div>`).join("");
+    box.innerHTML = `<label class="field"><span>${inf.settings.visibility === "public" ? "The room's address (anyone with it and their own copy of the game can join)" : "Invite link (send it to teammates who own this game)"}</span></label>${cmdBox(inf.link || "")}
+      <p class="muted small">${inf.mode === "address" ? "Shared at your own address: the room reopens by itself when this app restarts." : "Shared through a quick tunnel: the address changes if this app restarts."} Teammates choose <i>Join a team's room</i> in decomp.wtf, or run <code>decomp join &lt;link&gt; &lt;their copy&gt; --name &lt;name&gt;</code>.</p>
+      ${waiting ? `<div class="setup-group"><h3>Waiting to join</h3>${waiting}</div>` : ""}
+      <div class="setup-group"><h3>In the room · ${members.length} member${members.length === 1 ? "" : "s"}, ${online} online</h3>${people || `<p class="muted small">Nobody yet.</p>`}</div>
+      ${opts(inf)}
+      <div class="setup-group"><h3>Keep it open</h3><div class="row" id="svcRow"><span class="muted small">Checking…</span></div></div>
+      <div class="row"><button class="ghost" id="rotate" type="button">New invite link</button><button class="ghost danger" id="stopShare" type="button">Stop sharing</button></div>`;
     wireCopies(box);
+    const manage = async (payload) => {
+      try { await api("/api/collab/manage", { method: "POST", body: { slug: S.slug, ...payload } }); render(await api(`/api/collab?slug=${S.slug}`)); }
+      catch (e) { toast(esc(e.message), "err"); }
+    };
+    box.querySelectorAll("[data-remove]").forEach((b) => { b.onclick = () => { if (confirm(`Remove ${b.dataset.remove} from the room? Their agents stop working with it.`)) manage({ action: "remove", name: b.dataset.remove }); }; });
+    box.querySelectorAll("[data-approve]").forEach((b) => { b.onclick = () => manage({ action: "approve", name: b.dataset.approve }); });
+    box.querySelectorAll("[data-decline]").forEach((b) => { b.onclick = () => manage({ action: "decline", name: b.dataset.decline }); });
+    box.querySelectorAll("[data-vis]").forEach((b) => { b.onclick = () => manage({ action: "settings", visibility: b.dataset.vis }); });
+    box.querySelector("#apprChk").onchange = (e) => manage({ action: "settings", approve: e.target.checked });
+    box.querySelector("#rotate").onclick = () => { if (confirm("Make a new invite link? The old one stops working for people who haven't joined yet; members stay in.")) manage({ action: "rotate" }); };
     box.querySelector("#stopShare").onclick = async () => {
       await api("/api/collab/stop", { method: "POST", body: { slug: S.slug } });
       render(await api(`/api/collab?slug=${S.slug}`));
     };
+    api("/api/service").then((sv) => {
+      const row = box.querySelector("#svcRow");
+      if (!row) return;
+      row.innerHTML = sv.installed ? `<span class="ok-mark">decomp.wtf starts with this computer</span><button class="ghost small-btn" id="svcOff" type="button">Don't</button>`
+        : `<span class="muted small">The room is open while decomp.wtf runs.</span><button class="ghost small-btn" id="svcOn" type="button">Start decomp.wtf with this computer</button>`;
+      const on = row.querySelector("#svcOn"), off = row.querySelector("#svcOff");
+      if (on) on.onclick = async () => { try { toast(esc((await api("/api/service", { method: "POST", body: { action: "install" } })).message)); render(await api(`/api/collab?slug=${S.slug}`)); } catch (e) { toast(esc(e.message), "err"); } };
+      if (off) off.onclick = async () => { await api("/api/service", { method: "POST", body: { action: "remove" } }).catch(() => {}); render(await api(`/api/collab?slug=${S.slug}`)); };
+    }).catch(() => {});
   };
   render(info);
   clearInterval(inviteTimer);
   inviteTimer = setInterval(async () => {
     if ($("dialog").hidden) { clearInterval(inviteTimer); return; }
+    if (box.contains(document.activeElement) && document.activeElement.matches("input")) return;  // typing
     const inf = await api(`/api/collab?slug=${S.slug}`).catch(() => null);
     if (inf && inf.sharing) render(inf);
-  }, 4000);
+  }, 5000);
 }
 
 function openReconnect() {
@@ -569,10 +623,10 @@ function openReconnect() {
 }
 
 function openJoin() {
-  const body = dialog("Join a friend's room", `<p class="muted">Paste the invite link your friend sent you, then pick <b>your own copy</b> of the same game. decomp.wtf checks it's identical to theirs; your ROM itself is never sent.</p>
+  const body = dialog("Join a team's room", `<p class="muted">Paste the invite link (or a public room's address), then pick <b>your own copy</b> of the same game. decomp.wtf checks it's identical to the host's; your copy itself is never sent.</p>
     <label class="field"><span>Invite link</span><input id="jLink" class="mono" placeholder="https://….trycloudflare.com/join/…"></label>
     <label class="field"><span>Your name in the room</span><input id="jName" maxlength="24" placeholder="e.g. alex"></label>
-    <label class="field"><span>Your copy of the game</span><input id="jRom" type="file" accept=".z64,.n64,.v64,.rom,.bin"></label>
+    <label class="field"><span>Your copy of the game</span><input id="jRom" type="file"></label>
     <label class="check"><input type="checkbox" id="jOwn"><span>This is my own copy of this game, obtained legally. I'll keep what the room makes private.</span></label>
     <div class="row"><button class="primary" id="jGo" type="button">Join</button></div><pre class="joblog" id="jLog" hidden></pre>`);
   body.querySelector("#jGo").onclick = async () => {
@@ -1032,7 +1086,8 @@ function addActivity(events, attempts, first) {
   const items = [...events.map((e) => ({ t: e.created_at, ev: e })), ...attempts.map((a) => ({ t: a.created_at, at: a }))];
   items.sort((a, b) => a.t - b.t);
   for (const it of items) {
-    if ((it.at && it.at.agent === AUTO) || (it.ev && it.ev.agent === AUTO && ["match", "claim", "autopilot"].includes(it.ev.kind))) {
+    const auto = (who) => who === AUTO || who === "@" + AUTO;  // ours, or the room host's
+    if ((it.at && auto(it.at.agent)) || (it.ev && auto(it.ev.agent) && ["match", "claim", "autopilot"].includes(it.ev.kind))) {
       const a = S.apFeed || (S.apFeed = { tried: 0, matched: 0, li: null });
       if (it.at) a.tried++;
       if (it.ev && it.ev.kind === "match") a.matched++;

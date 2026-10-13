@@ -510,3 +510,6 @@ button { cursor: pointer; border: 0; background: none; }
 .note-box textarea, .field textarea { width: 100%; border-radius: 9px; border: 1px solid var(--line); background: var(--raise); padding: 9px 11px; font: 13px/1.5 var(--sans); color: var(--ink); resize: vertical; }
 .pin.on { background: var(--work-bg); color: var(--work); border-color: transparent; }
 .fn-table .star { color: var(--work); margin-right: 5px; }
+
+.port { width: 80px; height: 26px !important; padding: 0 6px !important; display: inline-block; }
+.line-item .dot { flex: none; }

@@ -127,6 +127,9 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             raise NetworkError("no project is open in decomp.wtf; open a ROM in the app first")
         return agent, slug
 
+    # rooms this computer belongs to reconnect (members keep their place; their agents wait while the host is away)
+    net.restore_links()
+
     # helpers that were working when the app last stopped carry on
     resume = [r for r in settings.data.get("running_agents", []) if isinstance(r, dict)]
     for r in resume:
@@ -789,6 +792,22 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             return fail(e)
         return JSONResponse({"ok": True, "link": share["links"].get(slug), "members": room.members(),
                              "pending": room.pending(), "settings": room.settings})
+
+    @mcp.custom_route("/api/service", methods=["GET", "POST"])
+    async def api_service(request: Request) -> Response:
+        """Run decomp.wtf as a service that starts with the computer (keeps a team's room open)."""
+        from . import service
+
+        if (bad := guard(request, write=request.method == "POST")):
+            return bad
+        if request.method == "POST":
+            action = str((await body(request)).get("action", ""))
+            try:
+                msg = await anyio.to_thread.run_sync(service.install if action == "install" else service.remove)
+            except (RuntimeError, OSError) as e:
+                return fail(e)
+            return JSONResponse({"message": msg, "installed": service.installed()})
+        return JSONResponse({"installed": await anyio.to_thread.run_sync(service.installed)})
 
     @mcp.custom_route("/api/collab/stop", methods=["POST"])
     async def api_collab_stop(request: Request) -> Response:

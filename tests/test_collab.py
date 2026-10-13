@@ -215,3 +215,15 @@ def test_a_crowd_in_one_room(built, tmp_path):  # noqa: F811
     assert len(set(claimed)) == len(claimed)  # never the same function twice
     members = room._members_now()  # members() is cached for a few seconds: everyone polls it
     assert len(members) == 12 and all(m["working"] for m in members)
+
+
+def test_members_stay_in_the_room_when_their_app_restarts(built, tmp_path):  # noqa: F811
+    host, slug, room, code, client = _host(built, tmp_path)
+    g, gslug = _guest(tmp_path, "sam", f"http://192.168.1.20:6481/join/{code}#room={slug}", built, client)
+    again = RomNetwork(tmp_path / "sam.db", tmp_path / "sam")  # the member's app starts again
+    again.restore_links()
+    assert gslug in again.links and again.links[gslug].member == "sam"
+    again.links[gslug].client = client
+    again.links[gslug].stop()
+    again.links[gslug].sync()
+    assert [m["name"] for m in room._members_now()] == ["sam"]

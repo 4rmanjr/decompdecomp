@@ -28,14 +28,15 @@
     <div class="hero-text">
       <p class="eyebrow">Matching decompilation</p>
       <h1>Pick your game.<br>Your agent turns it into C.</h1>
-      <p class="lede">Start an N64 ROM from scratch, or carry on a public decomp for GameCube, Wii, PlayStation, DS, Switch, PC and more. Every function is checked against your copy of the game, byte for byte. You watch it happen.</p>
+      <p class="lede">Drop in a game for N64, PlayStation 1 or 2, GameCube or Wii and start from scratch, or carry on a public decomp for any platform. Every function is checked against your copy of the game, byte for byte, and the result rebuilds your game: the base for ports and mods.</p>
     </div>
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a ROM file">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a game file">
       <input type="file" id="file" hidden>
       <div class="drop-idle" id="dropIdle">
         <div class="cart" aria-hidden="true"><span></span></div>
-        <p class="drop-title">Drop a ROM here</p>
-        <p class="muted small">N64 .z64, .n64 or .v64 · PlayStation disc or program (experimental) · or <span class="link">choose a file</span></p>
+        <p class="drop-title">Drop a game here</p>
+        <p class="muted small">ROM, disc image or program file · or <span class="link">choose a file</span></p>
+        <div class="plat-row" aria-hidden="true"><span>N64</span><span>PS1</span><span>PS2</span><span>GameCube</span><span>Wii</span></div>
       </div>
       <div class="drop-picked" id="dropPicked" hidden>
         <div class="rom-card">
@@ -43,23 +44,26 @@
           <h2 id="romTitle"></h2>
           <dl class="facts" id="romFacts"></dl>
         </div>
-        <label class="check"><input type="checkbox" id="own"><span>This is my own copy of this game, obtained legally (for example, dumped from my cartridge). The results stay with me for my own use.</span></label>
-        <div class="row">
+        <label class="check"><input type="checkbox" id="own"><span>This is my own copy of this game, obtained legally (for example, dumped from my own console or cartridge). The results stay with me for my own use.</span></label>
+        <div class="row" id="compilerRow">
           <label class="field grow"><span>Compiler</span><select id="compilerPick"></select></label>
         </div>
+        <p class="muted small" id="compilerNote" hidden></p>
+        <label class="check" id="mwConsent" hidden><input type="checkbox" id="mwAccept"><span>Install CodeWarrior, the compilers GameCube and Wii games were built with (about 80 MB). It's proprietary software, kept by the decomp community: only if you accept that.</span></label>
         <div class="row">
-          <button class="primary" id="analyse" type="button" disabled>Analyse ROM</button>
+          <button class="primary" id="analyse" type="button" disabled>Start decompiling</button>
           <button class="ghost" id="cancelPick" type="button">Cancel</button>
         </div>
       </div>
       <div class="drop-busy" id="dropBusy" hidden>
         <div class="spinner" aria-hidden="true"></div>
         <p class="drop-title" id="busyTitle">Analysing…</p>
+        <div class="upbar" id="impUp" hidden><i></i></div>
         <pre class="joblog" id="jobLog"></pre>
       </div>
     </div>
   </section>
-  <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 2.5 3v4.2c0 3.3 2.3 6.3 5.5 7.3 3.2-1 5.5-4 5.5-7.3V3L8 1Zm0 1.6 4 1.5v3.1c0 2.5-1.6 4.8-4 5.7-2.4-.9-4-3.2-4-5.7V4.1l4-1.5Z"/></svg>Your ROM never leaves this computer. Only your AI agent's provider sees the assembly and code it works on.</p>
+  <p class="privacy"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 2.5 3v4.2c0 3.3 2.3 6.3 5.5 7.3 3.2-1 5.5-4 5.5-7.3V3L8 1Zm0 1.6 4 1.5v3.1c0 2.5-1.6 4.8-4 5.7-2.4-.9-4-3.2-4-5.7V4.1l4-1.5Z"/></svg>Your game never leaves this computer. Only your AI agent's provider sees the assembly and code it works on. <button class="link-btn" id="pathPick" type="button">Big disc? Use its path instead</button></p>
   <a class="fork-row" href="#/catalog">
     <div class="fork-plats" aria-hidden="true"><span>GC</span><span>Wii</span><span>PS1</span><span>PS2</span><span>GBA</span><span>DS</span><span>N64</span><span>Switch</span><span>PC</span><span>360</span></div>
     <div class="fork-text">

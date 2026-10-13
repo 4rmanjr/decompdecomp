@@ -30,10 +30,9 @@ from .. import __version__, toolchains
 from ..network import NetworkError
 from ..rom.n64 import RomError
 from . import agents, collab, tools
-from .engine import COMPILERS, SHORT_NAMES, TOOLS, RomNetwork
+from .engine import COMPILERS, MW_VERSIONS, SHORT_NAMES, TOOLS, RomNetwork
 
 COOKIE = "decomp_live"
-MAX_ROM = 1024 * 1024 * 1024  # up to a PlayStation disc image
 MAX_DISC = 16 * 1024 * 1024 * 1024  # dual-layer DVD and then some
 
 
@@ -193,7 +192,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             t["name"] = SHORT_NAMES.get(t["id"], t["name"])
         return {"version": __version__, "platform": toolchains.current_platform(), "home": str(home.parent),
                 "projects": projects, "toolchains": tcs, "agents": agents.detect(),
-                "api_presets": agents.API_PRESETS, "settings": settings.public(), "mcp_url": mcp_url}
+                "api_presets": agents.API_PRESETS, "settings": settings.public(), "mcp_url": mcp_url,
+                "codewarrior": {"installed": toolchains.installed("mwcc") is not None, **MW_VERSIONS}}
 
     @mcp.custom_route("/api/state", methods=["GET"])
     async def api_state(request: Request) -> Response:
@@ -201,24 +201,49 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
 
     @mcp.custom_route("/api/import", methods=["POST"])
     async def api_import(request: Request) -> Response:
+        """A game the user owns: the demo, an upload streamed to disk (discs are gigabytes), or a local path."""
         if (bad := guard(request, write=True)):
             return bad
         q = request.query_params
-        demo = q.get("demo") == "1"
-        if demo:
-            data = _static("demo/demo-quest-64.z64")
-            if data is None:
+        toolchain = q.get("toolchain") or None
+        if q.get("demo") == "1":
+            game: bytes | Path | None = _static("demo/demo-quest-64.z64")
+            if game is None:
                 return fail(ValueError("the demo ROM is missing from this install"))
+            name = "demo-quest-64.z64"
         else:
             if q.get("confirmed") != "1":
                 return fail(ValueError("confirm that this is your own legally obtained copy of the game"))
-            data = await request.body()
-            if len(data) > MAX_ROM:
-                return fail(ValueError("file is larger than an N64 cartridge or a PlayStation disc"))
-        toolchain = q.get("toolchain") or None
+            if q.get("path"):
+                game = Path(q["path"].strip().strip('"')).expanduser()
+                if not game.is_file():
+                    return fail(ValueError(f"no file at {game}"))
+                name = game.name
+            else:
+                name = Path(q.get("name") or "game.bin").name
+                upload_dir = home / "uploads" / uuid.uuid4().hex[:8]  # keeps the file's own name
+                upload_dir.mkdir(parents=True, exist_ok=True)
+                game = upload_dir / name
+                size = 0
+                with open(game, "wb") as f:
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > MAX_DISC:
+                            f.close()
+                            game.unlink(missing_ok=True)
+                            return fail(ValueError("that file is larger than any game disc"))
+                        f.write(chunk)
+                if size == 0:
+                    game.unlink(missing_ok=True)
+                    return fail(ValueError("the file was empty"))
+        uploaded = isinstance(game, Path) and game.parent.parent == home / "uploads"
 
         def work(log):
-            slug = net.import_rom(data, toolchain=toolchain, confirmed=True, log=log)
+            try:
+                slug = net.import_rom(game, toolchain=toolchain, confirmed=True, name=name, log=log)
+            finally:
+                if uploaded:
+                    shutil.rmtree(game.parent, ignore_errors=True)
             settings.data["last_project"] = slug
             settings.save()
             return {"slug": slug}

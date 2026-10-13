@@ -98,7 +98,7 @@ async function showHome() {
     a.className = "card";
     a.href = `#/p/${p.slug}`;
     const meta = p.kind === "fork"
-      ? `fork · ${esc(p.platform_name || "?")}${p.version ? " · " + esc(p.version) : ""}${p.ready ? "" : " · needs setup"}`
+      ? `${p.origin === "scratch" ? "from scratch" : "fork"} · ${esc(p.platform_name || "?")}${p.version ? " · " + esc(p.version) : ""}${p.ready ? "" : " · needs setup"}`
       : `${esc(p.rom.game_code)} · ${esc(p.rom.region)} · ${esc(p.compiler.name)}`;
     a.innerHTML = `<div><h4>${esc(p.title)}</h4><p class="meta">${meta}</p></div>
       <div class="meter"><i></i></div><p class="meta">${p.matched} / ${p.functions} functions · ${pct.toFixed(1)}% of code</p>`;
@@ -124,7 +124,7 @@ drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.ad
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); });
 $("file").addEventListener("change", () => { if ($("file").files[0]) pickFile($("file").files[0]); });
-$("own").addEventListener("change", () => { $("analyse").disabled = !$("own").checked; });
+$("own").addEventListener("change", updateAnalyse);
 $("cancelPick").onclick = resetDrop;
 
 /* Read the header in the browser so the user sees what they picked before anything happens. */
@@ -154,40 +154,89 @@ function parseRom(buf) {
   };
 }
 
-/* PlayStation: a PS-X EXE, or a disc image (ISO 9660 descriptor in 2048- or 2352-byte sectors). */
-function parsePsx(head, file) {
-  const text = (a, b) => String.fromCharCode(...head.slice(a, b));
-  const exe = text(0, 8) === "PS-X EXE";
-  const disc = text(0x8001, 0x8006) === "CD001" || text(0x9319, 0x931e) === "CD001";
-  if (!exe && !disc) return null;
+/* What the user dropped, from its first bytes (nothing is uploaded until they confirm). */
+const PLATFORM_NAME = { n64: "Nintendo 64", psx: "PlayStation", ps2: "PlayStation 2", playstation: "PlayStation 1 or 2",
+  gc: "GameCube", wii: "Wii", gcwii: "GameCube or Wii" };
+const MB = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KiB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MiB`);
+
+function identifyHead(head, file) {
   const dv = new DataView(head.buffer);
-  return { title: file.name.replace(/\.[^.]*$/, ""), size: file.size, platform: "psx", order: exe ? "PS-X EXE" : "disc image",
-    entry: exe ? dv.getUint32(0x10, true) : null };
+  const text = (a, b) => String.fromCharCode(...head.slice(a, b));
+  const ascii = (a, b) => text(a, b).split("\0")[0].replace(/[^\x20-\x7e]/g, "").trim();
+  const stem = file.name.replace(/\.[^.]*$/, "");
+  const base = { title: stem, size: file.size };
+  if (text(0, 8) === "PS-X EXE") return { ...base, platform: "psx", order: "PS-X EXE", entry: dv.getUint32(0x10, true) };
+  if (text(0x8001, 0x8006) === "CD001" || text(0x9319, 0x931e) === "CD001") return { ...base, platform: "playstation", order: "disc image" };
+  if (text(0, 4) === "\x7fELF" && head[5] === 1 && dv.getUint16(18, true) === 8) return { ...base, platform: "ps2", order: "ELF program", entry: dv.getUint32(24, true) };
+  if (head.length > 0x60 && dv.getUint32(0x1c) === 0xc2339f3d) return { ...base, platform: "gc", order: "disc image", code: ascii(0, 6), title: ascii(0x20, 0x80) || stem };
+  if (head.length > 0x60 && dv.getUint32(0x18) === 0x5d1c9ea3) return { ...base, platform: "wii", order: "disc image", code: ascii(0, 6), title: ascii(0x20, 0x80) || stem };
+  const packed = { "RVZ\x01": "RVZ", "WIA\x01": "WIA", WBFS: "WBFS", CISO: "CISO" }[text(0, 4)] || (dv.getUint32(0, true) === 0xb10bc001 ? "GCZ" : null);
+  if (packed) return { ...base, platform: "gcwii", order: `${packed} disc image` };
+  if (head.length >= 0x100) {  // a DOL: section offsets, addresses and sizes that make sense, entry in RAM
+    const entry = dv.getUint32(0xe0);
+    let used = 0, ok = entry >= 0x80000000 && entry < 0x81800000;
+    for (let i = 0; i < 18 && ok; i++) {
+      const off = dv.getUint32(i * 4), addr = dv.getUint32(72 + i * 4), size = dv.getUint32(144 + i * 4);
+      if (!size) continue;
+      used++;
+      ok = off >= 0x100 && off + size <= file.size && addr >= 0x80000000 && addr < 0x81800000;
+    }
+    if (ok && used) return { ...base, platform: "gc", order: "program (DOL)", entry };
+  }
+  return null;
 }
 
 async function pickFile(file) {
-  if (file.size > 1024 * 1024 * 1024) return toast("That file is too big for an N64 ROM or a PlayStation disc.", "err");
   const head = new Uint8Array(await file.slice(0, 0x9400).arrayBuffer());
-  let info = parsePsx(head, file), buf = file;
+  let info = identifyHead(head, file), buf = file;
   if (!info) {
-    if (file.size > 64 * 1024 * 1024) return toast("That isn't an N64 ROM or a PlayStation disc or program.", "err");
+    if (file.size > 64 * 1024 * 1024) return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp below.", "err");
     buf = await file.arrayBuffer();
-    try { info = parseRom(buf); } catch (e) { return toast("This isn't an N64 ROM or a PlayStation disc or program.", "err"); }
+    try { info = parseRom(buf); info.platform = "n64"; } catch (e) {
+      return toast("That isn't a game file decomp.wtf can start from scratch (yet). For other platforms, continue a public decomp below.", "err");
+    }
   }
   picked = { buf, info, name: file.name };
   $("romFile").textContent = file.name;
   $("romTitle").textContent = info.title;
-  const facts = info.platform === "psx"
-    ? [["Platform", "PlayStation"], ["Format", info.order], ["Size", `${(info.size / 1048576).toFixed(info.size < 10485760 ? 1 : 0)} MiB`],
-       ["Entry", info.entry != null ? hex8(info.entry) : "from the disc"], ["Support", "experimental"]]
-    : [["Game code", info.code || "—"], ["Region", info.region], ["Size", `${(info.size / 1048576).toFixed(0)} MiB`],
-       ["Format", info.order], ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]];
+  const p = info.platform;
+  const facts = p === "n64"
+    ? [["Game code", info.code || "—"], ["Region", info.region], ["Size", MB(info.size)], ["Format", info.order],
+       ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]]
+    : [["Platform", PLATFORM_NAME[p]], ["Format", info.order], ["Size", MB(info.size)],
+       info.code ? ["Game ID", info.code] : ["Entry", info.entry != null ? hex8(info.entry) : "from the disc"],
+       ["Project", ["gc", "wii", "gcwii"].includes(p) ? "dtk-template" : "splat"]];
   $("romFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
-  fillCompilers($("compilerPick"), info.platform === "psx" ? "gcc-2.7.2-psx" : info.compiler === "IDO" ? "ido-7.1" : "gcc-2.7.2-kmc",
-    info.platform === "psx" ? "PS1" : "N64");
+  setupCompilers(info);
   $("dropIdle").hidden = true;
   $("dropPicked").hidden = false;
+  updateAnalyse();
 }
+
+function setupCompilers(info) {
+  const p = info.platform, select = $("compilerPick"), note = $("compilerNote");
+  const cw = S.st?.codewarrior || { installed: false, gc: [], wii: [] };
+  $("compilerRow").hidden = false; note.hidden = true; $("mwConsent").hidden = true; $("mwAccept").checked = false;
+  if (p === "n64") fillCompilers(select, info.compiler === "IDO" ? "ido-7.1" : "gcc-2.7.2-kmc", "N64");
+  else if (p === "psx") fillCompilers(select, "gcc-2.7.2-psx", "PS1");
+  else if (p === "ps2") fillCompilers(select, "ee-gcc-2.96", "PS2");
+  else if (p === "playstation") {
+    $("compilerRow").hidden = true; note.hidden = false;
+    note.textContent = "The compiler is picked from the disc: PSY-Q-era GCC for PlayStation, EE-GCC for PlayStation 2. You can change it later.";
+  } else {
+    const group = (label, list, dflt) => `<optgroup label="${label}">${list.map((v) => `<option value="${esc(v)}" ${v === dflt ? "selected" : ""}>CodeWarrior ${esc(v)}</option>`).join("")}</optgroup>`;
+    select.innerHTML = (p !== "wii" ? group("GameCube", cw.gc, "GC/1.3.2") : "") + (p !== "gc" ? group("Wii", cw.wii, p === "wii" ? "Wii/1.0" : "") : "");
+    note.hidden = false;
+    note.textContent = "Not sure? Keep the default; you can change it later in configure.py if functions don't match.";
+    $("mwConsent").hidden = cw.installed;
+  }
+}
+
+function updateAnalyse() {
+  const needsConsent = !$("mwConsent").hidden;
+  $("analyse").disabled = !$("own").checked || (needsConsent && !$("mwAccept").checked);
+}
+$("mwAccept").addEventListener("change", updateAnalyse);
 
 function fillCompilers(select, current, platform) {
   const tcs = (S.st?.toolchains || []).filter((t) => t.kind === "compiler" && (!platform || !t.platform || t.platform === platform));
@@ -197,15 +246,23 @@ function fillCompilers(select, current, platform) {
   }).join("");
 }
 
-async function runImport(query, raw, title) {
+async function runImport(query, file, title, name = "") {
   $("dropIdle").hidden = true;
   $("dropPicked").hidden = true;
   $("dropBusy").hidden = false;
   $("busyTitle").textContent = title;
   $("jobLog").textContent = "";
+  $("impUp").hidden = !(file instanceof Blob);
   try {
-    const { job } = await api(`/api/import?${query}`, { method: "POST", raw: raw ?? new ArrayBuffer(0) });
-    const res = await followJob(job, $("jobLog"));
+    let started;
+    if (file instanceof Blob) {
+      started = await uploadFile(`/api/import?${query}&name=${encodeURIComponent(name || file.name || "game.bin")}`, file,
+        (p) => { $("impUp").firstElementChild.style.width = (p * 100).toFixed(1) + "%"; $("busyTitle").textContent = p < 1 ? `Copying ${title.replace(/^\w+ /, "")} into decomp.wtf… ${(p * 100).toFixed(0)}%` : title; });
+    } else {
+      started = await api(`/api/import?${query}`, { method: "POST", raw: file ?? new ArrayBuffer(0) });
+    }
+    $("impUp").hidden = true;
+    const res = await followJob(started.job, $("jobLog"));
     location.hash = `#/p/${res.slug}`;
   } catch (e) {
     toast(esc(e.message), "err");
@@ -213,10 +270,38 @@ async function runImport(query, raw, title) {
   }
 }
 
-$("analyse").onclick = () => {
-  if (!picked || !$("own").checked) return;
-  const tc = $("compilerPick").value;
-  runImport(`confirmed=1&toolchain=${encodeURIComponent(tc)}`, picked.buf, `Analysing ${picked.info.title}…`);
+async function ensureCodeWarrior() {
+  if ($("mwConsent").hidden) return;
+  $("busyTitle").textContent = "Installing CodeWarrior…";
+  const { job } = await api("/api/toolchain", { method: "POST", body: { id: "mwcc", accept_license: true } });
+  await followJob(job, $("jobLog"));
+  await loadState();
+}
+
+$("analyse").onclick = async () => {
+  if (!picked || $("analyse").disabled) return;
+  const p = picked.info.platform;
+  const tc = $("compilerRow").hidden ? "" : $("compilerPick").value;
+  const title = `Analysing ${picked.info.title}…`;
+  if (!$("mwConsent").hidden) {
+    $("dropPicked").hidden = true; $("dropBusy").hidden = false; $("impUp").hidden = true;
+    try { await ensureCodeWarrior(); } catch (e) { toast(esc(e.message), "err"); resetDrop(); return; }
+  }
+  const body = picked.buf instanceof Blob ? picked.buf : new Blob([picked.buf]);
+  runImport(`confirmed=1${tc ? `&toolchain=${encodeURIComponent(tc)}` : ""}`, body, title, picked.name);
+};
+$("pathPick").onclick = () => {
+  const body = dialog("Use a file on this computer", `<p class="muted">For big disc images: decomp.wtf reads the file where it is instead of copying it through the browser.</p>
+    <label class="field"><span>Path to the game file</span><input id="ppPath" class="mono" placeholder="/home/me/games/my-game.iso"></label>
+    <label class="check"><input type="checkbox" id="ppOwn"><span>This is my own copy of this game, obtained legally. The results stay with me for my own use.</span></label>
+    <div class="row"><button class="primary" id="ppGo" type="button" disabled>Start decompiling</button><button class="ghost" data-close type="button">Cancel</button></div>`);
+  body.querySelector("#ppOwn").onchange = () => { $("ppGo").disabled = !$("ppOwn").checked; };
+  body.querySelector("#ppGo").onclick = () => {
+    const path = $("ppPath").value.trim();
+    if (!path) return;
+    $("dialog").hidden = true;
+    runImport(`confirmed=1&path=${encodeURIComponent(path)}`, undefined, "Analysing your game…");
+  };
 };
 $("demoBtn").onclick = () => runImport("demo=1", undefined, "Opening Demo Quest 64…");
 
@@ -542,7 +627,9 @@ function renderFork(ov) {
   if (!ov.ready) { n.hidden = true; return; }
   n.hidden = false;
   const repo = (ov.repo_url || "").replace(/^https?:\/\//, "");
-  n.innerHTML = `<span><b>Fork of ${esc(repo)}</b> · matches are committed to the <code>decomp-wtf</code> branch in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button><a class="ghost small-btn as-btn" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">Repository</a>`;
+  n.innerHTML = ov.origin === "scratch"
+    ? `<span><b>Started from scratch</b> · a ${ov.platform === "gc" || ov.platform === "wii" ? "dtk-template" : "decomp"} project that rebuilds your game byte for byte on every build${ov.compiler_name ? ` (CodeWarrior ${esc(ov.compiler_name)})` : ""}. Matches are committed to git in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button>`
+    : `<span><b>Fork of ${esc(repo)}</b> · matches are committed to the <code>decomp-wtf</code> branch in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button><a class="ghost small-btn as-btn" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">Repository</a>`;
   $("forkMeasure").onclick = async () => {
     toast("Measuring the whole project with objdiff…");
     try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Progress updated.", "match"); refreshMap(); }

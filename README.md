@@ -44,12 +44,16 @@ Everything runs on your computer. No account, no telemetry, nothing uploaded.
 
 ## Install
 
-```bash
-curl -fsSL https://decomp.wtf/install.sh | bash        # macOS and Linux
+**macOS and Linux**
+
+```
+curl -fsSL https://decomp.wtf/install.sh | bash
 ```
 
-```powershell
-irm https://decomp.wtf/install.ps1 | iex               # Windows (PowerShell)
+**Windows** (PowerShell)
+
+```
+irm https://decomp.wtf/install.ps1 | iex
 ```
 
 One line sets up everything: [uv](https://docs.astral.sh/uv/), the app, the period compilers (pinned and
@@ -62,16 +66,12 @@ browser. Remove it any time with `uv tool uninstall decompnet`.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    rom["Your ROM"] --> split["splat<br/>every function and data symbol"]
-    split --> agent(["Your AI agent"])
-    agent -- "writes C" --> cc["The game's original compiler<br/>KMC GCC · IDO"]
-    cc --> link["Linked at the function's<br/>real address"]
-    link --> cmp{"Same bytes<br/>as the ROM?"}
-    cmp -- "no: instruction diff" --> agent
-    cmp -- "yes" --> done["Matched ✓<br/>saved and shared"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-dark.png">
+    <img alt="Your ROM, split into every function by splat. Your agent writes C, the original compiler builds it, it's linked at its real address and compared byte for byte. If it doesn't match yet, the diff goes back to the agent." src=".github/assets/how-light.png">
+  </picture>
+</p>
 
 1. **Open a ROM.** splat and spimdisasm find every function and data symbol, and decomp.wtf recognises the
    compiler that built the game.
@@ -117,7 +117,7 @@ s32 clamp_s32(s32 v, s32 lo, s32 hi) {
 
 ## Features
 
-| | |
+| Feature | What you get |
 | :-- | :-- |
 | **Live view** | A map of every function in the game, each agent's tool calls, scores falling to zero, all in real time. |
 | **Byte-for-byte check** | Candidates are linked at the real address, so calls, globals, strings and jump tables are verified too. |

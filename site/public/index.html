@@ -31,6 +31,7 @@
     </a>
     <nav class="links" aria-label="Sections">
       <a href="#how">How it works</a>
+      <a href="#public">Public decomps</a>
       <a href="#agents">Agents</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/i12bp8/decomp.wtf">GitHub</a>
@@ -107,9 +108,29 @@
       <h2>Pick a game. Pick an agent. Watch.</h2>
     </div>
     <ol class="steps">
-      <li><span class="n">01</span><h3>Open your ROM</h3><p>decomp.wtf finds every function and every piece of data in the game's code, and recognises the compiler that built it. The file never leaves your computer.</p></li>
+      <li><span class="n">01</span><h3>Open your game</h3><p>Drop in an N64 ROM and decomp.wtf finds every function and the compiler that built it. Or continue a public decomp for GameCube, PlayStation, Switch and more. Your file never leaves your computer.</p></li>
       <li><span class="n">02</span><h3>Add your agent</h3><p>Claude Code, Codex, Gemini CLI, opencode, or any model with an API key. Run several at once: each takes a different function, and they share what they learn.</p></li>
       <li><span class="n">03</span><h3>Watch it match</h3><p>The map fills in as functions match. Every attempt, score and name is live. Export the source whenever you like, or invite friends who own the same game.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band" id="public">
+  <div class="wrap">
+    <div class="head">
+      <p class="kicker">Public decomps</p>
+      <h2>Carry on where the community left off.</h2>
+      <p>Hundreds of games already have a community decomp with the build set up and part of the code done. Pick one from decomp.dev, add your own copy of the game, and your agents keep going in the project's real source code.</p>
+    </div>
+    <div class="chips">
+      <span class="chip">GameCube</span><span class="chip">Wii</span><span class="chip">PlayStation</span><span class="chip">PlayStation 2</span>
+      <span class="chip">Nintendo 64</span><span class="chip">Game Boy Advance</span><span class="chip">DS</span><span class="chip">Switch</span>
+      <span class="chip">PC</span><span class="chip">Xbox 360</span><span class="chip">3DS</span><span class="chip">PSP</span>
+    </div>
+    <ol class="steps">
+      <li><span class="n">01</span><h3>Fork a project</h3><p>Browse the 245 projects on decomp.dev in the app, or paste any decomp repository. It's cloned to your computer on its own branch.</p></li>
+      <li><span class="n">02</span><h3>Add your copy</h3><p>decomp.wtf puts your game where the project expects it and runs the project's own setup, with its own compilers.</p></li>
+      <li><span class="n">03</span><h3>Agents match, git commits</h3><p>objdiff judges every attempt. Each match is a commit you can review and, if the project welcomes it, send upstream.</p></li>
     </ol>
   </div>
 </section>
@@ -120,7 +141,7 @@
       <p class="kicker">The rule</p>
       <h2>Score 0, or it doesn't count.</h2>
       <ul class="points">
-        <li><b>Byte-identical, not "close".</b> Each attempt is built with the game's own 1990s compiler and compared with your ROM.</li>
+        <li><b>Byte-identical, not "close".</b> Each attempt is built with the game's own compiler and compared with the original.</li>
         <li><b>Every miss explains itself.</b> The agent gets an instruction diff and fixes structure first, registers last.</li>
         <li><b>Knowledge compounds.</b> Structs, prototypes and names are shared, and only accepted if everything matched so far still matches.</li>
       </ul>
@@ -150,7 +171,7 @@
       <span class="chip">Local models <small>Ollama, LM Studio</small></span>
       <span class="chip">Any MCP client <small>Cursor, Claude Desktop</small></span>
     </div>
-    <p class="fine">Agents only get decomp.wtf's tools: no shell, no access to your files. They also get the know-how decomp veterans use: the game's compiler, machine-made first drafts (m2c), a data inspector, a call graph, and guides for MIPS, IDO and GCC.</p>
+    <p class="fine">Agents only get decomp.wtf's tools: no shell, and no access to your files beyond a fork's own source tree. They also get the know-how decomp veterans use: the game's compiler, machine-made drafts (m2c, Ghidra), a look-alike finder that starts them from code that already matches, a data inspector, a call graph, and guides for MIPS, PowerPC, ARM, x86, AArch64, Metrowerks, GCC, IDO, C++ and objdiff.</p>
   </div>
 </section>
 
@@ -161,7 +182,7 @@
       <h2>Nothing is uploaded. Nothing is provided.</h2>
     </div>
     <div class="trio">
-      <div><h3>Runs locally</h3><p>No account, no telemetry. Your ROM and everything made from it stay on your machine.</p></div>
+      <div><h3>Runs locally</h3><p>No account, no telemetry. Your game and everything made from it stay on your machine.</p></div>
       <div><h3>Bring your own game</h3><p>Use games you own. decomp.wtf doesn't supply or find ROMs and doesn't touch copy protection.</p></div>
       <div><h3>Keep it to yourself</h3><p>Decompiled code still belongs to the game's rights holder. Try everything first with the included demo ROM.</p></div>
     </div>
@@ -173,11 +194,11 @@
     <div class="head"><p class="kicker">FAQ</p><h2>Good to know</h2></div>
     <div class="faq">
       <details><summary>Why "decomp.wtf"?</summary><p>WTF stands for <b>What The Function</b>: what everyone says the first time they stare at a page of MIPS assembly. decomp.wtf answers it, one function at a time.</p></details>
-      <details><summary>Which games work?</summary><p>Nintendo 64 games built with KMC GCC 2.7.2 or IDO 5.3 / 7.1, as long as their main code isn't compressed. PlayStation support is on the way.</p></details>
+      <details><summary>Which games work?</summary><p>From scratch: Nintendo 64 games built with KMC GCC 2.7.2 or IDO 5.3 / 7.1 (main code that isn't compressed), and PlayStation games experimentally. Beyond that, any public decomp whose build produces an objdiff report, which covers practically every project on decomp.dev: GameCube, Wii, PlayStation 1 and 2, GBA, DS, 3DS, Switch, PC, Xbox and Xbox 360.</p></details>
       <details><summary>Do I need to know anything about decompilation?</summary><p>No. The agent does the work and the app shows what's going on. If you read MIPS, you can follow every attempt and jump in.</p></details>
       <details><summary>What does it cost?</summary><p>Nothing; the app is free and open source (MIT, <a href="https://github.com/i12bp8/decomp.wtf">source on GitHub</a>). Your agent uses your own plan or API credits. In our tests a small function cost Claude Code about 8 cents, DeepSeek a fraction of that, and a local model nothing at all.</p></details>
       <details><summary>Is it legal?</summary><p>decomp.wtf is a tool, like a disassembler: it contains no game code and runs on your computer. How you use it is up to you and the law where you live. Use games you own and keep the results private. This isn't legal advice.</p></details>
-      <details><summary>What does it build on?</summary><p>splat and spimdisasm split the ROM, m2c writes first drafts, and the decomp community's recompiled period compilers do the building. Not affiliated with any of these projects.</p></details>
+      <details><summary>What does it build on?</summary><p>splat and spimdisasm split ROMs, objdiff judges forks, m2c and Ghidra write first drafts, the decomp community's recompiled period compilers do the building, and decomp.dev lists the public projects. Not affiliated with any of these projects.</p></details>
     </div>
   </div>
 </section>
@@ -201,7 +222,7 @@
       <span>decomp<b>.wtf</b></span>
     </a>
     <nav aria-label="Site"><a href="https://github.com/i12bp8/decomp.wtf">GitHub</a><a href="/legal">Legal</a><a href="/privacy">Privacy</a><a href="mailto:legal@decomp.wtf">Contact</a></nav>
-    <p>Free and open source (MIT). Not affiliated with Nintendo or Sony; Nintendo 64 and PlayStation are their trademarks.</p>
+    <p>Free and open source (MIT). Not affiliated with Nintendo, Sony, Microsoft or any game publisher; platform names are their owners' trademarks.</p>
   </div>
 </footer>
 

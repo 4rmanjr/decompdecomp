@@ -171,13 +171,11 @@ class _Linker:
         if text not in self.problems:
             self.problems.append(text)
 
-    def function(self):
-        if self.symtab is None:
-            return None
-        for s in self.symtab.iter_symbols():
-            if s.name == self.name and s["st_info"]["type"] == "STT_FUNC" and s["st_shndx"] != "SHN_UNDEF":
-                return s
-        return None
+    def function(self) -> tuple[int, int, int] | None:
+        """(section index, offset, size) of the submitted function, also for period assemblers' size-0 symbols."""
+        from ..elfobj import _function_symbols
+
+        return _function_symbols(self.elf).get(self.name)
 
     def resolve_name(self, name: str) -> int | None:
         addr = self.symbols.resolve(name)
@@ -238,11 +236,11 @@ class _Linker:
             return
         self.checked.add((shndx, off))
         data = sec.data()
-        if named and named[1] == 0:
-            sym = next((s for s in self.symtab.iter_symbols() if s["st_shndx"] == shndx and s["st_value"] == off
-                        and s["st_size"]), None)
-            length = sym["st_size"] if sym else 4
-        else:
+        sym = next((s for s in self.symtab.iter_symbols() if s["st_shndx"] == shndx and s["st_value"] == off
+                    and s["st_size"]), None) if named and named[1] == 0 else None
+        if sym is not None:
+            length = sym["st_size"]
+        else:  # up to the next symbol (period assemblers don't record sizes)
             bounds = sorted({s["st_value"] for s in self.symtab.iter_symbols() if s["st_shndx"] == shndx}
                             | {o for (i, o) in self.local_map if i == shndx} | {len(data)})
             length = next((b for b in bounds if b > off), len(data)) - off
@@ -297,7 +295,7 @@ class _Linker:
         fsym = self.function()
         if fsym is None:
             return LinkResult(None, False, [f"the object has no function named `{self.name}`"])
-        shndx, start, size = fsym["st_shndx"], fsym["st_value"], fsym["st_size"]
+        shndx, start, size = fsym
         self.fn_shndx = shndx
         code = self.elf.get_section(shndx).data()[start:start + size]
         raw = _raw_relocs(self.elf, shndx, start, size, code)

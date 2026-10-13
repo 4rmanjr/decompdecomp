@@ -30,10 +30,11 @@ from .. import __version__, toolchains
 from ..network import NetworkError
 from ..rom.n64 import RomError
 from . import agents, collab, tools
-from .engine import COMPILERS, SHORT_NAMES, RomNetwork
+from .engine import COMPILERS, SHORT_NAMES, TOOLS, RomNetwork
 
 COOKIE = "decomp_live"
-MAX_ROM = 64 * 1024 * 1024
+MAX_ROM = 1024 * 1024 * 1024  # up to a PlayStation disc image
+MAX_DISC = 16 * 1024 * 1024 * 1024  # dual-layer DVD and then some
 
 
 class Jobs:
@@ -186,9 +187,9 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 projects.append(net.overview(p["slug"]))
             except (NetworkError, OSError, KeyError):
                 continue
-        tcs = [t for t in toolchains.status() if t["id"] in COMPILERS or t["id"] == "m2c"]
+        tcs = [t for t in toolchains.status() if t["id"] in COMPILERS or t["id"] in TOOLS]
         for t in tcs:
-            t["use"] = COMPILERS.get(t["id"], "machine-made first drafts")
+            t["use"] = COMPILERS.get(t["id"]) or TOOLS[t["id"]]
             t["name"] = SHORT_NAMES.get(t["id"], t["name"])
         return {"version": __version__, "platform": toolchains.current_platform(), "home": str(home.parent),
                 "projects": projects, "toolchains": tcs, "agents": agents.detect(),
@@ -213,7 +214,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 return fail(ValueError("confirm that this is your own legally obtained copy of the game"))
             data = await request.body()
             if len(data) > MAX_ROM:
-                return fail(ValueError("file is larger than any N64 cartridge"))
+                return fail(ValueError("file is larger than an N64 cartridge or a PlayStation disc"))
         toolchain = q.get("toolchain") or None
 
         def work(log):
@@ -302,6 +303,105 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))
+
+    # ------------------------------------------------------------------ forks of public decomps
+
+    @mcp.custom_route("/api/catalog", methods=["GET"])
+    async def api_catalog(request: Request) -> Response:
+        if (bad := guard(request)):
+            return bad
+        return JSONResponse({"projects": await call(net.forks.catalog)})
+
+    @mcp.custom_route("/api/fork", methods=["POST"])
+    async def api_fork(request: Request) -> Response:
+        if (bad := guard(request, write=True)):
+            return bad
+        data = await body(request)
+
+        def work(log):
+            slug = net.forks.clone(str(data.get("repo", "")), name=str(data.get("name") or ""),
+                                   platform=str(data.get("platform") or ""), version=data.get("version") or None, log=log)
+            settings.data["last_project"] = slug
+            settings.save()
+            return {"slug": slug}
+        return JSONResponse({"job": jobs.start("fork", work)})
+
+    def fork_of(slug: str):
+        if not net.fork_slug(slug):
+            raise NetworkError(f"{slug} isn't a fork")
+        return net.project_row(slug)
+
+    @mcp.custom_route("/api/fork/game", methods=["POST"])
+    async def api_fork_game(request: Request) -> Response:
+        """The user's game file, streamed to disk (GameCube and Wii discs are gigabytes)."""
+        if (bad := guard(request, write=True)):
+            return bad
+        q = request.query_params
+        slug = q.get("slug", "")
+        if q.get("confirmed") != "1":
+            return fail(ValueError("confirm that this is your own legally obtained copy of the game"))
+        try:
+            proj = fork_of(slug)
+        except NetworkError as e:
+            return fail(e)
+        tmp = Path(proj["root"]) / ".decomp-wtf" / f"upload-{uuid.uuid4().hex[:8]}.tmp"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        size = 0
+        with open(tmp, "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_DISC:
+                    f.close()
+                    tmp.unlink(missing_ok=True)
+                    return fail(ValueError("that file is larger than any game disc"))
+                f.write(chunk)
+        name = Path(q.get("name") or "game.iso").name
+
+        def work(log):
+            try:
+                return net.forks.setup(slug, tmp, name, log=log, move=True)
+            finally:
+                tmp.unlink(missing_ok=True)
+        return JSONResponse({"job": jobs.start("fork-setup", work)})
+
+    @mcp.custom_route("/api/fork/setup", methods=["POST"])
+    async def api_fork_setup(request: Request) -> Response:
+        """Set up with a game file already on this computer (`path`), or with none (`path` empty: run the build)."""
+        if (bad := guard(request, write=True)):
+            return bad
+        data = await body(request)
+        slug = str(data.get("slug", ""))
+        try:
+            fork_of(slug)
+        except NetworkError as e:
+            return fail(e)
+        path = str(data.get("path") or "").strip().strip('"')
+        if path:
+            if not data.get("confirmed"):
+                return fail(ValueError("confirm that this is your own legally obtained copy of the game"))
+            src = Path(path).expanduser()
+            if not src.is_file():
+                return fail(ValueError(f"no file at {src}"))
+
+        def work(log):
+            if path:
+                return net.forks.setup(slug, src, src.name, log=log)
+            return net.forks.setup(slug, None, log=log)
+        return JSONResponse({"job": jobs.start("fork-setup", work)})
+
+    @mcp.custom_route("/api/fork/check", methods=["POST"])
+    async def api_fork_check(request: Request) -> Response:
+        """Pick a hand-built project up (or re-measure one): reads its objdiff.json and progress."""
+        if (bad := guard(request, write=True)):
+            return bad
+        slug = str((await body(request)).get("slug", ""))
+        try:
+            fork_of(slug)
+        except NetworkError as e:
+            return fail(e)
+        return JSONResponse({"job": jobs.start("fork-check", lambda log: net.forks.check(slug, log=log))})
+
+    mcp.custom_route("/api/fork/needs", methods=["GET"])(with_project(lambda s, r, d: net.forks.needs(fork_of(s)["slug"])))
 
     # ------------------------------------------------------------------ installs, agents, settings
 
@@ -448,6 +548,9 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         slug = str((await body(request)).get("slug", ""))
         if slug in net.links:
             return fail(ValueError("this project belongs to a friend's room; only its host can invite people"))
+        if net.fork_slug(slug):
+            return fail(ValueError("rooms are for ROM projects. To work on a fork together, push its decomp-wtf "
+                                   "branch and share it through git"))
 
         def work(log):
             port = collab_server()

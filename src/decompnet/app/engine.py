@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-from .. import seeds, toolchains
+from .. import seeds, similarity, toolchains
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
 from ..rom.symbols import AUTO_NAME, IDENT, Symbol, SymbolTable
@@ -36,9 +36,21 @@ COMPILERS = {
 }
 SHORT_NAMES = {"gcc-2.7.2-kmc": "KMC GCC 2.7.2", "ido-7.1": "IDO 7.1", "ido-5.3": "IDO 5.3",
                "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)"}
+# Tools shown in Setup besides the compilers.
+TOOLS = {
+    "m2c": "machine-made first drafts (MIPS, PowerPC, ARM)",
+    "objdiff-cli": "judges forks of public decomps, function by function",
+    "ghidra": "drafts for PC, Switch and other platforms m2c can't read (540 MB, needs Java 21+)",
+}
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"]}
 _AUTO_TOKEN = re.compile(r"\b(?:func|D|B|jtbl|RO|STR|FLT|DBL)_[0-9A-F]{8}\b")
 _ADDRESS = re.compile(r"^(?:0x)?([0-9A-Fa-f]{8})$")
+
+GP_NOTE = """
+/* This game keeps small globals (8 bytes or less) in $gp-relative small data. Declare those here WITHOUT
+ * `extern` (for example `s32 D_8001B278;`): then the compiler reads them through $gp, like the game does.
+ * With `extern`, it builds the full address instead and the function can't match. */
+"""
 
 BASE_HEADER = """/* context.h for {title}: shared by every function. Agents grow it with edit_context:
  * add a prototype or struct the moment you work one out, so the next function benefits. */
@@ -92,6 +104,9 @@ class RomNetwork(Network):
         self.links: dict = {}  # slug -> collab.Link, for projects joined from a friend's room
         self.rooms: dict = {}  # slug -> collab.Room, for projects this computer shares
         self._remote_ids: dict[str, int] = {}
+        self._ops: dict[int, dict] = {}  # project id -> look-alike index
+        from .forkengine import ForkEngine  # forks build on this class's claims, attempts and live view
+        self.forks = ForkEngine(self)
 
     # ------------------------------------------------------------------ basics
 
@@ -107,6 +122,19 @@ class RomNetwork(Network):
 
     def project_row(self, slug: str):
         return self._project(slug)
+
+    def fork_slug(self, project: str | None) -> str | None:
+        """The slug when `project` is a fork of a public decomp, else None."""
+        try:
+            proj = self._project(project)
+        except NetworkError:
+            return None
+        return proj["slug"] if self.cfg(proj).get("kind") == "fork" else None
+
+    def _rom_only(self, project: str | None, what: str) -> None:
+        if self.fork_slug(project):
+            raise NetworkError(f"{what} is for ROM projects. In a fork, the project's own headers and source files are "
+                               "the shared context: use read_file, search_code and edit_file")
 
     def symbols(self, project_id: int) -> SymbolTable:
         if project_id in self._sym_override:
@@ -255,8 +283,8 @@ class RomNetwork(Network):
                 db.execute("INSERT INTO symbols(project_id,name,address,size,kind,preview) VALUES(?,?,?,?,?,?)",
                            (pid, s.name, s.address, s.size, s.kind, preview))
             db.execute("INSERT INTO context_versions(project_id,version,header,agent_id,message,created_at,unit) "
-                       "VALUES(?,?,?,?,?,?,?)", (pid, 1, BASE_HEADER.format(title=info["title"]), None,
-                                                  "basic types", now, ""))
+                       "VALUES(?,?,?,?,?,?,?)", (pid, 1, BASE_HEADER.format(title=info["title"]) + (GP_NOTE if res.gp else ""),
+                                                  None, "basic types", now, ""))
             self._event(db, pid, None, "import", f"{len(res.functions)} functions from {info['title']}")
         log(f"ready: {len(res.functions)} functions to decompile")
         return slug
@@ -320,7 +348,13 @@ class RomNetwork(Network):
                 out.append(f".word .L{w:08X}" if fn["vram"] <= w < fn["vram"] + fn["size"] else f".word 0x{w:08X}")
         return out
 
+    def get_context(self, project: str | None, function: str | None = None) -> str:
+        self._rom_only(project, "get_context")
+        return super().get_context(project, function)
+
     def _brief(self, fn, agent, header):
+        if self.cfg(self.store.one("SELECT config FROM projects WHERE id=?", fn["project_id"])).get("kind") == "fork":
+            return self.forks.brief(fn, agent, header)
         proj = self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"])
         if self.is_rom(proj) and fn["status"] != "matched" and not fn["best_source"] and fn["seed"] is None:
             with self._seed_lock:
@@ -374,13 +408,71 @@ class RomNetwork(Network):
                 if r and r["preview"]:
                     desc += f": {r['preview']}"
                 lines.append(f"- {syms.label(a)} (0x{a:08X}; {desc})")
+        alike = [(r, sim) for r, sim in self.similar(proj, fn, top=3) if r["status"] == "matched"]
+        if alike:
+            lines += ["", "### Looks like (already matched; read with get_function)",
+                      ", ".join(f"{r['name']} ({sim * 100:.0f}% similar)" for r, sim in alike)]
         lines += ["", "Names: use the names shown here (or rename_symbol to give an address a real name). "
                       "Your code is linked at this function's address and must reproduce the ROM bytes exactly."]
         return lines
 
+    def _rom_ops(self, proj) -> dict[tuple[int, int], list[str]]:
+        """(vram, size) -> mnemonics of every function, cached (renames keep addresses; splits change sizes)."""
+        cache = self._ops.setdefault(proj["id"], {})
+        rows = self.store.all("SELECT vram, size, target FROM functions WHERE project_id=? AND target IS NOT NULL", proj["id"])
+        live = set()
+        for r in rows:
+            key = (r["vram"], r["size"])
+            live.add(key)
+            if key not in cache:
+                cache[key] = similarity.mips_mnemonics(r["target"], bool(proj["big_endian"]), r["vram"] or 0)
+        for key in set(cache) - live:
+            del cache[key]
+        return cache
+
+    def similar(self, proj, fn, top: int = 5) -> list[tuple[dict, float]]:
+        """Functions whose instructions look like `fn`'s, matched ones first: [(row, similarity)]."""
+        if fn["target"] is None:
+            return []
+        ops = self._rom_ops(proj)
+        me = (fn["vram"], fn["size"])
+        if me not in ops:
+            return []
+        cands = {f"{v}:{n}": o for (v, n), o in ops.items() if (v, n) != me}
+        rows = {(r["vram"], r["size"]): r for r in self.store.all(
+            "SELECT name, vram, size, n_insns, status, best_score FROM functions WHERE project_id=?", proj["id"])}
+        out = []
+        for key, sim in similarity.rank(ops[me], cands, top=top * 2):
+            v, n = (int(x) for x in key.split(":"))
+            if (v, n) in rows:
+                out.append((rows[(v, n)], sim))
+        out.sort(key=lambda x: (x[0]["status"] != "matched", -x[1]))
+        return out[:top]
+
+    def find_similar(self, project: str | None, function: str, limit: int = 5) -> str:
+        if (fork := self.fork_slug(project)):
+            return self.forks.find_similar(fork, function, limit)
+        proj = self._project(project)
+        fn = self._function(function, proj["slug"])
+        hits = self.similar(proj, fn, top=max(1, min(int(limit), 15)))
+        if not hits:
+            return f"No look-alikes found for {fn['name']}."
+        lines = [f"Functions that look like {fn['name']}:"]
+        for r, sim in hits:
+            state = "matched" if r["status"] == "matched" else f"best {r['best_score']}" if r["best_score"] is not None else "not started"
+            lines.append(f"- {r['name']}  {sim * 100:.0f}% similar  {state}  ({r['n_insns']} insns, 0x{r['vram']:08X})")
+        best = next((r for r, _ in hits if r["status"] == "matched"), None)
+        if best is not None:
+            src = self.store.one("SELECT matched_source FROM functions WHERE project_id=? AND name=?", proj["id"], best["name"])
+            if src and src["matched_source"]:
+                lines += ["", f"Matching C of {best['name']}:", "```c", src["matched_source"].strip()[:4000], "```"]
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------ agent tools for ROMs
 
     def list_functions(self, project: str | None, status: str = "open", limit: int = 40) -> str:
+        if (fork := self.fork_slug(project)):
+            return self.forks.list_functions(fork, status, limit)
         proj = self._project(project)
         where = "" if status == "all" else " AND f.status=?"
         args = [proj["id"]] + ([] if status == "all" else [status])
@@ -395,6 +487,7 @@ class RomNetwork(Network):
                          + (f", claimed by {r['claimed_by']}" if r["claimed_by"] else "") for r in rows)
 
     def read_data(self, project: str | None, what: str, length: int = 64) -> str:
+        self._rom_only(project, "read_data")
         proj = self._project(project)
         syms = self.symbols(proj["id"])
         m = _ADDRESS.match(what.strip())
@@ -425,6 +518,7 @@ class RomNetwork(Network):
         return "\n".join(out)
 
     def split_function(self, agent: Agent, project: str | None, function: str, at: str, new_name: str = "") -> str:
+        self._rom_only(project, "split_function")
         link = self._link(project)
         if link is not None:
             name = self._function(function, project)["name"]
@@ -473,6 +567,7 @@ class RomNetwork(Network):
                 f"{len(tail.lines)}. Continue with {fn['name']} (get_function shows its new assembly).")
 
     def rename_symbol(self, agent: Agent, project: str | None, old: str, new: str, message: str = "") -> str:
+        self._rom_only(project, "rename_symbol")
         proj = self._project(project)
         if not self.is_rom(proj):
             return super().rename_symbol(agent, project, old, new, message)
@@ -584,6 +679,8 @@ class RomNetwork(Network):
             return None
 
     def claim(self, agent: Agent, project: str | None = None, function: str | None = None, strategy: str = "easiest") -> str:
+        if (fork := self.fork_slug(project)):
+            return self.forks.claim(agent, fork, function, strategy)
         link = self._link(project)
         if link is None:
             return super().claim(agent, project, function, strategy)
@@ -597,6 +694,8 @@ class RomNetwork(Network):
         return self._brief(fn, agent, header="CLAIMED")
 
     def attempt(self, agent: Agent, function: str, source: str, project: str | None = None) -> dict:
+        if (fork := self.fork_slug(project)):
+            return self.forks.attempt(agent, fork, function, source)
         link = self._link(project)
         before = self._function(function, project)["best_score"] if link else None
         res = super().attempt(agent, function, source, project)
@@ -622,6 +721,8 @@ class RomNetwork(Network):
             pass
 
     def release(self, agent: Agent, function: str, notes: str, project: str | None = None) -> str:
+        if (fork := self.fork_slug(project)):
+            return self.forks.release(agent, fork, function, notes)
         link = self._link(project)
         if link is not None:
             link.call("/collab/release", agent, function=self._function(function, project)["name"], notes=notes)
@@ -629,6 +730,7 @@ class RomNetwork(Network):
 
     def edit_context(self, agent: Agent, project: str | None, old: str, new: str, message: str,
                      function: str | None = None) -> str:
+        self._rom_only(project, "edit_context")
         link = self._link(project)
         if link is None:
             return super().edit_context(agent, project, old, new, message, function)
@@ -757,6 +859,8 @@ class RomNetwork(Network):
     # ------------------------------------------------------------------ export
 
     def export_rom(self, slug: str) -> Path:
+        if self.fork_slug(slug):
+            return Path(self._project(slug)["root"])  # a fork's work is already in its source tree, committed
         """Write the decompiled sources into the project folder, for the user to keep."""
         proj = self._project(slug)
         out = Path(proj["root"]) / "decompiled"
@@ -781,6 +885,8 @@ class RomNetwork(Network):
     # ------------------------------------------------------------------ for the GUI
 
     def overview(self, slug: str) -> dict:
+        if (fork := self.fork_slug(slug)):
+            return self.forks.overview(fork)
         proj = self._project(slug)
         cfg = self.cfg(proj)
         agg = self.store.one(
@@ -817,13 +923,15 @@ class RomNetwork(Network):
         rows = self.store.all(
             "SELECT f.name, f.vram, f.size, f.n_insns, f.status, f.best_score, f.attempts, a.name AS agent "
             "FROM functions f LEFT JOIN claims c ON c.function_id=f.id LEFT JOIN agents a ON a.id=c.agent_id "
-            "WHERE f.project_id=? ORDER BY f.vram", proj["id"])
+            "WHERE f.project_id=? ORDER BY f.vram, f.unit, f.id", proj["id"])
         remote = {c["vram"]: "@" + c["agent"] for c in (self.links[slug].claims if slug in self.links else [])}
         return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"],
                  "status": "matched" if r["status"] == "matched" else "working" if (r["agent"] or r["vram"] in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(r["vram"])} for r in rows]
 
     def function_detail(self, slug: str, name: str) -> dict:
+        if (fork := self.fork_slug(slug)):
+            return self.forks.function_detail(fork, name)
         fn = self._function(name, slug)
         proj = self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"])
         attempts = self.store.all(
@@ -877,6 +985,8 @@ class RomNetwork(Network):
                 "claims": claims, "overview": self.overview(slug)}
 
     def set_compiler(self, slug: str, toolchain: str, flags: list[str] | None = None) -> None:
+        if self.fork_slug(slug):
+            raise NetworkError("a fork builds with the project's own compilers and flags")
         proj = self._project(slug)
         tc = toolchains.get(toolchain)
         cfg = self.cfg(proj)

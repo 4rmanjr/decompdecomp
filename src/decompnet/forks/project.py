@@ -1,0 +1,336 @@
+"""A decomp project on disk: what kind it is, what it needs, how to set it up, build a unit and diff it.
+
+Layouts set up automatically:
+- manifest:  the project ships `.decomp.wtf.json`: {"game": {"what", "path", "sha1"}, "setup": [[cmd...], ...]}.
+- dtk:       GameCube/Wii (and similar) projects from dtk-template: configure.py + config/<version>/config.yml,
+             built with ninja; the disc image goes in orig/<version>/.
+- configure: other configure.py + ninja projects (many PS2 and DS decomps).
+- splat:     N64/PlayStation-style projects (splat yaml + Makefile); the game file goes where the yaml's
+             target_path says and is checked against its sha1.
+Everything else (CMake, justfiles, custom scripts) is set up by the user following its README; once the build
+has produced objdiff.json, decomp.wtf takes over. Nearly every project on decomp.dev ends up with one, since
+that's how its progress is reported.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..network import NetworkError
+from . import objdiff
+
+STATE = ".decomp-wtf"
+# Agents may only edit source and header files, never the project's build setup, targets or verification.
+EDITABLE = re.compile(r"\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|inl)$", re.I)
+FORBIDDEN_PARTS = {".git", STATE, "orig", "build", "asm", "expected", "tools", "config", ".github", "assets", "bin"}
+
+
+def _sha1(path: Path) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class ForkError(NetworkError):
+    """Shown to the user or agent as is."""
+
+
+@dataclass
+class Unit:
+    name: str
+    target: Path | None
+    base: Path | None
+    source: str | None  # path relative to the project root
+    complete: bool
+    scratch: dict | None
+
+
+def _tool(name: str) -> str | None:
+    """A build tool from PATH or from decomp.wtf's own environment (the ninja Python package)."""
+    found = shutil.which(name)
+    if found:
+        return found
+    local = Path(sys.executable).parent / (f"{name}.exe" if os.name == "nt" else name)
+    return str(local) if local.exists() else None
+
+
+class ForkProject:
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        (self.root / STATE).mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------ what is it
+
+    @property
+    def manifest(self) -> dict | None:
+        p = self.root / ".decomp.wtf.json"
+        return json.loads(p.read_text()) if p.exists() else None
+
+    def kind(self) -> str:
+        if self.manifest:
+            return "manifest"
+        if (self.root / "configure.py").exists() and list(self.root.glob("config/*/config.yml")):
+            return "dtk"
+        if (self.root / "configure.py").exists():
+            return "configure"
+        if self._splat_yaml() and (self.root / "Makefile").exists():
+            return "splat"
+        if (self.root / "objdiff.json").exists():
+            return "objdiff"
+        return "custom"
+
+    def readme(self, limit: int = 70) -> str:
+        """The README's build/setup section (plain text, from the repository: untrusted, display only)."""
+        for name in ("README.md", "README.MD", "readme.md", "README.rst", "README.txt", "README"):
+            p = self.root / name
+            if p.exists():
+                lines = p.read_text(errors="replace").splitlines()
+                break
+        else:
+            return ""
+        def heading(i: int) -> bool:  # markdown "# Title" or an underlined (setext/rst) title, not a badge row
+            if "![" in lines[i] or "[!" in lines[i]:
+                return False
+            if lines[i].lstrip().startswith("#"):
+                return True
+            return bool(lines[i].strip()) and i + 1 < len(lines) and bool(re.fullmatch(r"\s*[=-]{3,}\s*", lines[i + 1]))
+
+        wanted = re.compile(r"build|setup|set up|getting started|usage|install|requirements|prerequisite", re.I)
+        start = next((i for i in range(len(lines)) if heading(i) and wanted.search(lines[i])), 0)
+        return "\n".join(lines[start:start + limit]).strip()
+
+    def versions(self) -> list[str]:
+        return sorted(p.parent.name for p in self.root.glob("config/*/config.yml"))
+
+    def _splat_yaml(self) -> Path | None:
+        for p in sorted(self.root.glob("*.yaml")) + sorted(self.root.glob("config/*.yaml")) + sorted(self.root.glob("config/**/*.yaml")):
+            try:
+                text = p.read_text(errors="replace")
+            except OSError:
+                continue
+            if "segments:" in text and "options:" in text:
+                return p
+        return None
+
+    def _inside(self, rel: str) -> str | None:
+        """`rel` as a clean path inside the project, or None if it points outside or is a template."""
+        if not rel or "__" in rel or "$" in rel or "{" in rel:
+            return None
+        p = (self.root / rel).resolve()
+        if self.root.resolve() not in p.parents:
+            return None
+        out = Path(os.path.relpath(p, self.root.resolve())).as_posix()
+        return out + "/" if rel.endswith("/") else out
+
+    def needs(self, version: str | None = None) -> dict:
+        """What the user has to provide: {"what", "path" (None: set up by hand), "sha1", "help", "auto"}."""
+        kind = self.kind()
+        manual = {"what": "your copy of the game", "path": None, "sha1": None, "auto": False,
+                  "help": "This project has its own setup. Follow its README in a terminal, in the project folder; "
+                          "once its build has produced objdiff.json, click Check again."}
+        if kind == "manifest":
+            g = self.manifest.get("game", {})
+            path = self._inside(g.get("path", ""))
+            return {"what": g.get("what", "your copy of the game"), "path": path, "sha1": g.get("sha1"),
+                    "help": g.get("help", ""), "auto": path is not None}
+        if kind == "dtk":
+            v = version or (self.versions()[0] if self.versions() else "")
+            return {"what": "your copy of the game's disc (ISO, GCM, RVZ, WIA, WBFS, CISO, NFS or GCZ)",
+                    "path": f"orig/{v}/", "sha1": None, "auto": True,
+                    "help": f"Version {v}. The build checks the disc's main executable against the project's hash."}
+        if kind == "configure":
+            v = version or ""
+            if v and (self.root / "orig" / v).is_dir():
+                return {"what": "your copy of the game (see the README for the exact file)", "path": f"orig/{v}/",
+                        "sha1": None, "auto": True, "help": "The build checks the game against the project's hashes."}
+            return manual
+        if kind == "splat":
+            y = self._splat_yaml().read_text(errors="replace")
+            target = re.search(r"^\s*target_path:\s*['\"]?([^'\"\n#]+)", y, re.M)
+            base = re.search(r"^\s*base_path:\s*['\"]?([^'\"\n#]+)", y, re.M)
+            sha1 = re.search(r"^sha1:\s*['\"]?([0-9a-fA-F]{40})", y, re.M)
+            path = target.group(1).strip() if target else ""
+            yaml_dir = os.path.relpath(self._splat_yaml().parent, self.root)
+            if path and base:
+                path = str(Path(yaml_dir) / base.group(1).strip() / path)
+            path = self._inside(path) if path else None
+            if path is None:
+                return manual
+            return {"what": f"your copy of the game ({Path(path).name})", "path": path,
+                    "sha1": sha1.group(1).lower() if sha1 else None, "auto": True,
+                    "help": "Checked against the sha1 in the project's splat config. A PlayStation disc image works "
+                            "too: the file is taken from it."}
+        return manual
+
+    # ------------------------------------------------------------------ setup
+
+    def place_game(self, src: Path, filename: str, version: str | None = None, move: bool = False) -> Path:
+        """Put the user's game file where the project expects it, checking its sha1 when the project has one.
+        Works from a file on disk, so multi-gigabyte discs are never read into memory."""
+        need = self.needs(version)
+        if not need["path"]:
+            raise ForkError("decomp.wtf doesn't know where this project expects the game; follow its README")
+        src = Path(src)
+        if need.get("sha1") and _sha1(src) != need["sha1"]:
+            inner = self._from_disc(src.read_bytes(), Path(need["path"]).name) if src.stat().st_size < 1 << 30 else None
+            if inner is None or hashlib.sha1(inner).hexdigest() != need["sha1"]:
+                raise ForkError("that file isn't the version this project decompiles (its sha1 doesn't match the "
+                                "project's); check the README for the exact version")
+            dest = self.root / need["path"]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(inner)
+            return dest
+        dest = self.root / need["path"]
+        if need["path"].endswith("/"):
+            dest.mkdir(parents=True, exist_ok=True)
+            dest = dest / (Path(filename).name or "game.iso")
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+        if move:
+            shutil.move(str(src), dest)
+        else:
+            try:
+                os.link(src, dest)  # no second copy of a big disc when it's on the same drive
+            except OSError:
+                shutil.copyfile(src, dest)
+        return dest
+
+    @staticmethod
+    def _from_disc(data: bytes, name: str) -> bytes | None:
+        """A file (e.g. SLUS_013.95) taken from a PlayStation disc image."""
+        from ..rom import psx
+
+        if not psx.is_disc(data):
+            return None
+        try:
+            return psx._Disc(data).find(name)
+        except (ValueError, IndexError, KeyError):
+            return None
+
+    def setup_commands(self, version: str | None = None) -> list[list[str]]:
+        kind = self.kind()
+        if kind == "manifest":
+            return [[sys.executable if c == "python" else c for c in cmd] for cmd in self.manifest.get("setup", [])]
+        if kind == "dtk":
+            cmd = [sys.executable, "configure.py"]
+            if version and len(self.versions()) > 1:
+                cmd += ["--version", version]
+            return [cmd, [_tool("ninja") or "ninja"]]
+        if kind == "configure":
+            return [[sys.executable, "configure.py"], [_tool("ninja") or "ninja"]]
+        if kind == "splat":
+            make = (self.root / "Makefile").read_text(errors="replace")
+            steps = [["make", t] for t in ("setup", "extract") if re.search(rf"^{t}\s*:", make, re.M)][:1]
+            return steps + [["make", f"-j{os.cpu_count() or 4}"]]
+        if kind == "objdiff":
+            cfg = self.objdiff_config()
+            return [[cfg.get("custom_make") or "make", *cfg.get("custom_args", [])]]
+        raise ForkError("decomp.wtf can't tell how to build this project; follow its README, then refresh")
+
+    def run(self, cmd: list[str], log=print, timeout: float = 3600) -> tuple[bool, str]:
+        env = dict(os.environ)
+        env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
+        log("$ " + " ".join(Path(c).name if i == 0 else c for i, c in enumerate(cmd)))
+        try:
+            proc = subprocess.Popen(cmd, cwd=self.root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, errors="replace")
+        except FileNotFoundError:
+            return False, f"{cmd[0]} isn't installed"
+        out = []
+        for line in proc.stdout:
+            out.append(line.rstrip())
+            if len(out) <= 400 or len(out) % 50 == 0:
+                log(line.rstrip())
+        try:
+            code = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return False, "timed out"
+        return code == 0, "\n".join(out[-60:])
+
+    def setup(self, version: str | None = None, log=print) -> None:
+        for cmd in self.setup_commands(version):
+            ok, tail = self.run(cmd, log=log)
+            if not ok and cmd[0] != "make":  # a Makefile build often fails on purpose until things match
+                raise ForkError(f"setup step failed: {' '.join(cmd)}\n{tail}")
+        if not (self.root / "objdiff.json").exists():
+            raise ForkError("the project built, but has no objdiff.json, so decomp.wtf can't measure matches. "
+                            "Some projects generate it with an extra step; check the README.")
+
+    # ------------------------------------------------------------------ objdiff project
+
+    def objdiff_config(self) -> dict:
+        p = self.root / "objdiff.json"
+        if not p.exists():
+            raise ForkError("objdiff.json not found: set the project up first")
+        return json.loads(p.read_text())
+
+    def units(self) -> list[Unit]:
+        cfg = self.objdiff_config()
+        tdir, bdir = cfg.get("target_dir"), cfg.get("base_dir")
+        out = []
+        for u in cfg.get("units") or cfg.get("objects") or []:
+            meta = u.get("metadata") or {}
+            t = u.get("target_path") or (str(Path(tdir) / u["path"]) if tdir and u.get("path") else None)
+            b = u.get("base_path") or (str(Path(bdir) / u["path"]) if bdir and u.get("path") else None)
+            out.append(Unit(u.get("name") or u.get("path") or "?", self.root / t if t else None,
+                            self.root / b if b else None, meta.get("source_path"),
+                            bool(meta.get("complete", u.get("complete", False))), u.get("scratch")))
+        return out
+
+    def unit(self, name: str) -> Unit:
+        for u in self.units():
+            if u.name == name:
+                return u
+        raise ForkError(f"no unit {name!r}")
+
+    def build_unit(self, unit: Unit, log=lambda *_: None) -> tuple[bool, str]:
+        if unit.base is None:
+            return False, "this unit has no source object to build"
+        cfg = self.objdiff_config()
+        make = cfg.get("custom_make") or "make"
+        tool = _tool(make) or make
+        rel = os.path.relpath(unit.base, self.root)
+        return self.run([tool, *cfg.get("custom_args", []), rel], log=log, timeout=600)
+
+    def build_all(self, log=lambda *_: None) -> tuple[bool, str]:
+        cfg = self.objdiff_config()
+        make = cfg.get("custom_make") or "make"
+        return self.run([_tool(make) or make, *cfg.get("custom_args", [])], log=log)
+
+    def report(self) -> dict:
+        return objdiff.report(self.root, self.root / STATE / "report.json")
+
+    def diff(self, unit: Unit, symbol: str) -> objdiff.FunctionDiff:
+        return objdiff.diff(unit.target, unit.base, symbol, cwd=self.root, options=self.objdiff_config().get("options"))
+
+    # ------------------------------------------------------------------ files agents may touch
+
+    def safe_path(self, rel: str, write: bool = False) -> Path:
+        p = (self.root / rel).resolve()
+        if self.root.resolve() not in p.parents:
+            raise ForkError("that path is outside the project")
+        parts = set(Path(os.path.relpath(p, self.root.resolve())).parts)
+        if write:
+            if parts & FORBIDDEN_PARTS or not EDITABLE.search(p.name):
+                raise ForkError("agents may only edit C/C++ source and header files, not the project's build setup, "
+                                "targets, assembly or tools")
+        elif ".git" in parts:
+            raise ForkError("that path isn't readable")
+        return p
+
+    def git(self, *args: str) -> tuple[bool, str]:
+        if not (self.root / ".git").exists() or not shutil.which("git"):
+            return False, "not a git checkout"
+        res = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+        return res.returncode == 0, (res.stdout + res.stderr).strip()

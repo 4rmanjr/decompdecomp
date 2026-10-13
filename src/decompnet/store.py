@@ -57,6 +57,7 @@ MIGRATIONS = [
     ("context_versions", "unit", "TEXT NOT NULL DEFAULT ''"),  # '' = project-wide header, else per-unit header
     ("functions", "vram", "INTEGER"),                          # ROM projects: load address of the function
     ("functions", "rom_offset", "INTEGER"),                    # ROM projects: where its bytes are in the ROM
+    ("functions", "meta", "TEXT"),                             # forks: symbol, demangled name, source file
 ]
 
 

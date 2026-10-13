@@ -153,12 +153,15 @@ def _symbol_at(symtab: SymbolTableSection, shndx: int, offset: int) -> tuple[str
     """(name, offset into it) of the named symbol covering `offset` in a section, preferring exact starts,
     global symbols, and functions/objects over plain labels."""
     best = None
-    for s in symtab.iter_symbols():
-        if s["st_shndx"] != shndx or not s.name or s.name[0] in ".$" or s["st_info"]["type"] in ("STT_SECTION", "STT_FILE"):
-            continue
-        if s.name.endswith(".") or s.name.startswith("__gnu_compiled"):  # compiler markers, e.g. gcc2_compiled.
-            continue
+    named = [s for s in symtab.iter_symbols()
+             if s["st_shndx"] == shndx and s.name and s.name[0] not in ".$"
+             and s["st_info"]["type"] not in ("STT_SECTION", "STT_FILE")
+             and not s.name.endswith(".") and not s.name.startswith("__gnu_compiled")]  # markers like gcc2_compiled.
+    starts = sorted({s["st_value"] for s in named})
+    for s in named:
         lo, size = s["st_value"], s["st_size"]
+        if size == 0:  # period assemblers record no sizes: the symbol runs to the next one
+            size = next((x for x in starts if x > lo), 1 << 32) - lo
         if not (lo == offset or lo <= offset < lo + size):
             continue
         kind = {"STT_FUNC": 2, "STT_OBJECT": 1}.get(s["st_info"]["type"], 0)
@@ -182,36 +185,63 @@ def _encode(arch: str, r: dict, residual: int) -> int:
     return residual & 0xFFFFFFFF
 
 
-def list_functions(data: bytes) -> list[str]:
-    elf = ELFFile(BytesIO(data))
+_MARKERS = ("gcc2_compiled.", "__gnu_compiled_c", "__gnu_compiled_cplusplus")
+
+
+def _function_symbols(elf) -> dict[str, tuple[int, int, int]]:
+    """name -> (section index, offset, size) of every function defined in the object.
+
+    Modern assemblers mark functions (STT_FUNC, with a size). Period ones, like the binutils 2.6 that PSY-Q-era
+    GCC used, emit untyped, size-0 symbols: there a function is a symbol in an executable section, running to
+    the next one, without trailing alignment padding (but with its last delay slot)."""
     symtab = elf.get_section_by_name(".symtab")
     if symtab is None:
-        return []
-    return [
-        s.name
-        for s in symtab.iter_symbols()
-        if s["st_info"]["type"] == "STT_FUNC" and s["st_shndx"] != "SHN_UNDEF" and s["st_size"] > 0
-    ]
+        return {}
+    out: dict[str, tuple[int, int, int]] = {}
+    loose: dict[int, list[tuple[int, str]]] = {}
+    for s in symtab.iter_symbols():
+        shndx = s["st_shndx"]
+        if not s.name or not isinstance(shndx, int) or s["st_info"]["type"] in ("STT_SECTION", "STT_FILE"):
+            continue
+        if s["st_info"]["type"] == "STT_FUNC" and s["st_size"] > 0:
+            out[s.name] = (shndx, s["st_value"], s["st_size"])
+        elif s["st_size"] == 0 and s.name not in _MARKERS and s.name[0] not in ".$" \
+                and elf.get_section(shndx)["sh_flags"] & 0x4:  # SHF_EXECINSTR
+            loose.setdefault(shndx, []).append((s["st_value"], s.name))
+    for shndx, syms in loose.items():
+        section = elf.get_section(shndx)
+        data = section.data()
+        starts = sorted({off for off, _ in syms} | {off for n, (sx, off, _) in out.items() if sx == shndx})
+        little = elf.little_endian
+        for off, name in syms:
+            if name in out:
+                continue
+            nxt = next((x for x in starts if x > off), section["sh_size"])
+            end = nxt
+            while end - 4 >= off + 4 and data[end - 4:end] == b"\0\0\0\0":
+                end -= 4
+            if end < nxt and end - 4 >= off:  # keep the delay slot of a final jr/branch
+                word = int.from_bytes(data[end - 4:end], "little" if little else "big")
+                if word == 0x03E00008 or (word >> 26) in (1, 2, 3, 4, 5, 6, 7) or (word & 0xFC00003F) == 0x00000008:
+                    end += 4
+            if end > off:
+                out[name] = (shndx, off, end - off)
+    return out
+
+
+def list_functions(data: bytes) -> list[str]:
+    return list(_function_symbols(ELFFile(BytesIO(data))))
 
 
 def extract_function(data: bytes, name: str) -> FunctionObj | None:
     elf = ELFFile(BytesIO(data))
     arch, big_endian = _arch_of(elf)
+    found = _function_symbols(elf).get(name)
+    if found is None:
+        return None
     symtab = elf.get_section_by_name(".symtab")
-    if symtab is None:
-        return None
-    syms = [
-        s
-        for s in symtab.iter_symbols()
-        if s.name == name and s["st_info"]["type"] == "STT_FUNC" and s["st_shndx"] != "SHN_UNDEF"
-    ]
-    if not syms:
-        return None
-    sym = syms[0]
-    shndx = sym["st_shndx"]
+    shndx, start, size = found
     section = elf.get_section(shndx)
-    start = sym["st_value"]
-    size = sym["st_size"]
     code = section.data()[start : start + size]
 
     raw: list[dict] = []

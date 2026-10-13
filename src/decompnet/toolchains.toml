@@ -198,3 +198,195 @@ url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/clo
 sha256 = "86aee4017b26625cee8484c113558f48effa4cd47f7aa05fcf425604e5d2b23c"
 binary = "cloudflared.exe"
 platforms = ["windows-x86_64"]
+
+
+# ------------------------------------------------------------------------------------------------
+# The decomp community's toolbelt. Downloaded on demand; every part is pinned to its release digest.
+
+[objdiff-cli]
+name = "objdiff-cli"
+kind = "tool"
+license = "MIT OR Apache-2.0"
+source = "encounter/objdiff v3.8.2"
+description = "The diff tool almost every modern decomp uses: per-function match percentages and instruction diffs for MIPS, PowerPC, ARM, ARM64, SuperH and x86."
+binary_name = "objdiff-cli"
+[[objdiff-cli.parts]]
+url = "https://github.com/encounter/objdiff/releases/download/v3.8.2/objdiff-cli-linux-x86_64"
+sha256 = "e5445089a6f707e30cb5e02992451b604619cedfd2660ee2373a86bfefd9e718"
+binary = "objdiff-cli"
+platforms = ["linux-x86_64"]
+[[objdiff-cli.parts]]
+url = "https://github.com/encounter/objdiff/releases/download/v3.8.2/objdiff-cli-linux-aarch64"
+sha256 = "087516e73e1b3223b39974f00bc2810fea5c3dc2c93a8e1f06442ec68acaacb4"
+binary = "objdiff-cli"
+platforms = ["linux-aarch64"]
+[[objdiff-cli.parts]]
+url = "https://github.com/encounter/objdiff/releases/download/v3.8.2/objdiff-cli-macos-arm64"
+sha256 = "767c67e13b7b5e6ca545e7d2235e47c7bceac07d47a52776f74a52914cb4085a"
+binary = "objdiff-cli"
+platforms = ["macos-arm64"]
+[[objdiff-cli.parts]]
+url = "https://github.com/encounter/objdiff/releases/download/v3.8.2/objdiff-cli-macos-x86_64"
+sha256 = "2cfe0f46fc84cef7d96813f100a0f01fbf99ac7e423b7fda1d314aada4d5ff72"
+binary = "objdiff-cli"
+platforms = ["macos-x86_64"]
+[[objdiff-cli.parts]]
+url = "https://github.com/encounter/objdiff/releases/download/v3.8.2/objdiff-cli-windows-x86_64.exe"
+sha256 = "36d229ac6ce74a26b47f42cf86ea8e808d8cd834a54aa62d7ed3f47b765d971b"
+binary = "objdiff-cli.exe"
+platforms = ["windows-x86_64"]
+
+[dtk]
+name = "decomp-toolkit"
+kind = "tool"
+license = "MIT OR Apache-2.0"
+source = "encounter/decomp-toolkit v1.8.4"
+description = "GameCube and Wii toolkit: reads discs, analyses and splits DOL/REL files, generates linker scripts."
+binary_name = "dtk"
+[[dtk.parts]]
+url = "https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-linux-x86_64"
+sha256 = "7c86b1994401bde0cad1d308e6c04cccb65e85453ccc5062ac12baab3b03d320"
+binary = "dtk"
+platforms = ["linux-x86_64"]
+[[dtk.parts]]
+url = "https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-linux-aarch64"
+sha256 = "889a551d57916772f21a29c997579e0508f268c96bcbc946a0a66bff029cf97c"
+binary = "dtk"
+platforms = ["linux-aarch64"]
+[[dtk.parts]]
+url = "https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-macos-arm64"
+sha256 = "5ba1fd76adf937847277a1ebe2238b698df0020c3dbbde23ecb126f00fb10353"
+binary = "dtk"
+platforms = ["macos-arm64"]
+[[dtk.parts]]
+url = "https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-macos-x86_64"
+sha256 = "84bcab745a070bb970cf4bc0d69ddce9f6a58d5de257999ccc8adfa1567d17c9"
+binary = "dtk"
+platforms = ["macos-x86_64"]
+[[dtk.parts]]
+url = "https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-windows-x86_64.exe"
+sha256 = "6a693e95aa4d30acccc673343302a4abdfa3146bd0fb15cb1a2bce924cbc782a"
+binary = "dtk.exe"
+platforms = ["windows-x86_64"]
+
+[wibo]
+name = "wibo"
+kind = "tool"
+license = "MIT"
+source = "decompals/wibo 1.2.0"
+description = "Runs the old Windows compilers many decomps need (Metrowerks, MSVC) on Linux and macOS."
+binary_name = "wibo"
+[[wibo.parts]]
+url = "https://github.com/decompals/wibo/releases/download/1.2.0/wibo-x86_64"
+sha256 = "13f86a2d618f0dbe67179d349625345eabf9b46450295cb4c904e49f6aff85af"
+binary = "wibo"
+platforms = ["linux-x86_64"]
+[[wibo.parts]]
+url = "https://github.com/decompals/wibo/releases/download/1.2.0/wibo-macos"
+sha256 = "2b3000ef6a7a490c24ccd71967735ae0005e218922e51806cca1b8d77fd3cf7c"
+binary = "wibo"
+platforms = ["macos-x86_64", "macos-arm64"]
+
+[coddog]
+name = "coddog"
+kind = "tool"
+license = "MIT OR Apache-2.0"
+source = "ethteck/coddog 0.6.3"
+description = "Finds functions that look alike, inside one game or across games, so agents can learn from code that already matches."
+binary_name = "coddog"
+[[coddog.parts]]
+url = "https://github.com/ethteck/coddog/releases/download/0.6.3/coddog-cli-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "c8e1dd6228d4363378598b71c57095fc8d5b02c3d0cffb1c71b051a257e75bc7"
+subdir = "coddog-cli-x86_64-unknown-linux-gnu"
+platforms = ["linux-x86_64"]
+[[coddog.parts]]
+url = "https://github.com/ethteck/coddog/releases/download/0.6.3/coddog-cli-aarch64-apple-darwin.tar.xz"
+sha256 = "b040cf68cd673795ae95336dbadb045255b7d4d100f98cba32360ce1a64a0d0b"
+subdir = "coddog-cli-aarch64-apple-darwin"
+platforms = ["macos-arm64"]
+[[coddog.parts]]
+url = "https://github.com/ethteck/coddog/releases/download/0.6.3/coddog-cli-x86_64-apple-darwin.tar.xz"
+sha256 = "40d8f12c67a852e5716c1c2c1181673fc81bcd505e656111775c1d3b38094ed3"
+subdir = "coddog-cli-x86_64-apple-darwin"
+platforms = ["macos-x86_64"]
+[[coddog.parts]]
+url = "https://github.com/ethteck/coddog/releases/download/0.6.3/coddog-cli-x86_64-pc-windows-msvc.zip"
+sha256 = "ce49cda2f01acbfcb1fea165ef3cbe4db06d7b5ea3738676069149a74d8e9ea3"
+platforms = ["windows-x86_64"]
+
+[gc-wii-binutils]
+name = "GNU binutils for GameCube and Wii"
+kind = "tool"
+license = "GPL-3.0"
+source = "encounter/gc-wii-binutils 2.42-2"
+description = "powerpc-eabi assembler, linker and objdump, as used by GameCube and Wii decomps."
+[["gc-wii-binutils".parts]]
+url = "https://github.com/encounter/gc-wii-binutils/releases/download/2.42-2/linux-x86_64.zip"
+sha256 = "64e4bf7aee5c06075d8fa818ebd2a0a3a72e0eeef3896bdec2f198b0e950fe63"
+executable = true
+platforms = ["linux-x86_64"]
+[["gc-wii-binutils".parts]]
+url = "https://github.com/encounter/gc-wii-binutils/releases/download/2.42-2/macos-universal.zip"
+sha256 = "c40bad23fd7d9eb22d4533875922fc19785ed067978b605804e345bc6e62449d"
+executable = true
+platforms = ["macos-x86_64", "macos-arm64"]
+[["gc-wii-binutils".parts]]
+url = "https://github.com/encounter/gc-wii-binutils/releases/download/2.42-2/windows-x86_64.zip"
+sha256 = "bd95bd57607efb45c437e97b77ec199073e242869027eb72196b0720611bb1c1"
+platforms = ["windows-x86_64"]
+
+[agbcc]
+name = "agbcc"
+platform = "GBA"
+arch = "arm"
+license = "GPL-2.0"
+source = "pret/agbcc release"
+description = "The GCC 2.95-based compiler behind most Game Boy Advance games, as rebuilt by the pret community."
+cc = ["{tc}/bin/agbcc"]
+flags = ["-mthumb-interwork", "-O2"]
+[[agbcc.parts]]
+url = "https://github.com/pret/agbcc/releases/download/release/agbcc.tar.gz"
+sha256 = "bcf0197e3e27d8e08506a142e25fa68ea7f6679a98347a6406804eb3f9ff4d29"
+platforms = ["linux-x86_64"]
+
+[maspsx]
+name = "maspsx"
+kind = "tool"
+license = "MIT"
+source = "mkst/maspsx @ e85ecb3 (2026-10-02)"
+description = "Makes GCC output assemble like Sony's PSY-Q assembler (ASPSX), which matching PlayStation code needs."
+[[maspsx.parts]]
+url = "https://github.com/mkst/maspsx/archive/e85ecb373828aabea96d7e6400974d4f91ce8c74.tar.gz"
+sha256 = "9f8ea9827b785ae41437befa8ebdceb8c00f3b1e8f3a90c506948e2df1079bde"
+subdir = "maspsx-e85ecb373828aabea96d7e6400974d4f91ce8c74"
+
+[ghidra]
+name = "Ghidra"
+kind = "tool"
+license = "Apache-2.0"
+source = "NationalSecurityAgency/ghidra 12.1.4"
+description = "The NSA's reverse-engineering suite: analyses and decompiles code for almost any CPU. Large (540 MB) and needs Java 21+; optional."
+requires_java = 21
+[[ghidra.parts]]
+url = "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip"
+sha256 = "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db"
+subdir = "ghidra_12.1.4_PUBLIC"
+
+[binutils-mips]
+name = "GNU binutils for MIPS (decompals)"
+kind = "tool"
+license = "GPL-2.0"
+source = "decompals/binutils-mips-ps2-decompals v0.10"
+description = "A modern MIPS assembler and linker (PS1, PS2, N64), as used with maspsx and by PS2 decomps."
+[[binutils-mips.parts]]
+url = "https://github.com/decompals/binutils-mips-ps2-decompals/releases/download/v0.10/binutils-mips-ps2-decompals-linux-x86-64.tar.gz"
+sha256 = "9fe31ea3ee1a37536f9f0e2e12c668e7c3cb99e59f5154bd2f1fc4762473094c"
+platforms = ["linux-x86_64"]
+[[binutils-mips.parts]]
+url = "https://github.com/decompals/binutils-mips-ps2-decompals/releases/download/v0.10/binutils-mips-ps2-decompals-macos-arm64.tar.gz"
+sha256 = "948cc736e01b2c135168caabfb616f6ed8efe89f1dad1ed8ef1ca74acb1b742c"
+platforms = ["macos-arm64"]
+[[binutils-mips.parts]]
+url = "https://github.com/decompals/binutils-mips-ps2-decompals/releases/download/v0.10/binutils-mips-ps2-decompals-windows-x86-64.zip"
+sha256 = "2bb5904ee174e04f1600cc70ffdb3dc36b0efa4d1892ea446be588ba8dc6198c"
+platforms = ["windows-x86_64"]

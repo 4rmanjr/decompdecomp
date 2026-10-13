@@ -100,7 +100,7 @@ def setup(args) -> int:
 
     plat = toolchains.current_platform()
     print(f"Setting up decomp.wtf tools for {plat}")
-    for tid in ("gcc-2.7.2-kmc", "m2c"):
+    for tid in ("gcc-2.7.2-kmc", "m2c", "objdiff-cli"):
         tc = toolchains.get(tid)
         if not tc.supported:
             print(f"  - {tc.name}: no build for {plat} (projects that need it can't be matched here yet)")

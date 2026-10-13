@@ -167,3 +167,4 @@ h2 { margin-top: 14px; font-size: clamp(1.75rem, 3.2vw, 2.5rem); line-height: 1.
 .nf a { justify-self: center; margin-top: 10px; text-decoration: none; background: var(--ink); color: var(--btn-ink); padding: 10px 16px; border-radius: 10px; font-weight: 500; font-size: 14.5px; }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+#public .chips { margin-bottom: 26px; }

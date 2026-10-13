@@ -23,6 +23,26 @@ GUIDES = {
     "structs": "working out struct layouts from offsets",
     "n64": "N64 memory map, OS library, graphics/audio data",
     "naming": "naming functions and data",
+    "fork": "working in a fork of a public decomp: the loop, conventions, what's allowed",
+    "objdiff": "reading objdiff's diffs and match percentages",
+    "ppc": "PowerPC (GameCube, Wii): registers, calling convention, common patterns",
+    "mwcc": "matching Metrowerks CodeWarrior code (GameCube, Wii, DS)",
+    "cpp": "decompiling C++: classes, vtables, constructors, inlines, name mangling",
+    "psx": "matching PlayStation (PSY-Q GCC + maspsx) code",
+    "ps2": "matching PlayStation 2 (EE-GCC, MWCC PS2) code",
+    "arm": "ARM and Thumb (GBA, DS, 3DS): registers, conditional code, literal pools",
+    "agbcc": "matching Game Boy Advance code built with agbcc",
+    "x86": "x86 and MSVC (PC, Xbox): calling conventions, SEH, matching MSVC output",
+    "aarch64": "AArch64 and Clang (Switch): registers, matching Clang output",
+    "similarity": "finding similar functions and reusing matched code",
+}
+
+# Guides worth reading first on each platform.
+PLATFORM_GUIDES = {
+    "n64": ["mips"], "ps": ["mips", "psx"], "ps2": ["mips", "ps2"], "psp": ["mips"],
+    "gc": ["ppc", "mwcc", "cpp"], "wii": ["ppc", "mwcc", "cpp"], "nds": ["arm", "mwcc"], "3ds": ["arm", "cpp"],
+    "gba": ["arm", "agbcc"], "switch": ["aarch64", "cpp"], "win32": ["x86", "cpp"], "xbox": ["x86", "cpp"],
+    "xbox360": ["ppc", "cpp"],
 }
 
 INSTRUCTIONS = """\
@@ -46,12 +66,39 @@ Use only the decomp tools. Repeat for up to {count} functions, then stop:
 3. Write the C function (same name as the assembly) and call compile_and_diff after every change.
    Read the diff: '<' '>' missing/extra instructions, 'i' operands, 'o' order, 'r' registers, 's' stack.
    Fix structure first, registers last. guide("workflow") and guide("{compiler_guide}") have tricks.
+   find_similar(function) shows look-alike functions; a matched one is the best starting point.
 4. Score 0 = matched and saved. Before moving on, share what you learned: edit_context for prototypes and
    structs you worked out, rename_symbol for functions/data whose purpose is now clear.
 5. Stuck after ~20 compiles with no progress? release_function with precise notes (what you tried, what
    is left) and claim the next one. Don't spend forever on one function.
 
 Write plausible original code, pure C (no inline asm). Be brief in your messages: work, don't narrate.
+"""
+
+FORK_PROMPT = """\
+You are a decompilation agent in decomp.wtf, continuing {title}: a public matching-decompilation project
+for {platform}. Other agents may be working on other functions of the same project at the same time; the
+tools keep you from colliding.
+
+Your job: write functions in the project's own source files so they compile to *exactly* the original
+machine code, judged by objdiff. Use only the decomp tools. Repeat for up to {count} functions, then stop:
+
+1. claim_function() gives you the next function: target assembly, the current diff, its source file,
+   the best previous attempt and notes (start from those!) and functions already matched in that file.
+2. Learn the codebase: read_file on the source file and its headers, search_code for the types, structs
+   and helpers it uses. Reuse what exists; never redefine it. find_similar(function) finds look-alike
+   functions: start from a matched one.
+3. compile_and_diff(function, source) with exactly one complete function definition. It goes into the
+   source file in place of the old one, the file is built with the project's compiler and diffed.
+   Fix structure first (control flow, calls), then types and expressions, registers last.
+4. 100% = matched, committed to git. Structs, prototypes, globals or helpers you need go in with
+   edit_file (a header or the top of the source file); an edit that breaks any match is undone.
+5. Stuck after ~25 compiles without progress? release_function with precise notes (what you tried,
+   what is left) and claim the next. Very large functions: get the structure right and release with notes.
+
+Rules: C/C++ only (no inline asm, asm functions or asm includes); don't touch targets, configs or build
+scripts (the tools refuse). Write code a human would have written: match the file's style and names.
+Guides: {guides}. Be brief in your messages: work, don't narrate.
 """
 
 
@@ -63,7 +110,15 @@ def _guide(topic: str = "") -> str:
     return resources.files("decompnet.app").joinpath("guide", f"{topic}.md").read_text()
 
 
+def _fork(net: RomNetwork, slug: str, what: str) -> str:
+    if not net.fork_slug(slug):
+        raise NetworkError(f"{what} is for forks of public decomps; in a ROM project the shared header is get_context")
+    return slug
+
+
 def project_info(net: RomNetwork, slug: str) -> str:
+    if net.fork_slug(slug):
+        return net.forks.info(slug)
     ov = net.overview(slug)
     pct = 100 * ov["matched_bytes"] / (ov["bytes"] or 1)
     return (f"{ov['title']} ({ov['rom']['game_code']}, {ov['rom']['region']})\n"
@@ -91,8 +146,23 @@ HANDLERS: dict[str, Callable[..., str]] = {
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
     "add_note": lambda net, agent, slug, text, function="": net.add_note(agent, slug, text, function or None),
     "search_notes": lambda net, agent, slug, query: net.search_notes(slug, query),
+    "find_similar": lambda net, agent, slug, function, limit=5: net.find_similar(slug, function, limit),
     "guide": lambda net, agent, slug, topic="": _guide(topic),
+    "read_file": lambda net, agent, slug, path, start=1, count=200:
+        net.forks.read_file(_fork(net, slug, "read_file"), path, start, count),
+    "search_code": lambda net, agent, slug, pattern, glob="": net.forks.search(_fork(net, slug, "search_code"), pattern, glob),
+    "edit_file": lambda net, agent, slug, path, old, new, message:
+        net.forks.edit_file(agent, _fork(net, slug, "edit_file"), path, old, new, message),
 }
+
+ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function", "read_data"}
+FORK_ONLY = {"read_file", "search_code", "edit_file"}
+
+
+def tool_names(fork: bool) -> list[str]:
+    """The tools that make sense for a project: forks and ROM projects share the core loop."""
+    skip = ROM_ONLY if fork else FORK_ONLY
+    return [n for n in HANDLERS if n not in skip]
 
 
 def call(net: RomNetwork, agent: Agent, slug: str, name: str, args: dict) -> str:
@@ -109,7 +179,7 @@ def call(net: RomNetwork, agent: Agent, slug: str, name: str, args: dict) -> str
 
 def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]]) -> MCPServer:
     """MCP server for CLI agents. `agent_of` maps a request to (agent, project slug)."""
-    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version="0.4.2")
+    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version="0.5.0")
 
     async def run(ctx: Context, name: str, **args) -> str:
         try:
@@ -130,8 +200,9 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
     async def claim_function(ctx: Context, function: str = "", strategy: str = "easiest") -> str:
         """Claim the next function to decompile (or a specific one by name or address).
 
-        Returns its assembly, location, calls and data, the best previous attempt, notes from earlier agents
-        and a machine-generated draft. You hold one claim at a time; each compile renews it.
+        Returns its assembly, the best previous attempt and notes from earlier agents, plus (ROM projects)
+        calls, data and a machine-made draft or (forks) the current diff and its source file. You hold one
+        claim at a time; each compile renews it.
 
         Args:
             function: optional name or address (0x80001234) of a specific function
@@ -147,9 +218,11 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
 
     @mcp.tool()
     async def compile_and_diff(ctx: Context, function: str, source: str) -> str:
-        """Compile your C for `function` with the game's compiler, link it at the function's address and
-        diff it against the ROM. Define the function with exactly its name. context.h is included for you.
-        Score 0 = byte-identical: the function is saved as matched."""
+        """Compile your code for `function` and diff it against the original; score 0 = byte-identical.
+
+        ROM projects: compiled with the game's compiler (context.h included), linked at the function's
+        address and compared with the ROM. Forks: send one complete definition; it replaces the function in
+        its source file, which is built with the project's build system and diffed with objdiff."""
         return await run(ctx, "compile_and_diff", function=function, source=source)
 
     @mcp.tool()
@@ -202,10 +275,34 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         return await run(ctx, "search_notes", query=query)
 
     @mcp.tool()
+    async def find_similar(ctx: Context, function: str, limit: int = 5) -> str:
+        """Functions whose instructions look like this one's (copy-pasted code, the same inlined helper,
+        template instances), matched ones first, with the matching source of the best one. Start there."""
+        return await run(ctx, "find_similar", function=function, limit=limit)
+
+    @mcp.tool()
     async def guide(ctx: Context, topic: str = "") -> str:
         """Decompilation know-how. Call without a topic for the list (workflow, mips, gcc-kmc, ido, m2c,
         data, structs, n64, naming)."""
         return await run(ctx, "guide", topic=topic)
+
+    @mcp.tool()
+    async def read_file(ctx: Context, path: str, start: int = 1, count: int = 200) -> str:
+        """Forks only: read a file of the project (path relative to its root), with line numbers."""
+        return await run(ctx, "read_file", path=path, start=start, count=count)
+
+    @mcp.tool()
+    async def search_code(ctx: Context, pattern: str, glob: str = "") -> str:
+        """Forks only: search the project's C/C++ sources and headers with a regular expression. `glob`
+        narrows the files (e.g. "include/**/*.h")."""
+        return await run(ctx, "search_code", pattern=pattern, glob=glob)
+
+    @mcp.tool()
+    async def edit_file(ctx: Context, path: str, old: str, new: str, message: str) -> str:
+        """Forks only: change a C/C++ source or header file. Replace `old` (exactly once) with `new`, or
+        append `new` when old is "". The project is rebuilt and measured; the edit is undone if any matched
+        function stops matching. Use it for structs, prototypes, globals and helpers."""
+        return await run(ctx, "edit_file", path=path, old=old, new=new, message=message)
 
     @mcp.prompt(title="Decompile", description="Work loop: claim functions and match them byte for byte.")
     def work(count: str = "5") -> str:

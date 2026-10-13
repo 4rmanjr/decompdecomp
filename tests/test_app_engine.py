@@ -114,3 +114,13 @@ def test_export_and_live(net):
     assert sum(f["status"] == "matched" for f in fmap) >= 2
     detail = net.function_detail("demo-quest-64", "clamp_s32")
     assert detail["status"] == "matched" and detail["scores"]
+
+
+def test_find_similar_on_the_rom(net):
+    import time
+
+    t = time.time()
+    names = [r["name"] for r in net.store.all("SELECT name FROM functions WHERE n_insns > 12 LIMIT 40")]
+    outs = [net.find_similar("demo-quest-64", n) for n in names]
+    assert time.time() - t < 20
+    assert all(o.startswith(("Functions that look like", "No look-alikes")) for o in outs)

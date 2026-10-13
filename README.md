@@ -14,6 +14,8 @@
   &nbsp;·&nbsp;
   <a href="#how-it-works"><b>How it works</b></a>
   &nbsp;·&nbsp;
+  <a href="#continue-a-public-decomp"><b>Public decomps</b></a>
+  &nbsp;·&nbsp;
   <a href="#agents"><b>Agents</b></a>
   &nbsp;·&nbsp;
   <a href="#decompile-together"><b>Decompile together</b></a>
@@ -36,9 +38,15 @@
 
 <br>
 
-Point the AI agent you already use at a game you own. **decomp.wtf** splits the ROM into functions, hands them to
-your agent one at a time, compiles every attempt with the game's **original 1990s compiler**, and checks the result
-against the ROM **byte for byte**. Score 0, or it doesn't count.
+Point the AI agent you already use at a game you own. **decomp.wtf** hands it the game one function at a time,
+compiles every attempt with the game's **original compiler**, and checks the result **byte for byte**. Score 0, or
+it doesn't count. There are two ways in:
+
+- **Start from scratch.** Drop in an N64 ROM (or, experimentally, a PlayStation disc). decomp.wtf splits it into
+  functions and your agents take it from there.
+- **Continue a public decomp.** Pick one of the [245 projects on decomp.dev](https://decomp.dev) for GameCube, Wii,
+  PlayStation 1 and 2, N64, GBA, DS, Switch, PC, Xbox 360 and more, add your own copy of its game, and your agents
+  carry on where the community left off, in the project's real source code.
 
 Everything runs on your computer. No account, no telemetry, nothing uploaded.
 
@@ -115,6 +123,26 @@ s32 clamp_s32(s32 v, s32 lo, s32 hi) {
 
 </details>
 
+## Continue a public decomp
+
+Most games people decompile already have a community project with its build set up and part of the code done.
+decomp.wtf plugs your agents into them as they are:
+
+1. **Browse** the decomp.dev catalog in the app (or paste any decomp repository's address) and **fork** it: it's
+   cloned to your computer on a local `decomp-wtf` branch.
+2. **Add your copy of the game.** The app knows where common project layouts expect it (dtk-template for
+   GameCube/Wii, configure.py + ninja, splat + make) and runs the project's own setup. Anything else you set up
+   by its README, and decomp.wtf picks it up once it builds.
+3. **Add agents.** Each claims a function and gets the target assembly, objdiff's diff, the function's source
+   file, matched look-alikes and a machine draft. Its code goes into the real source file, the project's build
+   compiles it with the project's compilers, and [objdiff](https://github.com/encounter/objdiff) judges it.
+4. **Every match is a git commit** on `decomp-wtf`, ready for you to review and, if the project welcomes it, send
+   upstream.
+
+Guard rails, learned from people who ran agents on decomps before: agents can only write C/C++ sources and
+headers (never targets, assembly, configs or build scripts), inline assembly is refused, and a change that
+breaks any function that already matched is undone.
+
 ## Features
 
 | Feature | What you get |
@@ -124,7 +152,10 @@ s32 clamp_s32(s32 v, s32 lo, s32 hi) {
 | **Any agent** | Claude Code, Codex, Gemini CLI, opencode, or any model with an API key, several at once. |
 | **Shared knowledge** | Structs and prototypes go into one header, accepted only if every match so far still matches. |
 | **Safe renames** | Matching works by address, so naming functions and data can never break a match. |
-| **Agent toolkit** | m2c drafts, a data inspector, a call graph, splitting merged functions, and built-in guides for MIPS, IDO and GCC. |
+| **Public decomps** | Fork any of 245 community projects from decomp.dev and keep going with your agents, judged by objdiff. |
+| **Look-alikes** | `find_similar` spots copy-pasted and inlined code across the whole game and starts agents from what already matches. |
+| **Drafts** | m2c for MIPS, PowerPC and ARM; optional Ghidra for x86, AArch64 and everything else. |
+| **Agent toolkit** | A data inspector, a call graph, splitting merged functions, and guides for MIPS, PowerPC, ARM, x86, AArch64, IDO, GCC, Metrowerks, agbcc, PSY-Q, C++ and objdiff. |
 | **Decompile together** | Invite friends who own the same game; only the work is shared, never the ROM. |
 | **Export** | Write the matched C out to a source tree whenever you like. |
 
@@ -139,7 +170,7 @@ s32 clamp_s32(s32 v, s32 lo, s32 hi) {
 | **API key** | A built-in agent loop for any OpenAI-compatible API: DeepSeek, OpenRouter, Ollama, LM Studio. |
 | **Anything else** | Point any MCP client (Cursor, Claude Desktop, your own) at the app with **Connect another agent**. |
 
-Agents only get decomp.wtf's tools: no shell and no access to your files. The app installs missing agents for you
+Agents only get decomp.wtf's tools: no shell, and no access to your files beyond a fork's own source tree. The app installs missing agents for you
 and tells you how to sign in. You pay your own provider; in our tests a small function cost Claude Code about 8 cents.
 
 ## Decompile together
@@ -154,16 +185,22 @@ and tells you how to sign in. You pay your own provider; in our tests a small fu
 No ROM bytes or assembly ever cross the wire: everyone reads the code from their own copy. If the host restarts, they
 share a new link and friends click **Reconnect**.
 
-## Supported games
+## Platforms
 
-| Platform | Compilers | Status |
+| Platform | From scratch | Continue a public decomp |
 | :-- | :-- | :-- |
-| **Nintendo 64** | KMC GCC 2.7.2 · IDO 5.3 · IDO 7.1 | Supported (main code that isn't compressed) |
-| **PlayStation** | GCC 2.7.2 / 2.8.1 (PSY-Q era) | In progress |
-| **PlayStation 2** | EE-GCC 2.96 | Planned |
+| **Nintendo 64** | KMC GCC 2.7.2 · IDO 5.3 · IDO 7.1 | ✓ |
+| **PlayStation** | GCC 2.7.2 / 2.8.1, experimental | ✓ |
+| **GameCube · Wii** | | ✓ (Metrowerks, via each project's build) |
+| **PlayStation 2 · PSP** | | ✓ |
+| **Game Boy Advance · DS · 3DS** | | ✓ |
+| **Switch** | | ✓ |
+| **PC · Xbox · Xbox 360** | | ✓ |
 
-IDO is proprietary: the app only installs it after you accept that. KMC GCC has no Windows build yet, so on Windows
-only IDO games can be matched for now.
+From scratch, the ROM's main code is split and matched by decomp.wtf itself (code that isn't compressed). A
+public decomp uses the project's own build and compilers; decomp.wtf needs it to produce an `objdiff.json`, as
+practically every project on decomp.dev does. IDO is proprietary: the app only installs it after you accept that.
+KMC GCC has no Windows build yet, so on Windows only IDO games can be matched from scratch for now.
 
 ## Development
 
@@ -180,9 +217,12 @@ uv run pytest
 | Path | What it is |
 | :-- | :-- |
 | `src/decompnet/rom/` | ROM reading (`n64.py`, `psx.py`), splitting with splat (`split.py`), the symbol table and the matcher (`match.py`). |
-| `src/decompnet/app/` | The app: `engine.py` (ROM projects), `tools.py` (MCP tools and agent prompt), `agents.py` (running agents), `server.py` (GUI API and MCP), `collab.py` (rooms), `static/` (GUI), `guide/` (agent know-how). |
+| `src/decompnet/app/` | The app: `engine.py` (ROM projects), `forkengine.py` (forks of public decomps), `tools.py` (MCP tools and agent prompt), `agents.py` (running agents), `server.py` (GUI API and MCP), `collab.py` (rooms), `static/` (GUI), `guide/` (agent know-how). |
+| `src/decompnet/forks/` | Fork mode: the decomp.dev catalog, project detection and setup, objdiff, source editing, m2c and Ghidra drafts. |
 | `src/decompnet/network.py` | The coordination core the engine builds on: claims, attempts, notes, the shared header. |
 | `projects/demo-rom/` | Builds Demo Quest 64. `tests/test_rom.py` proves the matcher on it: every function of the original source matches. |
+| `projects/demo-psx/` | The same game as a PlayStation executable, for `tests/test_psx.py`. |
+| `projects/demo-fork/` | A small decomp project in the community's shape (objdiff.json, ninja), for `tests/test_forks.py`. |
 | `site/` | The website (Cloudflare Workers static assets), its simulation data (`site/tools/build_sim.py`) and legal pages. |
 
 Rebuild the demo ROM with `uv run python projects/demo-rom/build.py` (needs `gcc-2.7.2-kmc` and `ld.lld`).
@@ -192,14 +232,21 @@ Rebuild the demo ROM with `uv run python projects/demo-rom/build.py` (needs `gcc
 ## Built on
 
 [splat](https://github.com/ethteck/splat) and [spimdisasm](https://github.com/Decompollaborate/spimdisasm) split
-ROMs, [m2c](https://github.com/matt-kempster/m2c) writes first drafts, and the
-[decompals](https://github.com/decompals) recompiled period compilers do the building. Thanks to everyone in the
-decomp community whose tools and ideas made this possible. decomp.wtf isn't affiliated with any of these projects.
+ROMs, [objdiff](https://github.com/encounter/objdiff) judges forks, [m2c](https://github.com/matt-kempster/m2c) and
+[Ghidra](https://github.com/NationalSecurityAgency/ghidra) write first drafts, the
+[decompals](https://github.com/decompals) recompiled period compilers do the building, and
+[decomp.dev](https://decomp.dev) lists the public projects. The look-alike finder follows the idea of
+[coddog](https://github.com/ethteck/coddog); [decomp-toolkit](https://github.com/encounter/decomp-toolkit),
+[maspsx](https://github.com/mkst/maspsx) and [wibo](https://github.com/decompals/wibo) are in the pinned toolbelt
+(`decompnet toolchain install <name>`). Thanks to everyone in the decomp community whose tools and ideas made this
+possible. decomp.wtf isn't affiliated with any of these projects.
 
 ## Use it responsibly
 
 decomp.wtf contains no game code and doesn't provide ROMs. Use games you own, don't use it to get around copy
-protection, and don't publish decompiled code of games whose rights you don't hold.
+protection, and don't publish decompiled code of games whose rights you don't hold. When you continue a public
+decomp, follow that project's license and contribution rules; forking runs its build scripts on your computer, so
+fork projects you trust.
 
 ## License
 

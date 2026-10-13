@@ -332,7 +332,13 @@ class Manager:
 
     def prompt(self, s: Session) -> str:
         ov = self.net.overview(s.slug)
-        guide = "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc"
+        if ov.get("kind") == "fork":
+            guides = ["fork", "objdiff", *tools.PLATFORM_GUIDES.get(ov.get("platform") or "", [])]
+            return tools.FORK_PROMPT.format(title=ov["title"], platform=ov.get("platform_name") or "its platform",
+                                            count=s.options.get("per_session", 4),
+                                            guides=", ".join(f'guide("{g}")' for g in guides))
+        guide = ("psx" if ov.get("platform") == "psx" else
+                 "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc")
         return tools.WORK_PROMPT.format(title=ov["title"], count=s.options.get("per_session", 4), compiler_guide=guide)
 
     def _command(self, s: Session, token: str, workdir: Path) -> tuple[list[str], dict]:
@@ -435,7 +441,7 @@ class Manager:
         headers = {"Content-Type": "application/json"}
         if s.options.get("api_key"):
             headers["Authorization"] = f"Bearer {s.options['api_key']}"
-        schema = api_tool_schemas()
+        schema = api_tool_schemas(fork=bool(self.net.fork_slug(s.slug)))
         messages = [{"role": "system", "content": tools.INSTRUCTIONS},
                     {"role": "user", "content": self.prompt(s)}]
         s.push("info", f"session {s.runs}: {model} via {base}")
@@ -474,7 +480,7 @@ class Manager:
         return used_tool
 
 
-def api_tool_schemas() -> list[dict]:
+def api_tool_schemas(fork: bool = False) -> list[dict]:
     """OpenAI-style tool definitions for the built-in agent, from the same tools CLI agents get."""
     s = lambda **props: {"type": "object", "properties": props, "required": [k for k, v in props.items() if v.pop("req", False)]}
     st = lambda desc, req=False: {"type": "string", "description": desc, "req": req}
@@ -502,9 +508,24 @@ def api_tool_schemas() -> list[dict]:
         "list_functions": ("List functions by status.", s(status=st("open | matched | all"), limit=it("max rows"))),
         "add_note": ("Leave a note for other agents.", s(text=st("note", True), function=st("function"))),
         "search_notes": ("Search notes.", s(query=st("text", True))),
+        "find_similar": ("Functions that look like this one, matched ones first, with the best one's source.",
+                         s(function=st("function", True), limit=it("how many"))),
         "guide": ("Decompilation know-how; no topic lists topics.", s(topic=st("topic"))),
+        "read_file": ("Read a project file with line numbers.", s(path=st("path from the project root", True),
+                                                                 start=it("first line"), count=it("lines"))),
+        "search_code": ("Regex search over the project's C/C++ sources and headers.",
+                        s(pattern=st("regular expression", True), glob=st("optional file glob"))),
+        "edit_file": ("Replace `old` (exactly once) with `new` in a source/header file, or append when old is empty. "
+                      "Undone if any match breaks.", s(path=st("file", True), old=st("text to replace, or empty", True),
+                                                       new=st("replacement", True), message=st("why", True))),
     }
-    return [{"type": "function", "function": {"name": n, "description": d, "parameters": p}} for n, (d, p) in defs.items()]
+    if fork:
+        defs["compile_and_diff"] = ("Write one complete function definition into its source file, build it and diff "
+                                    "with objdiff. 100% / score 0 = matched.",
+                                    s(function=st("function name", True), source=st("the function definition", True)))
+    names = set(tools.tool_names(fork))
+    return [{"type": "function", "function": {"name": n, "description": d, "parameters": p}}
+            for n, (d, p) in defs.items() if n in names]
 
 
 def _terminate(proc: subprocess.Popen) -> None:

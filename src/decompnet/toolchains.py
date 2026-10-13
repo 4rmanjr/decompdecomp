@@ -46,6 +46,8 @@ class Toolchain:
     parts: list[dict] = field(default_factory=list)
     git: str = ""
     commit: str = ""
+    binary_name: str = ""  # main executable of a tool, without .exe
+    requires_java: int = 0  # minimum Java version (Ghidra)
 
     @property
     def proprietary(self) -> bool:
@@ -137,7 +139,19 @@ def _download(url: str, dest: Path, log) -> None:
 
 def _extract(archive: Path, dest: Path, subdir: str | None) -> None:
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
-        if archive.name.endswith(".zst"):
+        if archive.name.endswith(".zip"):
+            import zipfile
+
+            with zipfile.ZipFile(archive) as z:
+                for info in z.infolist():
+                    target = (Path(tmp) / info.filename).resolve()
+                    if Path(tmp).resolve() not in target.parents and target != Path(tmp).resolve():
+                        raise ToolchainError(f"refusing to extract {info.filename} outside the toolchain folder")
+                    z.extract(info, tmp)
+                    mode = info.external_attr >> 16
+                    if mode & 0o111 and not info.is_dir():
+                        os.chmod(target, 0o755)
+        elif archive.name.endswith(".zst"):
             # GNU tar picks the zstd decompressor itself; never restore owners from the archive.
             subprocess.run(["tar", "-xf", str(archive), "-C", tmp, "--no-same-owner", "--no-same-permissions"],
                            check=True, capture_output=True)
@@ -166,6 +180,8 @@ def install(tid: str, *, accept_license: bool = False, force: bool = False, log=
         return path(tid)
     if not tc.supported:
         raise ToolchainError(f"{tid} ({tc.name}) has no build for this computer ({current_platform()})")
+    if tc.requires_java and java_version() < tc.requires_java:
+        raise ToolchainError(f"{tc.name} needs Java {tc.requires_java} or newer: install it from https://adoptium.net first")
     if tc.proprietary and not accept_license:
         raise ToolchainError(
             f"{tid} ({tc.name}) is proprietary software. Running it on your coordinator is your own licensing "
@@ -197,6 +213,10 @@ def install(tid: str, *, accept_license: bool = False, force: bool = False, log=
                 os.chmod(dest / part["binary"], 0o755)
             else:
                 _extract(archive, dest, part.get("subdir"))
+                if part.get("executable"):  # archives that don't record the executable bit
+                    for f in dest.rglob("*"):
+                        if f.is_file():
+                            os.chmod(f, 0o755)
             pinned.append({"url": part["url"], "sha256": digest})
     except BaseException:
         shutil.rmtree(dest, ignore_errors=True)
@@ -227,6 +247,42 @@ def _install_git_tool(tc: Toolchain, dest: Path, log) -> None:
     log(f"  creating an isolated environment for {tc.git} @ {tc.commit[:10]}")
     subprocess.run([uv, "venv", "--quiet", "--python", "3.12", str(dest / "venv")], check=True)
     subprocess.run([uv, "pip", "install", "--quiet", "--python", str(venv_bin(dest / "venv", "python")), spec], check=True)
+
+
+def binary(tid: str) -> Path:
+    """The main executable of an installed tool (objdiff-cli, dtk, coddog, ...), on any OS."""
+    tc = get(tid)
+    base = require(tid)
+    name = tc.binary_name or tid
+    for candidate in (base / f"{name}.exe", base / name, base / "bin" / name):
+        if candidate.exists():
+            return candidate
+    raise ToolchainError(f"{tid} is installed but {name} wasn't found in {base}")
+
+
+def ensure(tid: str, log=print) -> Path:
+    """Install a free tool on first use and return its folder. Proprietary ones must be installed explicitly."""
+    if installed(tid) is None:
+        tc = get(tid)
+        if tc.proprietary:
+            raise ToolchainError(f"{tc.name} is proprietary: install it from Setup if you accept its license")
+        install(tid, log=log)
+    return path(tid)
+
+
+def java_version() -> int:
+    """Major version of the java on PATH, 0 if none."""
+    import re as _re
+
+    exe = shutil.which("java")
+    if not exe:
+        return 0
+    try:
+        out = subprocess.run([exe, "-version"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    m = _re.search(r'version "(\d+)', out.stderr + out.stdout)
+    return int(m.group(1)) if m else 0
 
 
 def status() -> list[dict]:

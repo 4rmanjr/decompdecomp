@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from . import n64, psx
@@ -24,8 +23,6 @@ def identify(data: bytes) -> Picked:
     if data[:4] in n64.MAGIC:
         rom, info = n64.read_info(data)
         return Picked("n64", rom, "rom.z64", info.to_dict() | {"platform": "n64", "gp": 0}, True)
-    if (data[:8] == b"PS-X EXE" or psx.is_disc(data)) and not os.environ.get("DECOMP_EXPERIMENTAL"):
-        raise RomError("PlayStation support is coming soon; for now decomp.wtf works with N64 ROMs")
     if data[:8] == b"PS-X EXE":
         exe, info = psx.read_exe(data)
         return Picked("psx", exe, "game.exe", info, False)
@@ -34,6 +31,7 @@ def identify(data: bytes) -> Picked:
         exe, info = psx.read_exe(raw, boot)
         return Picked("psx", exe, "game.exe", info, False)
     if data[:4] == b"\x7fELF":
-        raise RomError("this is an ELF program (PlayStation 2?). PS2 support is coming; for now: N64 and PlayStation")
+        raise RomError("this is an ELF program (PlayStation 2?). To work on a PS2 game, continue one of the public "
+                       "PS2 decomps from the home screen")
     raise RomError("this isn't a ROM or game program this app can read: pick an N64 ROM (.z64, .n64, .v64), "
                    "a PlayStation disc image (.bin, .iso) or its program file (e.g. SLUS_000.01)")

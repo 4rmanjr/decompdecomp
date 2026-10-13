@@ -67,13 +67,16 @@ function route() {
   const m = location.hash.match(/^#\/p\/([\w-]+)/);
   stopPolling();
   closeAll();
-  if (m) openProject(m[1]); else showHome();
+  S.slug = null;
+  if (m) openProject(m[1]);
+  else if (location.hash === "#/catalog") showCatalog();
+  else showHome();
 }
 window.addEventListener("hashchange", route);
 
 function show(view) {
-  $("home").hidden = view !== "home";
-  $("project").hidden = view !== "project";
+  for (const v of ["home", "catalog", "project"]) $(v).hidden = view !== v;
+  window.scrollTo(0, 0);
 }
 
 /* ------------------------------------------------------------------ home */
@@ -85,6 +88,7 @@ async function showHome() {
   $("workingPill").hidden = true;
   resetDrop();
   const st = await loadState();
+  loadCatalog().then((c) => { if (c.length) $("forkCount").textContent = c.length; }).catch(() => {});
   const box = $("projects");
   box.innerHTML = "";
   $("recent").hidden = !st.projects.length;
@@ -93,7 +97,10 @@ async function showHome() {
     const a = document.createElement("a");
     a.className = "card";
     a.href = `#/p/${p.slug}`;
-    a.innerHTML = `<div><h4>${esc(p.title)}</h4><p class="meta">${esc(p.rom.game_code)} · ${esc(p.rom.region)} · ${esc(p.compiler.name)}</p></div>
+    const meta = p.kind === "fork"
+      ? `fork · ${esc(p.platform_name || "?")}${p.version ? " · " + esc(p.version) : ""}${p.ready ? "" : " · needs setup"}`
+      : `${esc(p.rom.game_code)} · ${esc(p.rom.region)} · ${esc(p.compiler.name)}`;
+    a.innerHTML = `<div><h4>${esc(p.title)}</h4><p class="meta">${meta}</p></div>
       <div class="meter"><i></i></div><p class="meta">${p.matched} / ${p.functions} functions · ${pct.toFixed(1)}% of code</p>`;
     box.append(a);
     requestAnimationFrame(() => { a.querySelector(".meter i").style.width = pct + "%"; });
@@ -147,24 +154,43 @@ function parseRom(buf) {
   };
 }
 
+/* PlayStation: a PS-X EXE, or a disc image (ISO 9660 descriptor in 2048- or 2352-byte sectors). */
+function parsePsx(head, file) {
+  const text = (a, b) => String.fromCharCode(...head.slice(a, b));
+  const exe = text(0, 8) === "PS-X EXE";
+  const disc = text(0x8001, 0x8006) === "CD001" || text(0x9319, 0x931e) === "CD001";
+  if (!exe && !disc) return null;
+  const dv = new DataView(head.buffer);
+  return { title: file.name.replace(/\.[^.]*$/, ""), size: file.size, platform: "psx", order: exe ? "PS-X EXE" : "disc image",
+    entry: exe ? dv.getUint32(0x10, true) : null };
+}
+
 async function pickFile(file) {
-  if (file.size > 64 * 1024 * 1024) return toast("That file is bigger than any N64 cartridge.", "err");
-  const buf = await file.arrayBuffer();
-  let info;
-  try { info = parseRom(buf); } catch (e) { return toast(esc(e.message), "err"); }
+  if (file.size > 1024 * 1024 * 1024) return toast("That file is too big for an N64 ROM or a PlayStation disc.", "err");
+  const head = new Uint8Array(await file.slice(0, 0x9400).arrayBuffer());
+  let info = parsePsx(head, file), buf = file;
+  if (!info) {
+    if (file.size > 64 * 1024 * 1024) return toast("That isn't an N64 ROM or a PlayStation disc or program.", "err");
+    buf = await file.arrayBuffer();
+    try { info = parseRom(buf); } catch (e) { return toast("This isn't an N64 ROM or a PlayStation disc or program.", "err"); }
+  }
   picked = { buf, info, name: file.name };
   $("romFile").textContent = file.name;
   $("romTitle").textContent = info.title;
-  const facts = [["Game code", info.code || "—"], ["Region", info.region], ["Size", `${(info.size / 1048576).toFixed(0)} MiB`],
-    ["Format", info.order], ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]];
+  const facts = info.platform === "psx"
+    ? [["Platform", "PlayStation"], ["Format", info.order], ["Size", `${(info.size / 1048576).toFixed(info.size < 10485760 ? 1 : 0)} MiB`],
+       ["Entry", info.entry != null ? hex8(info.entry) : "from the disc"], ["Support", "experimental"]]
+    : [["Game code", info.code || "—"], ["Region", info.region], ["Size", `${(info.size / 1048576).toFixed(0)} MiB`],
+       ["Format", info.order], ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]];
   $("romFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
-  fillCompilers($("compilerPick"), info.compiler === "IDO" ? "ido-7.1" : "gcc-2.7.2-kmc");
+  fillCompilers($("compilerPick"), info.platform === "psx" ? "gcc-2.7.2-psx" : info.compiler === "IDO" ? "ido-7.1" : "gcc-2.7.2-kmc",
+    info.platform === "psx" ? "PS1" : "N64");
   $("dropIdle").hidden = true;
   $("dropPicked").hidden = false;
 }
 
-function fillCompilers(select, current) {
-  const tcs = (S.st?.toolchains || []).filter((t) => t.kind === "compiler");
+function fillCompilers(select, current, platform) {
+  const tcs = (S.st?.toolchains || []).filter((t) => t.kind === "compiler" && (!platform || !t.platform || t.platform === platform));
   select.innerHTML = tcs.map((t) => {
     const note = !t.supported ? " (not available on this computer)" : t.installed ? "" : t.license === "proprietary" ? " (install in Setup)" : " (will be installed)";
     return `<option value="${esc(t.id)}" ${t.id === current ? "selected" : ""} ${t.supported ? "" : "disabled"}>${esc(t.name)} · ${esc(t.use)}${note}</option>`;
@@ -208,8 +234,16 @@ async function openProject(slug) {
     return;
   }
   $("crumb").hidden = false;
-  $("crumb").innerHTML = `<b>${esc(S.ov.title)}</b><span class="code">${esc(S.ov.rom.game_code)}</span>`;
+  $("crumb").innerHTML = `<b>${esc(S.ov.title)}</b>${S.ov.rom.game_code ? `<span class="code">${esc(S.ov.rom.game_code)}</span>` : ""}`;
+  const fork = S.ov.kind === "fork";
+  $("mapTitle").textContent = fork ? "Function map" : "ROM map";
+  $("mapHint").textContent = fork ? "every square is a function, grouped by source file" : "every square is a function, in ROM order";
+  for (const id of ["exportBtn", "compilerBtn", "inviteBtn"]) $(id).hidden = fork;
+  $("forkSetup").hidden = true;
+  $("grid").hidden = false;
+  $("stats").hidden = fork && !S.ov.ready;
   renderStats(S.ov);
+  if (fork && !S.ov.ready) { renderForkSetup(); return; }
   await refreshMap();
   await poll(true);
   S.timer = setInterval(() => poll(false), 1000);
@@ -275,6 +309,9 @@ function renderStats(ov) {
   const recent = [...S.scores.values()].flat().filter((x) => x.t > Date.now() / 1000 - 600).length;
   $("rate").textContent = recent ? `${recent} in the last 10 minutes` : "each one checked against your ROM";
   renderRoom(ov);
+  if (ov.kind === "fork") { renderFork(ov); return; }
+  $("forkNotice").hidden = true;
+  $("compilerLabel").textContent = "Compiler";
   $("compilerName").textContent = ov.compiler.name;
   $("compilerSub").textContent = ov.compiler.flags.join(" ");
   const n = $("compilerNotice");
@@ -293,7 +330,7 @@ function renderStats(ov) {
 function renderRoom(ov) {
   const n = $("roomNotice");
   const room = ov.room;
-  $("inviteBtn").hidden = room && room.role === "guest";
+  $("inviteBtn").hidden = (room && room.role === "guest") || ov.kind === "fork";
   if (!room) { n.hidden = true; return; }
   n.hidden = false;
   const people = (room.members || []).map((m) => `<span class="member">${esc(m.name)}${m.matched ? ` · ${m.matched}` : ""}</span>`).join("");
@@ -408,6 +445,196 @@ async function installToolchain(id, proprietary) {
     if (S.slug) renderStats(await api(`/api/project?slug=${S.slug}`));
     if (!$("setupSheet").hidden) openSetup();
   } catch (e) { toast(esc(e.message), "err"); }
+}
+
+/* ------------------------------------------------------------------ forks */
+const PLAT_ORDER = ["gc", "wii", "ps", "ps2", "n64", "gba", "nds", "switch", "win32", "xbox360", "3ds", "xbox", "psp"];
+const PLAT_SHORT = { gc: "GameCube", wii: "Wii", ps: "PS1", ps2: "PS2", n64: "N64", gba: "GBA", nds: "DS", switch: "Switch", win32: "PC", xbox360: "Xbox 360", "3ds": "3DS", xbox: "Xbox", psp: "PSP" };
+const cat = { list: null, plat: "", q: "", done: false };
+
+async function loadCatalog() {
+  if (!cat.list) cat.list = (await api("/api/catalog")).projects;
+  return cat.list;
+}
+
+function ago(iso) {
+  if (!iso) return "";
+  const d = (Date.now() - Date.parse(iso)) / 86400000;
+  return d < 1 ? "today" : d < 2 ? "yesterday" : d < 60 ? `${Math.round(d)} days ago` : d < 730 ? `${Math.round(d / 30)} months ago` : `${Math.round(d / 365)} years ago`;
+}
+
+async function showCatalog() {
+  show("catalog");
+  $("crumb").hidden = true;
+  $("workingPill").hidden = true;
+  $("catGrid").innerHTML = `<p class="muted">Loading projects from decomp.dev…</p>`;
+  try { await loadCatalog(); } catch (e) { $("catGrid").innerHTML = `<p class="muted">Couldn't reach decomp.dev (${esc(e.message)}). You can still fork a repository by its address below.</p>`; return; }
+  if (!S.st) await loadState().catch(() => {});
+  renderCatalog();
+}
+
+function renderCatalog() {
+  const all = cat.list || [];
+  const counts = {};
+  const shown = all.filter((p) => cat.done || p.matched < 99.99);
+  for (const p of shown) counts[p.platform] = (counts[p.platform] || 0) + 1;
+  const plats = PLAT_ORDER.filter((k) => counts[k]).concat(Object.keys(counts).filter((k) => !PLAT_ORDER.includes(k)));
+  $("catChips").innerHTML = [`<button class="chip ${cat.plat ? "" : "on"}" data-plat="" type="button">All <span>${shown.length}</span></button>`]
+    .concat(plats.map((k) => `<button class="chip ${cat.plat === k ? "on" : ""}" data-plat="${esc(k)}" type="button">${esc(PLAT_SHORT[k] || k.toUpperCase())} <span>${counts[k]}</span></button>`)).join("");
+  $("catChips").querySelectorAll(".chip").forEach((b) => { b.onclick = () => { cat.plat = b.dataset.plat; renderCatalog(); }; });
+  const q = cat.q.toLowerCase();
+  const forked = new Map((S.st?.projects || []).filter((p) => p.kind === "fork").map((p) => [p.repo_url, p.slug]));
+  const rows = all.filter((p) => (!cat.plat || p.platform === cat.plat) && (cat.done || p.matched < 99.99)
+    && (!q || `${p.name} ${p.id}`.toLowerCase().includes(q)));
+  $("catNote").textContent = `${rows.length} of ${all.length} projects${cat.done ? "" : " (finished ones hidden)"}. Progress from decomp.dev; decomp.wtf isn't affiliated with these projects.`;
+  $("catGrid").innerHTML = rows.slice(0, 240).map((p) => `<button class="cat-card" type="button" data-id="${esc(p.id)}">
+      <div class="cc-top"><span class="plat">${esc(PLAT_SHORT[p.platform] || p.platform_name)}</span>${forked.has(p.repo_url) ? `<span class="badge matched">forked</span>` : p.matched >= 99.99 ? `<span class="badge">done</span>` : ""}</div>
+      <h4>${esc(p.name)}</h4>
+      <p class="meta">${esc(p.id)}${p.version ? " · " + esc(p.version) : ""}</p>
+      <div class="meter"><i data-w="${p.matched}"></i></div>
+      <p class="meta"><b>${p.matched.toFixed(1)}%</b> of code · ${p.functions ? `${p.matched_functions.toLocaleString()} / ${p.functions.toLocaleString()} functions` : "functions unknown"}${p.updated ? " · " + ago(p.updated) : ""}</p>
+    </button>`).join("") || `<p class="muted">Nothing matches.</p>`;
+  requestAnimationFrame(() => $("catGrid").querySelectorAll(".meter i").forEach((i) => { i.style.width = i.dataset.w + "%"; }));
+  $("catGrid").querySelectorAll(".cat-card").forEach((b) => {
+    b.onclick = () => {
+      const p = all.find((x) => x.id === b.dataset.id);
+      if (forked.has(p.repo_url)) location.hash = `#/p/${forked.get(p.repo_url)}`;
+      else openForkDialog(p);
+    };
+  });
+}
+$("catSearch").addEventListener("input", () => { cat.q = $("catSearch").value; renderCatalog(); });
+$("catDone").addEventListener("change", () => { cat.done = $("catDone").checked; renderCatalog(); });
+$("repoFork").onclick = () => {
+  const url = $("repoUrl").value.trim();
+  if (!url) return;
+  openForkDialog({ name: url.replace(/\/+$/, "").split("/").pop().replace(/\.git$/, ""), repo_url: url, platform: "", platform_name: "", id: url });
+};
+
+function openForkDialog(p) {
+  const body = dialog(`Fork ${p.name}`, `<p>decomp.wtf clones <a class="link" href="${esc(p.repo_url)}" target="_blank" rel="noopener">${esc(p.id)}</a> to this computer and sets it up for your agents.</p>
+    <dl class="facts">${[["Platform", p.platform_name || "?"], ["Version", p.version || "the project's default"], ["Progress", p.functions ? `${p.matched.toFixed(1)}% of code` : "?"]]
+      .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    <p class="muted small">Next you add <b>your own copy of the game</b>. Its code stays on your computer; your agent's provider sees the functions it works on. Setting up runs the project's own build scripts, as building it yourself would, so fork projects you trust. Matches are committed to a local <code>decomp-wtf</code> branch: what you push upstream is up to you and the project's rules.</p>
+    <div class="row"><button class="primary" id="forkGo" type="button">Fork it</button><button class="ghost" data-close type="button">Cancel</button></div>
+    <pre class="joblog" id="forkLog" hidden></pre>`);
+  body.querySelector("#forkGo").onclick = async () => {
+    $("forkGo").disabled = true;
+    $("forkLog").hidden = false;
+    try {
+      const { job } = await api("/api/fork", { method: "POST", body: { repo: p.repo_url, name: p.name, platform: p.platform, version: p.version } });
+      const r = await followJob(job, $("forkLog"));
+      $("dialog").hidden = true;
+      await loadState();
+      location.hash = `#/p/${r.slug}`;
+    } catch (e) { toast(esc(e.message), "err"); $("forkGo").disabled = false; }
+  };
+}
+
+function renderFork(ov) {
+  $("compilerNotice").hidden = true;
+  $("compilerLabel").textContent = "Platform";
+  $("compilerName").textContent = ov.platform_name || "Fork";
+  $("compilerSub").textContent = ov.version || "";
+  if (ov.ready && ov.functions === 0) $("rate").textContent = "";
+  else if (ov.ready && !ov.attempts) $("rate").textContent = "each one judged by objdiff";
+  const n = $("forkNotice");
+  if (!ov.ready) { n.hidden = true; return; }
+  n.hidden = false;
+  const repo = (ov.repo_url || "").replace(/^https?:\/\//, "");
+  n.innerHTML = `<span><b>Fork of ${esc(repo)}</b> · matches are committed to the <code>decomp-wtf</code> branch in the project folder.</span><span class="grow"></span><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure</button><a class="ghost small-btn as-btn" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">Repository</a>`;
+  $("forkMeasure").onclick = async () => {
+    toast("Measuring the whole project with objdiff…");
+    try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Progress updated.", "match"); refreshMap(); }
+    catch (e) { toast(esc(e.message), "err"); }
+  };
+}
+
+function uploadFile(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    x.setRequestHeader("X-Decomp", "1");
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let data = null;
+      try { data = JSON.parse(x.responseText); } catch { /* not json */ }
+      if (x.status >= 200 && x.status < 300) resolve(data); else reject(new Error((data && data.error) || `upload failed (${x.status})`));
+    };
+    x.onerror = () => reject(new Error("upload failed"));
+    x.send(file);
+  });
+}
+
+async function renderForkSetup() {
+  const box = $("forkSetup");
+  $("grid").hidden = true;
+  box.hidden = false;
+  box.innerHTML = `<p class="muted">Looking at the project…</p>`;
+  let n;
+  try { n = await api(`/api/fork/needs?slug=${S.slug}`); } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+  const kinds = { manifest: "decomp.wtf manifest", dtk: "dtk-template (configure.py + ninja)", configure: "configure.py + ninja", splat: "splat + make", objdiff: "objdiff project", custom: "its own setup" };
+  const facts = `<dl class="facts">${[["Repository", (S.ov.repo_url || "").replace(/^https?:\/\//, "")], ["Layout", kinds[n.kind] || n.kind], ["Version", n.version || "—"], ["Game goes to", n.path || "see the README"]]
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    <div class="row"><button class="ghost small-btn" id="fsFolder" type="button">Open project folder</button></div>`;
+  const run = async (start) => {
+    $("fsLog").hidden = false;
+    box.querySelectorAll("button, input").forEach((b) => { b.disabled = true; });
+    try {
+      const { job } = await start();
+      await followJob(job, $("fsLog"));
+      toast("The project is ready for your agents.", "match");
+      openProject(S.slug);
+    } catch (e) {
+      toast(esc(e.message), "err");
+      box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
+      if ($("fsOwn")) $("fsGo").disabled = !$("fsOwn").checked;
+    }
+  };
+  if (n.auto) {
+    box.innerHTML = `<div class="fs-main">
+        <p class="eyebrow">Last step</p>
+        <h2>Add your copy of the game</h2>
+        <p class="muted">${esc(n.what)}. ${esc(n.help || "")}</p>
+        <label class="check"><input type="checkbox" id="fsOwn"><span>This is my own copy of this game, obtained legally (for example, dumped from my console). The results stay with me for my own use.</span></label>
+        <div class="row"><input type="file" id="fsFile" hidden><button class="primary" id="fsGo" type="button" disabled>Choose the game file…</button>
+          <span class="muted small">or</span><input id="fsPath" class="mono grow" placeholder="paste its path on this computer"><button class="ghost" id="fsPathGo" type="button">Use path</button></div>
+        <div class="upbar" id="fsUp" hidden><i></i></div>
+        <pre class="joblog tall" id="fsLog" hidden></pre>
+        <p class="muted small">Then decomp.wtf runs the project's setup and build, which can download the project's own tools and take a few minutes. Put the game in place yourself? <button class="link-btn" id="fsBuild" type="button">Just build</button></p>
+      </div><aside class="fs-side">${facts}</aside>`;
+    $("fsOwn").onchange = () => { $("fsGo").disabled = !$("fsOwn").checked; };
+    $("fsGo").onclick = () => $("fsFile").click();
+    $("fsFile").onchange = () => {
+      const f = $("fsFile").files[0];
+      if (!f) return;
+      $("fsUp").hidden = false;
+      run(() => uploadFile(`/api/fork/game?slug=${encodeURIComponent(S.slug)}&confirmed=1&name=${encodeURIComponent(f.name)}`, f,
+        (p) => { $("fsUp").firstElementChild.style.width = (p * 100).toFixed(1) + "%"; }));
+    };
+    $("fsPathGo").onclick = () => {
+      if (!$("fsOwn").checked) return toast("Confirm that this is your own copy of the game first.", "err");
+      if (!$("fsPath").value.trim()) return;
+      run(() => api("/api/fork/setup", { method: "POST", body: { slug: S.slug, path: $("fsPath").value.trim(), confirmed: true } }));
+    };
+    $("fsBuild").onclick = () => run(() => api("/api/fork/setup", { method: "POST", body: { slug: S.slug } }));
+  } else {
+    box.innerHTML = `<div class="fs-main">
+        <p class="eyebrow">Last step</p>
+        <h2>Set it up the project's way</h2>
+        <p class="muted">${esc(n.help)}</p>
+        <ol class="steps"><li>Open a terminal in the project folder.</li><li>Follow the README: it says where your copy of the game goes and how to build.</li><li>Come back and click <b>Check again</b>.</li></ol>
+        ${cmdBox(`cd "${S.ov.folder}"`)}
+        ${n.readme ? `<p class="col-title">From the project's README</p><pre class="readme" id="fsReadme"></pre>` : ""}
+        <div class="row"><button class="primary" id="fsCheck" type="button">Check again</button></div>
+        <pre class="joblog tall" id="fsLog" hidden></pre>
+      </div><aside class="fs-side">${facts}</aside>`;
+    if (n.readme) $("fsReadme").textContent = n.readme;
+    wireCopies(box);
+    $("fsCheck").onclick = () => run(() => api("/api/fork/check", { method: "POST", body: { slug: S.slug } }));
+  }
+  $("fsFolder").onclick = () => api("/api/open", { method: "POST", body: { slug: S.slug } }).catch((e) => toast(esc(e.message), "err"));
 }
 
 /* ------------------------------------------------------------------ map */
@@ -682,14 +909,16 @@ async function refreshFn(first) {
   try {
     const d = await api(`/api/function?slug=${S.slug}&name=${encodeURIComponent(S.fn)}`);
     if (!first && d.status !== "matched" && !S.claims.some((c) => c.name === d.name)) return;
-    $("fnAddr").textContent = `${hex8(d.vram)} · ROM 0x${d.rom_offset.toString(16).toUpperCase()} · ${d.insns} instructions`;
+    $("fnAddr").textContent = S.ov.kind === "fork"
+      ? `${d.unit} · ${d.insns} instructions${d.match_percent != null ? ` · ${d.match_percent.toFixed(1)}% now` : ""}`
+      : `${hex8(d.vram)} · ROM 0x${d.rom_offset.toString(16).toUpperCase()} · ${d.insns} instructions`;
     $("fnName").textContent = d.name;
     const working = S.claims.find((c) => c.name === d.name);
     const st = $("fnStatus");
     st.className = "badge " + (d.status === "matched" ? "matched" : working ? "working" : "");
     st.textContent = d.status === "matched" ? "matched" : working ? `${working.agent} working` : d.best != null ? `best ${(pctOf(d.best, d.insns) * 100).toFixed(0)}%` : "not started";
     $("fnAsm").innerHTML = highlightAsm(d.asm);
-    const kinds = { matched: "Matching C", best: "Best attempt so far", latest: "Latest attempt", draft: "Machine draft (m2c)" };
+    const kinds = { matched: "Matching C", best: "Best attempt so far", latest: S.ov.kind === "fork" ? "In the source now" : "Latest attempt", draft: "Machine draft (m2c)" };
     $("fnSrcKind").textContent = kinds[d.source_kind] || "No C yet";
     $("fnSrc").innerHTML = d.source ? highlightC(d.source) : `<span class="cm">/* no attempt yet */</span>`;
     $("copySrc").onclick = () => navigator.clipboard.writeText(d.source || "").then(() => toast("Copied."));
@@ -842,7 +1071,7 @@ $("compilerBtn").onclick = async () => {
     <label class="field"><span>Compiler</span><select id="dlgTc"></select></label>
     <label class="field"><span>Flags</span><input id="dlgFlags" class="mono" value="${esc(S.ov.compiler.flags.join(" "))}"></label>
     <div class="row"><button class="primary" id="dlgSave" type="button">Save</button><button class="ghost" id="dlgReset" type="button">Default flags</button></div>`);
-  fillCompilers($("dlgTc"), S.ov.compiler.toolchain);
+  fillCompilers($("dlgTc"), S.ov.compiler.toolchain, { n64: "N64", psx: "PS1" }[S.ov.platform]);
   $("dlgReset").onclick = () => { $("dlgFlags").value = ""; };
   body.querySelector("#dlgSave").onclick = async () => {
     try {

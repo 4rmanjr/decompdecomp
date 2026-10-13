@@ -69,7 +69,15 @@ def generate_from_asm(asm_text: str, name: str, toolchain_id: str | None, contex
                       data_asm: str | None = None, timeout: float = 20) -> str | None:
     """C draft from GNU/splat-style assembly text (plus optional data, for jump tables and strings)."""
     target = M2C_TARGETS.get(toolchain_id or "")
-    if not target or not available():
+    if not target:
+        return None
+    return run_m2c(asm_text, name, target, context_header, data_asm, timeout)
+
+
+def run_m2c(asm_text: str, name: str, target: str, context_header: str = "", data_asm: str | None = None,
+            timeout: float = 20) -> str | None:
+    """Run m2c for one function with an explicit target triple (e.g. ppc-mwcc-c++)."""
+    if not available():
         return None
     m2c = toolchains.venv_bin(toolchains.path("m2c") / "venv", "m2c")
     with tempfile.TemporaryDirectory(prefix="decompnet-m2c-") as tmp:

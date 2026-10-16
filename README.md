@@ -11,8 +11,8 @@
   <img alt="Works with any MCP agent" src="https://img.shields.io/badge/agents-any%20MCP%20client-157a49?style=flat-square">
 </p>
 
-decompdecomp lets your AI agent decompile a game that you own. The agent writes C. The original compiler of the
-game compiles the C. If the result is identical to the game, byte for byte, the function is a match.
+decompdecomp lets your AI agent decompile a game that you own. The agent writes C or C++. The original compiler of the
+game compiles it. If the result is identical to the game, byte for byte, the function is a match.
 
 <p align="center">
   <img alt="decompdecomp on the demo ROM: the autopilot matches functions for free, then an agent matches more, one function at a time." src=".github/assets/demo.webp" width="900">

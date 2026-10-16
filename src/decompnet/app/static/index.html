@@ -6,6 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>decompdecomp</title>
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/tokens.css">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
@@ -15,18 +16,24 @@
 <aside class="nav" id="nav" aria-label="decompdecomp">
   <div class="nav-top">
     <a class="brand" href="#/" aria-label="decompdecomp home">
-      <svg viewBox="0 0 14 10" aria-hidden="true"><rect class="orig" x="4" y="0" width="1.76" height="1.76"/><rect class="orig" x="0" y="2" width="1.76" height="1.76"/><rect class="orig" x="2" y="2" width="1.76" height="1.76"/><rect class="orig" x="4" y="2" width="1.76" height="1.76"/><rect class="orig" x="0" y="4" width="1.76" height="1.76"/><rect class="orig" x="4" y="4" width="1.76" height="1.76"/><rect class="orig" x="0" y="6" width="1.76" height="1.76"/><rect class="orig" x="4" y="6" width="1.76" height="1.76"/><rect class="orig" x="0" y="8" width="1.76" height="1.76"/><rect class="orig" x="2" y="8" width="1.76" height="1.76"/><rect class="orig" x="4" y="8" width="1.76" height="1.76"/><rect x="12" y="0" width="1.76" height="1.76"/><rect x="8" y="2" width="1.76" height="1.76"/><rect x="10" y="2" width="1.76" height="1.76"/><rect x="12" y="2" width="1.76" height="1.76"/><rect x="8" y="4" width="1.76" height="1.76"/><rect x="12" y="4" width="1.76" height="1.76"/><rect x="8" y="6" width="1.76" height="1.76"/><rect x="12" y="6" width="1.76" height="1.76"/><rect x="8" y="8" width="1.76" height="1.76"/><rect x="10" y="8" width="1.76" height="1.76"/><rect x="12" y="8" width="1.76" height="1.76"/></svg>
+      <svg viewBox="0 -0.7 8.2 6.4" aria-hidden="true"><path d="M2 0h1v5H0V1h2zM1 2v2h1V2z"/><rect class="hl" x="3.35" y="-0.7" width="4.85" height="6.4"/><path class="on-hl" d="M6 0h1v5H4V1h2zM5 2v2h1V2z"/></svg>
       <span>decomp<b>decomp</b></span>
     </a>
     <button class="ghost icon nav-close" id="navClose" type="button" aria-label="Close menu">✕</button>
   </div>
-  <a class="nav-new" href="#/" data-route="home"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 2h1.5v5.25H14v1.5H8.75V14h-1.5V8.75H2v-1.5h5.25z"/></svg>New project</a>
+  <div class="pop-wrap nav-new-wrap">
+    <button class="nav-new" id="navNew" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="newMenu"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 2h1.5v5.25H14v1.5H8.75V14h-1.5V8.75H2v-1.5h5.25z"/></svg>New project</button>
+    <div class="new-menu" id="newMenu" role="menu" aria-label="Start a project" hidden>
+      <button role="menuitem" type="button" data-new="file"><b>Open a game file</b><span>a ROM, disc image or program you own</span></button>
+      <button role="menuitem" type="button" data-new="fork"><b>Continue a community decomp</b><span>by its repository address</span></button>
+      <button role="menuitem" type="button" data-new="join"><b>Join a team's room</b><span>with an invite link</span></button>
+      <button role="menuitem" type="button" data-new="demo"><b>Try the demo</b><span>Demo Quest 64, in a minute</span></button>
+      <button role="menuitem" type="button" data-new="agent"><b>Use your own agent</b><span>connect Claude Code, Codex, opencode…</span></button>
+    </div>
+  </div>
   <div class="nav-scroll">
     <p class="nav-label">Projects</p>
     <div class="nav-projects" id="navProjects"><p class="nav-empty">None yet: drop in a game.</p></div>
-    <p class="nav-label">Explore</p>
-    <a class="nav-item" href="#/catalog" data-route="catalog"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h5v4H2zm7 0h5v4H9zM2 9h5v4H2zm7 0h5v4H9z"/></svg>Public decomps</a>
-    <button class="nav-item" id="navJoin" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm5.5 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM1 13c0-2.4 2-4 4.5-4S10 10.6 10 13v1H1v-1Zm10.5 1v-1c0-1.3-.4-2.4-1.1-3.3.2 0 .4-.1.6-.1 2.2 0 4 1.3 4 3.4v1h-3.5Z"/></svg>Join a team</button>
   </div>
   <div class="nav-foot">
     <a class="nav-item" href="#/agents" data-route="agents"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a3 3 0 0 1 3 3V6h.5A1.5 1.5 0 0 1 13 7.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12.5v-5A1.5 1.5 0 0 1 4.5 6H5V4.5a3 3 0 0 1 3-3ZM6.25 9.25a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm3.5 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM8 3a1.5 1.5 0 0 0-1.5 1.5V6h3V4.5A1.5 1.5 0 0 0 8 3Z"/></svg>Agents &amp; models<span class="nav-badge" id="navAgentsBadge" hidden></span></a>
@@ -46,7 +53,7 @@
 <div class="main" id="main">
 <header class="mbar">
   <button class="ghost icon" id="navOpen" type="button" aria-label="Menu"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v1.5H2zm0 3.25h12v1.5H2zM2 10.5h12V12H2z"/></svg></button>
-  <a class="brand" href="#/"><svg viewBox="0 0 14 10" aria-hidden="true"><rect class="orig" x="4" y="0" width="1.76" height="1.76"/><rect class="orig" x="0" y="2" width="1.76" height="1.76"/><rect class="orig" x="2" y="2" width="1.76" height="1.76"/><rect class="orig" x="4" y="2" width="1.76" height="1.76"/><rect class="orig" x="0" y="4" width="1.76" height="1.76"/><rect class="orig" x="4" y="4" width="1.76" height="1.76"/><rect class="orig" x="0" y="6" width="1.76" height="1.76"/><rect class="orig" x="4" y="6" width="1.76" height="1.76"/><rect class="orig" x="0" y="8" width="1.76" height="1.76"/><rect class="orig" x="2" y="8" width="1.76" height="1.76"/><rect class="orig" x="4" y="8" width="1.76" height="1.76"/><rect x="12" y="0" width="1.76" height="1.76"/><rect x="8" y="2" width="1.76" height="1.76"/><rect x="10" y="2" width="1.76" height="1.76"/><rect x="12" y="2" width="1.76" height="1.76"/><rect x="8" y="4" width="1.76" height="1.76"/><rect x="12" y="4" width="1.76" height="1.76"/><rect x="8" y="6" width="1.76" height="1.76"/><rect x="12" y="6" width="1.76" height="1.76"/><rect x="8" y="8" width="1.76" height="1.76"/><rect x="10" y="8" width="1.76" height="1.76"/><rect x="12" y="8" width="1.76" height="1.76"/></svg><span>decomp<b>decomp</b></span></a>
+  <a class="brand" href="#/"><svg viewBox="0 -0.7 8.2 6.4" aria-hidden="true"><path d="M2 0h1v5H0V1h2zM1 2v2h1V2z"/><rect class="hl" x="3.35" y="-0.7" width="4.85" height="6.4"/><path class="on-hl" d="M6 0h1v5H4V1h2zM5 2v2h1V2z"/></svg><span>decomp<b>decomp</b></span></a>
 </header>
 
 <!-- ================================================================ new project -->
@@ -54,8 +61,8 @@
   <section class="hero">
     <div class="hero-text">
       <p class="eyebrow">Matching decompilation</p>
-      <h1>Pick your game.<br>Your agents turn it into C.</h1>
-      <p class="lede">N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance and DS from scratch, or any public decomp. Every function is checked against your copy, byte for byte, and the result rebuilds your game: the base for ports and mods.</p>
+      <h1>Pick your game.<br>Your agents turn it into C and C++.</h1>
+      <p class="lede">N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance, DS and Windows PC from scratch, or a community decomp by its repository address. Every function is checked against your copy, byte for byte, and the result rebuilds your game: the base for ports and mods.</p>
       <ol class="how">
         <li><b>Drop your game</b><span>decompdecomp finds every function and the compiler</span></li>
         <li><b>Free matches first</b><span>the autopilot tries a machine draft of each one</span></li>
@@ -191,6 +198,19 @@
 
   <!-- overview -->
   <section class="ptab" data-pane="overview">
+    <section class="panel map-panel">
+      <header class="panel-head">
+        <h2 id="mapTitle">ROM map</h2>
+        <div class="legend"><span><i class="sw open"></i>to do</span><span><i class="sw tried"></i>tried</span><span><i class="sw work"></i>working</span><span><i class="sw match"></i>matched</span></div>
+      </header>
+      <p class="muted small map-hint" id="mapHint">every square is a function, in ROM order</p>
+      <div class="map-wrap" id="mapWrap">
+        <canvas id="map" aria-label="Function map"></canvas>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <div class="now" id="now"></div>
+    </section>
+
     <div class="kpis">
       <div class="kpi">
         <span class="label">Matched code</span>
@@ -217,25 +237,14 @@
       </div>
     </div>
 
-    <div class="next" id="nextStep" hidden></div>
-    <div class="autopilot" id="autopilot" hidden>
-      <span class="ap-icon" aria-hidden="true"></span>
-      <div class="ap-text"><b id="apTitle"></b><span class="muted small" id="apSub"></span><div class="upbar" id="apBar" hidden><i></i></div></div>
-      <button class="ghost small-btn" id="apBtn" type="button"></button>
-    </div>
-
-    <section class="panel map-panel">
-      <header class="panel-head">
-        <h2 id="mapTitle">ROM map</h2>
-        <div class="legend"><span><i class="sw open"></i>to do</span><span><i class="sw tried"></i>tried</span><span><i class="sw work"></i>working</span><span><i class="sw match"></i>matched</span></div>
-      </header>
-      <p class="muted small map-hint" id="mapHint">every square is a function, in ROM order</p>
-      <div class="map-wrap" id="mapWrap">
-        <canvas id="map" aria-label="Function map"></canvas>
-        <div class="tip" id="tip" hidden></div>
+    <div class="status-row">
+      <div class="next" id="nextStep" hidden></div>
+      <div class="autopilot" id="autopilot" hidden>
+        <span class="ap-icon" aria-hidden="true"></span>
+        <div class="ap-text"><b id="apTitle"></b><span class="muted small" id="apSub"></span><div class="upbar" id="apBar" hidden><i></i></div></div>
+        <button class="ghost small-btn" id="apBtn" type="button"></button>
       </div>
-      <div class="now" id="now"></div>
-    </section>
+    </div>
 
     <div class="cols">
       <section class="panel">
@@ -375,12 +384,13 @@
 <main id="agentsPage" class="view" hidden>
   <header class="page-head"><p class="eyebrow">Agents &amp; models</p><h1>Your AI agents</h1>
     <p class="muted">Helper agents run in the background on a project. Install the ones you use, pick their models, or add any model with an API key.</p></header>
-  <div class="cols">
-    <section class="panel"><header class="panel-head"><h2>Agent apps on this computer</h2><button class="ghost small-btn" id="agRefresh" type="button">Refresh</button></header><div class="pad" id="agList"></div></section>
-    <div class="stack-col">
-      <section class="panel"><header class="panel-head"><h2>Models with an API key</h2></header><div class="pad" id="apiBox"></div></section>
-      <section class="panel"><header class="panel-head"><h2>Use decompdecomp from your agent</h2></header><div class="pad" id="mcpBox"></div></section>
-    </div>
+  <section class="ag-apps" aria-labelledby="agAppsH">
+    <header class="ag-apps-head"><h2 id="agAppsH">Agent apps on this computer</h2><button class="ghost small-btn" id="agRefresh" type="button">Refresh</button></header>
+    <div class="ag-grid" id="agList"></div>
+  </section>
+  <div class="cols ag-cols">
+    <section class="panel"><header class="panel-head"><h2>Models with an API key</h2></header><div class="pad" id="apiBox"></div></section>
+    <section class="panel"><header class="panel-head"><h2>Use decompdecomp from your agent</h2></header><div class="pad" id="mcpBox"></div></section>
   </div>
 </main>
 
@@ -423,7 +433,6 @@
       </div>
     </header>
     <div class="drawer-body">
-      <div class="fn-chart" id="fnChartWrap"><svg id="fnChart" aria-label="Match per compile"></svg><div class="fn-chart-note" id="fnChartNote"></div></div>
       <div class="fn-tabs">
         <div class="tabs" role="tablist" aria-label="Function view">
           <button role="tab" class="tab on" data-ftab="diff" type="button">Diff</button>
@@ -451,6 +460,7 @@
           <p class="try-msg" id="tryMsg" hidden></p>
         </div>
       </div>
+      <div class="fn-chart" id="fnChartWrap"><svg id="fnChart" aria-label="Match per compile"></svg><div class="fn-chart-note" id="fnChartNote"></div></div>
       <div class="xref" id="fnXref"></div>
       <div id="fnNotes"></div>
       <div class="note-box">

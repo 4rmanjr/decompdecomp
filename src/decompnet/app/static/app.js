@@ -167,7 +167,38 @@ function closeNav() { document.body.classList.remove("nav-open"); $("navShade").
 $("navOpen").onclick = openNav;
 $("navClose").onclick = closeNav;
 $("navShade").onclick = closeNav;
-$("navJoin").onclick = () => { closeNav(); openJoin(); };
+// New project: every way to start, in one menu (it used to be split between the sidebar and the home screen)
+const newMenu = $("newMenu"), navNew = $("navNew");
+const closeNew = () => { newMenu.hidden = true; navNew.setAttribute("aria-expanded", "false"); };
+navNew.onclick = (e) => {
+  e.stopPropagation();
+  const open = newMenu.hidden;
+  newMenu.hidden = !open;
+  navNew.setAttribute("aria-expanded", String(open));
+  if (open) newMenu.querySelector("button").focus();
+};
+newMenu.onclick = (e) => {
+  const b = e.target.closest("[data-new]");
+  if (!b) return;
+  closeNew();
+  closeNav();
+  const what = b.dataset.new;
+  if (what === "file") { if (location.hash && location.hash !== "#/") location.hash = "#/"; $("file").click(); }
+  else if (what === "fork") location.hash = "#/catalog";
+  else if (what === "join") openJoin();
+  else if (what === "demo") $("demoBtn").click();
+  else openConnect();
+};
+newMenu.addEventListener("keydown", (e) => {
+  const items = [...newMenu.querySelectorAll("button")];
+  if (e.key === "Escape") { closeNew(); navNew.focus(); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+  }
+});
+document.addEventListener("click", (e) => { if (!newMenu.hidden && !e.target.closest(".nav-new-wrap")) closeNew(); });
 
 /* ------------------------------------------------------------------ home */
 let picked = null;
@@ -179,6 +210,7 @@ async function showHome() {
   const box = $("projects");
   box.innerHTML = "";
   $("recent").hidden = !st.projects.length;
+  $("home").classList.toggle("returning", st.projects.length > 0);  // your projects first once you have some
   for (const p of st.projects) {
     const pct = p.bytes ? (100 * p.matched_bytes) / p.bytes : 0;
     const a = document.createElement("a");
@@ -1226,16 +1258,20 @@ async function renderForkSetup() {
 /* ------------------------------------------------------------------ map */
 let colors = null, geo = null, animating = false;
 
+// a 1×1 canvas turns any CSS colour (oklch, color-mix, color(srgb …)) into the sRGB bytes the map is drawn with
+const swatch = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
 function cssColor(name) {
   const probe = document.createElement("i");
   probe.style.color = `var(${name})`;
   document.body.append(probe);
-  const rgb = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+  swatch.clearRect(0, 0, 1, 1);
+  swatch.fillStyle = getComputedStyle(probe).color;
+  swatch.fillRect(0, 0, 1, 1);
   probe.remove();
-  return rgb;
+  return [...swatch.getImageData(0, 0, 1, 1).data.slice(0, 3)];
 }
 function readColors() {
-  colors = { open: cssColor("--open"), tried: cssColor("--tried"), work: cssColor("--work"), match: cssColor("--match"), hi: cssColor("--match-hi"), ink: cssColor("--ink") };
+  colors = { open: cssColor("--open"), tried: cssColor("--tried"), work: cssColor("--hl"), match: cssColor("--match"), hi: cssColor("--match-hi"), ink: cssColor("--ink") };
 }
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
@@ -2428,7 +2464,7 @@ function renderAgentsPage() {
       <div class="ar-head"><b>${esc(a.name)}</b><span class="muted small">${esc(a.vendor)}</span><span class="grow"></span>
         ${a.installed ? `<span class="ok-mark">installed</span>` : `<button class="primary small-btn" data-inst="${esc(a.id)}" type="button" ${a.needs ? "disabled" : ""}>Install</button>`}</div>
       ${a.installed ? `<dl class="facts"><div><dt>Version</dt><dd>${esc(a.version || "?")}</dd></div><div><dt>Default model</dt><dd>${esc(a.default_model || "the app's own")}</dd></div><div><dt>Models offered</dt><dd>${(a.models || []).length ? (a.models || []).length : "any you type"}</dd></div></dl>
-        ${(a.models || []).length ? `<div class="model-chips">${a.models.slice(0, 12).map((m) => `<span class="chip-s mono" title="${esc(m.note || "")}">${esc(m.name)}</span>`).join("")}${a.models.length > 12 ? `<span class="muted small">+${a.models.length - 12} more</span>` : ""}</div>` : ""}
+        ${(a.models || []).length ? `<details class="models"><summary>${a.models.length} model${a.models.length === 1 ? "" : "s"}</summary><div class="model-chips">${a.models.map((m) => `<span class="chip-s mono" title="${esc(m.note || "")}">${esc(m.name)}</span>`).join("")}</div></details>` : ""}
         <p class="muted small">${esc(a.signin)}</p>`
       : `<p class="muted small">${a.needs ? `Needs ${esc(a.needs)} first. ` : ""}Or install it yourself:</p>${cmdBox(a.install)}`}
       <pre class="joblog" data-ilog="${esc(a.id)}" hidden></pre></div>`).join("");

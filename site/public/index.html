@@ -1,59 +1,249 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr" data-nsd-design-language="light;saturated;grotesk;medium;soft;type;asymmetric;choreographed;solid">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>decomp.wtf · discontinued</title>
-<meta name="description" content="decomp.wtf is discontinued. The code stays on GitHub under the MIT license.">
-<link rel="canonical" href="https://decomp.wtf/">
-<meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0c0c0a" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#100f0c">
+<title>decompdecomp · your agent decompiles your game</title>
+<meta name="description" content="Free and open source. Your AI agent writes C or C++ for a game you own; the game's original compiler checks it, byte for byte. Runs on your computer.">
+<link rel="canonical" href="https://decomp.ndelic.com/">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://decomp.wtf/">
-<meta property="og:title" content="decomp.wtf · discontinued">
-<meta property="og:description" content="decomp.wtf is discontinued. The code stays on GitHub under the MIT license.">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/site.css">
+<meta property="og:title" content="decompdecomp">
+<meta property="og:description" content="Your agent decompiles your game. The game's own compiler checks every function, byte for byte.">
+<meta property="og:image" content="https://decomp.ndelic.com/og.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/Archivo-400_800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexMono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="site.css">
 </head>
 <body>
-<header class="nav" id="nav">
-  <div class="wrap">
-    <a class="brand" href="/" aria-label="decomp.wtf home">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6"/><rect x="9" y="1" width="6" height="6"/><rect x="1" y="9" width="6" height="6"/><rect class="hollow" x="9.75" y="9.75" width="4.5" height="4.5"/></svg>
-      <span>decomp<b>.wtf</b></span>
-    </a>
-    <nav class="links" aria-label="Sections">
-      <a href="https://github.com/i12bp8/decomp.wtf">GitHub</a>
-    </nav>
-  </div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <a class="mark" href="./" aria-label="decompdecomp home">
+    <svg viewBox="0 -0.7 8.2 6.4" aria-hidden="true"><path d="M2 0h1v5H0V1h2zM1 2v2h1V2z"/><rect class="hl" x="3.35" y="-0.7" width="4.85" height="6.4"/><path class="on-hl" d="M6 0h1v5H4V1h2zM5 2v2h1V2z"/></svg>
+    <span>decomp<em>decomp</em></span>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#check">Will it work?</a>
+    <a href="#proof">How it's checked</a>
+    <a href="https://github.com/n-delic/decompdecomp">GitHub</a>
+    <a class="btn btn-small" href="#start">Install</a>
+  </nav>
 </header>
 
 <main id="main">
-<section class="band gone">
-  <div class="wrap">
-    <div class="head">
-      <p class="kicker">Discontinued</p>
-      <h2>This project is discontinued.</h2>
-      <p>I've decided to stop working on decomp.wtf and archive it.</p>
-      <p>Over the last few days I noticed that a lot of the decompilation community, the people who made the tools and projects all of this is built on, is against AI decompiling like this. I didn't make decomp.wtf to do any harm, but I respect their opinion, and that's why I'm stopping it here.</p>
-      <p>The code stays up on <a href="https://github.com/i12bp8/decomp.wtf">GitHub</a> as it is, under the MIT license. If you want to fork it and keep going with it, you can. I won't fix issues, review pull requests or make new releases anymore. If you already have it installed it keeps working, it just won't get any updates.</p>
-      <p>If you do use it or build on it, please only use it on games you own, don't share the game code it produces, and respect the rules of the projects you work with, because many of them don't want AI-made contributions.</p>
-      <p>Thanks to everyone who tried it, reported bugs and sent fixes.</p>
+
+<!-- 1 · the bytes as the image -->
+<section class="poster" aria-labelledby="claim">
+  <p class="eyebrow">Free and open source · runs on your computer</p>
+  <figure class="bytes" aria-describedby="bytes-cap">
+    <div class="bytes-rows" aria-hidden="true">
+      <span>0085102A <b class="hl-word">14400005</b> <i>00A01021</i></span>
+      <span>00C01021 0044182A 50600001</span>
+    </div>
+    <figcaption id="bytes-cap"><span class="addr">0x800007D0</span> <code>clamp_s32</code>, 36 bytes of Demo Quest 64. An agent wrote C that the game's own compiler turns into exactly these bytes.</figcaption>
+  </figure>
+  <div class="claim-row">
+    <h1 id="claim">Your agent decompiles your game.</h1>
+    <div class="claim-side">
+      <p class="lede">Point the AI agent you already use at a game you own. It writes C or C++, one function at a time. The game's original compiler builds each attempt, and only identical bytes count.</p>
+      <div class="actions">
+        <a class="btn" href="#start">Install decompdecomp</a>
+        <a class="link-arrow" href="#check">Will it work on my game?</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 · the signature interaction: the pipeline for your platform -->
+<section class="check" id="check" aria-labelledby="check-h" data-nsd-interaction="platform-pipeline">
+  <div class="check-head">
+    <p class="eyebrow">Will it work on my game?</p>
+    <h2 id="check-h">Pick the console. See what happens to your file.</h2>
+  </div>
+  <fieldset class="platforms js-only" hidden>
+    <legend class="sr-only">Platform of your game</legend>
+    <label><input type="radio" name="platform" value="n64" checked><span>Nintendo 64</span></label>
+    <label><input type="radio" name="platform" value="gc"><span>GameCube</span></label>
+    <label><input type="radio" name="platform" value="wii"><span>Wii</span></label>
+    <label><input type="radio" name="platform" value="ps1"><span>PlayStation</span></label>
+    <label><input type="radio" name="platform" value="ps2"><span>PlayStation 2</span></label>
+    <label><input type="radio" name="platform" value="gba"><span>Game Boy Advance</span></label>
+    <label><input type="radio" name="platform" value="nds"><span>DS</span></label>
+    <label><input type="radio" name="platform" value="pc"><span>Windows PC</span></label>
+  </fieldset>
+  <output class="answer js-only" id="answer" for="platform" aria-live="polite" hidden></output>
+
+  <div class="pipelines">
+    <article class="pipeline" data-platform="n64" data-file="game.z64">
+      <h3><span class="pl-name">Nintendo 64</span> <span class="status rec">Recommended</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>ROM</b><span>.z64, .n64 or .v64</span></li>
+        <li><small>Split by</small><b>splat</b><span>with spimdisasm; finds code loaded later, and compressed code</span></li>
+        <li><small>Built by</small><b>KMC GCC 2.7.2</b><span>or IDO 5.3 / 7.1, the game's own compiler</span></li>
+        <li><small>Judged by</small><b>Linking</b><span>at the function's real address, compared byte for byte</span></li>
+        <li><small>You get</small><b>A rebuildable project</b><span>that builds your ROM again, byte for byte</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="gc" data-file="game.iso">
+      <h3><span class="pl-name">GameCube</span> <span class="status rec">Recommended</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>Disc or DOL</b><span>ISO, GCM, RVZ, WIA, CISO, GCZ</span></li>
+        <li><small>Split by</small><b>decomp-toolkit</b><span>in a dtk-template project</span></li>
+        <li><small>Built by</small><b>CodeWarrior</b><span>GC 1.0 to 3.0, C and C++</span></li>
+        <li><small>Judged by</small><b>objdiff</b><span>in the project's own build; finished files are linked into the game</span></li>
+        <li><small>You get</small><b>A dtk-template project</b><span>the shape community decomps use</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="wii" data-file="game.rvz">
+      <h3><span class="pl-name">Wii</span> <span class="status rec">Recommended</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>Disc or DOL</b><span>ISO, RVZ, WIA, WBFS, CISO</span></li>
+        <li><small>Split by</small><b>decomp-toolkit</b><span>in a dtk-template project</span></li>
+        <li><small>Built by</small><b>CodeWarrior</b><span>up to Wii 1.7, C and C++</span></li>
+        <li><small>Judged by</small><b>objdiff</b><span>in the project's own build; finished files are linked into the game</span></li>
+        <li><small>You get</small><b>A dtk-template project</b><span>the shape community decomps use</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="ps1" data-file="game.chd">
+      <h3><span class="pl-name">PlayStation</span> <span class="status beta">Beta</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>Disc or EXE</b><span>.bin/.cue, .iso or .chd</span></li>
+        <li><small>Split by</small><b>splat</b><span>with spimdisasm; overlays in the disc's other files too</span></li>
+        <li><small>Built by</small><b>GCC 2.7.2 / 2.8.1</b><span>the PSY-Q era compilers</span></li>
+        <li><small>Judged by</small><b>Linking</b><span>at the function's real address, compared byte for byte</span></li>
+        <li><small>You get</small><b>A rebuildable project</b><span>that builds your EXE again, byte for byte</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="ps2" data-file="game.iso">
+      <h3><span class="pl-name">PlayStation 2</span> <span class="status beta">Beta</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>Disc or ELF</b><span>the game's main program</span></li>
+        <li><small>Split by</small><b>splat</b><span>with spimdisasm</span></li>
+        <li><small>Built by</small><b>EE-GCC or CodeWarrior</b><span>EE-GCC 2.9 to 3.2, CodeWarrior 2.3.3 / 3.0.1; C and C++; one compiler per address range when a game mixes them</span></li>
+        <li><small>Judged by</small><b>Linking</b><span>at the function's real address, compared byte for byte</span></li>
+        <li><small>You get</small><b>A rebuildable project</b><span>that builds the program again, byte for byte</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="gba" data-file="game.gba">
+      <h3><span class="pl-name">Game Boy Advance</span> <span class="status beta">Beta</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>ROM</b><span>.gba</span></li>
+        <li><small>Split by</small><b>luvdis</b><span>plus a pass for code nothing calls</span></li>
+        <li><small>Built by</small><b>agbcc</b><span>the compiler GBA games were built with</span></li>
+        <li><small>Judged by</small><b>Linking</b><span>at the function's real address, compared byte for byte</span></li>
+        <li><small>You get</small><b>A rebuildable project</b><span>that builds your ROM again, byte for byte</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="nds" data-file="game.nds">
+      <h3><span class="pl-name">DS</span> <span class="status beta">Beta</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>ROM</b><span>.nds</span></li>
+        <li><small>Split by</small><b>ds-decomp</b><span>ARM9, ITCM, DTCM and overlays</span></li>
+        <li><small>Built by</small><b>CodeWarrior for DS</b><span>1.2 to DSi 1.6</span></li>
+        <li><small>Judged by</small><b>objdiff</b><span>in the project's own build</span></li>
+        <li><small>You get</small><b>A ds-decomp project</b><span>that builds the ROM again on each build</span></li>
+      </ol>
+    </article>
+    <article class="pipeline" data-platform="pc" data-file="game.exe">
+      <h3><span class="pl-name">Windows PC</span> <span class="status beta">Beta</span></h3>
+      <ol class="stations">
+        <li><small>Your file</small><b>Program</b><span>a 32-bit x86 .exe</span></li>
+        <li><small>Split by</small><b>Ghidra</b><span>then decompdecomp cuts each function out of the .exe</span></li>
+        <li><small>Built by</small><b>Visual C++</b><span>6.0, 7.0 or 7.1; C and C++</span></li>
+        <li><small>Judged by</small><b>objdiff</b><span>per function</span></li>
+        <li><small>You get</small><b>A project of your game's functions</b><span>as C and C++ sources</span></li>
+      </ol>
+    </article>
+  </div>
+
+  <div class="tell js-only" hidden>
+    <p class="tell-label">Then tell your agent</p>
+    <p class="tell-line"><code id="prompt">decompile my game at ~/games/game.z64</code><button type="button" class="copy" data-copy-from="prompt">Copy</button></p>
+  </div>
+  <p class="fineprint">Proprietary compilers (IDO, CodeWarrior, Visual C++) install only after you accept them in Setup. Also: 3DS, PSP, Switch and Xbox, through a fork of a community decomp repository.</p>
+</section>
+
+<!-- 3 · the proof -->
+<section class="proof" id="proof" aria-labelledby="proof-h">
+  <div class="proof-head">
+    <p class="eyebrow">How it's checked</p>
+    <h2 id="proof-h">The game's compiler is the judge. Not the AI.</h2>
+    <p>Each attempt is compiled with the same compiler and flags the game was built with, linked at the function's real address, and compared with your copy. A near miss comes back with an instruction diff. Only <mark>score 0</mark> is a match.</p>
+  </div>
+  <div class="listing">
+    <div class="pane">
+      <p class="pane-label">From your ROM <span>0x800007D0</span></p>
+<pre><code>slt     $v0, $a0, $a1
+bnez    $v0, .L800007EC
+ addu   $v0, $a1, $zero
+addu    $v0, $a2, $zero
+slt     $v1, $v0, $a0
+beql    $v1, $zero, .L800007EC
+ addu   $v0, $a0, $zero
+.L800007EC:
+jr      $ra
+ nop</code></pre>
+    </div>
+    <div class="pane">
+      <p class="pane-label">From the agent <span>clamp_s32.c</span></p>
+<pre><code>s32 clamp_s32(s32 v, s32 lo, s32 hi) {
+    if (v &lt; lo) {
+        return lo;
+    }
+    if (v &gt; hi) {
+        return hi;
+    }
+    return v;
+}</code></pre>
+    </div>
+    <p class="verdict"><span class="score">score 0</span> 36 of 36 bytes identical, built with KMC GCC 2.7.2 <code>-O2</code></p>
+  </div>
+</section>
+
+<!-- 4 · the colour field: what stays yours -->
+<section class="yours" aria-labelledby="yours-h">
+  <h2 id="yours-h">Yours.</h2>
+  <ol class="yours-list">
+    <li><b>Your game</b> stays on your computer. No account, no telemetry, nothing uploaded. decompdecomp supplies no games.</li>
+    <li><b>Your agent</b> does the work: Claude Code, Codex, Antigravity CLI, opencode, or any model with an API key. You pay your own provider.</li>
+    <li><b>Your code</b> comes out as a project that builds your game again, byte for byte: the start of a port or a mod.</li>
+  </ol>
+  <p class="yours-note">The code from a game belongs to its rights holder. Keep it to yourself.</p>
+</section>
+
+<!-- 5 · start -->
+<section class="start" id="start" aria-labelledby="start-h">
+  <h2 id="start-h">Start.</h2>
+  <div class="steps">
+    <div class="step">
+      <p class="step-n">1 · Install</p>
+      <div class="os js-only" role="radiogroup" aria-label="Your system" hidden>
+        <label><input type="radio" name="os" value="linux" checked><span>Linux</span></label>
+        <label><input type="radio" name="os" value="win"><span>Windows <small>unstable</small></span></label>
+      </div>
+      <p class="cmd" data-os="linux"><code id="cmd-linux">curl -fsSL https://decomp.ndelic.com/install.sh | bash</code><button type="button" class="copy" data-copy-from="cmd-linux">Copy</button></p>
+      <p class="cmd" data-os="win"><code id="cmd-win">irm https://decomp.ndelic.com/install.ps1 | iex</code><button type="button" class="copy" data-copy-from="cmd-win">Copy</button></p>
+      <p class="step-note">It installs the app and the compilers, then opens the app in your browser. macOS is not supported.</p>
+    </div>
+    <div class="step">
+      <p class="step-n">2 · Tell your agent</p>
+      <p class="cmd"><code id="prompt-end">decompile my game at ~/games/game.z64</code><button type="button" class="copy" data-copy-from="prompt-end">Copy</button></p>
+      <p class="step-note">Connect your agent one time with <code>decomp connect</code>. Or open Demo Quest 64 in the app and watch first.</p>
     </div>
   </div>
 </section>
 </main>
 
 <footer class="foot">
-  <div class="wrap">
-    <a class="brand" href="/" aria-label="decomp.wtf home">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6"/><rect x="9" y="1" width="6" height="6"/><rect x="1" y="9" width="6" height="6"/><rect class="hollow" x="9.75" y="9.75" width="4.5" height="4.5"/></svg>
-      <span>decomp<b>.wtf</b></span>
-    </a>
-    <nav aria-label="Site"><a href="https://github.com/i12bp8/decomp.wtf">GitHub</a><a href="/legal">Legal</a><a href="/privacy">Privacy</a><a href="mailto:legal@decomp.wtf">Contact</a></nav>
-    <p>Free and open source (MIT). Not affiliated with Nintendo, Sony, Microsoft or any game publisher; platform names are their owners' trademarks.</p>
-  </div>
+  <p>decompdecomp continues <a href="https://github.com/i12bp8/decomp.wtf">decomp.wtf</a> by Sam Wolfs. It is built on splat, spimdisasm, objdiff, decomp-toolkit, ds-decomp, luvdis, m2c, Ghidra and the decompals compilers.</p>
+  <nav aria-label="Site"><a href="https://github.com/n-delic/decompdecomp">GitHub</a><a href="https://github.com/n-delic/decompdecomp/blob/main/docs/GUIDE.md">Guide</a><a href="https://github.com/n-delic/decompdecomp/issues">Issues</a><a href="privacy.html">Privacy</a></nav>
+  <p class="foot-small">MIT · Not related to Nintendo, Sony or Microsoft. Platform names are trademarks of their owners.</p>
 </footer>
+<script src="main.js" defer></script>
 </body>
 </html>

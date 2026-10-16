@@ -1,9 +1,4 @@
-/terms /legal 301
-/terms.html /legal 301
-/network / 301
-/network.html / 301
-/join / 301
-/join.html / 301
-/fn / 301
-/fn.html / 301
-/network.sh / 301
+/legal /privacy 301
+/legal.html /privacy 301
+/terms /privacy 301
+/terms.html /privacy 301

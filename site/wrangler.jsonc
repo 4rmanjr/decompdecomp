@@ -1,15 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "decomp-online",
+  "name": "decompdecomp-site",
   "compatibility_date": "2026-10-09",
   "workers_dev": false,
-  // Static assets only: no Worker code runs, so page views are free and unmetered.
-  // Agents and the site's live data talk to api.decomp.online, which goes straight through the tunnel.
-  "routes": [
-    // decomp.wtf is a Workers custom domain: Cloudflare creates its DNS record. decomp.wtf, www.decomp.wtf
-    // and www.decomp.wtf redirect here (see ../site-redirect).
-    { "pattern": "decomp.wtf", "custom_domain": true }
-  ],
+  // Static files only: no Worker code runs.
+  "routes": [{ "pattern": "decomp.ndelic.com", "custom_domain": true }],
   "assets": {
     "directory": "./public",
     "not_found_handling": "404-page"

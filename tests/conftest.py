@@ -9,6 +9,7 @@ os.environ.setdefault("DECOMP_UPDATES", "off")
 os.environ["DECOMP_HOME"] = tempfile.mkdtemp(prefix="decomp-tests-")
 # nothing a test runs opens a window or a tab on the user's screen (app/window.py, webbrowser both honour it)
 os.environ.setdefault("BROWSER", "true")
+os.environ.setdefault("DECOMP_TRAY", "0")  # nor a tray icon
 
 
 def pytest_sessionfinish(session, exitstatus):

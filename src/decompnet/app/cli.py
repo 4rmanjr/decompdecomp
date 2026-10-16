@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from .. import hostenv
+from . import tray, window
 
 DEFAULT_PORT = int(os.environ.get("DECOMP_PORT") or 6464)
 
@@ -172,6 +173,14 @@ def run(args) -> int:
     mcp, manager, security = build(net, internal, port, secret)
     app = mcp.streamable_http_app(transport_security=security, max_request_body_size=80 * 1024 * 1024, host="127.0.0.1")
     url = f"http://127.0.0.1:{port}/?k={secret}"
+
+    def tray_quit():
+        window.close_app()
+        manager.stop()
+        manager.on_stop()
+        os._exit(0)
+    # in the tray, closing the window doesn't quit: the tray's menu (or the app's own quit button) does
+    window.IN_TRAY = tray.start(lambda: window.open_app(url) or hostenv.open_url(url), tray_quit)
     print(f"decompdecomp {__import__('decompnet').__version__} on {url}\nyour projects: {hostenv.shown_path(home)}"
           + ("\nupdated and restarted" if restarted else "\nstop with Ctrl-C"), flush=True)
     if not args.no_browser and not restarted:

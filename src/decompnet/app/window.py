@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -98,6 +99,15 @@ class Window:
             threading.Thread(target=self._watch, args=(self.proc,), daemon=True, name="window").start()
             return True
 
+    def close(self) -> None:
+        """The app is quitting: its window goes with it (the whole browser instance: it has a process group of its own)."""
+        proc, self.proc = self.proc, None  # (so the watcher doesn't take this for the user closing it)
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except (OSError, AttributeError):  # no process groups (Windows): the process itself
+                proc.terminate()
+
     def _watch(self, proc: subprocess.Popen) -> None:
         proc.wait()
         if proc is self.proc:
@@ -105,7 +115,13 @@ class Window:
 
 
 WINDOW: Window | None = None  # set by the server (server.build); hostenv.open_url opens the app through it
+IN_TRAY = False  # set by cli.run when the tray icon shows: then closing the window leaves the app running there
 
 
 def open_app(url: str) -> bool:
     return WINDOW is not None and WINDOW.open(url)
+
+
+def close_app() -> None:
+    if WINDOW is not None:
+        WINDOW.close()

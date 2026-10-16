@@ -274,6 +274,9 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     def window_closed():
         """The app window was closed: quit, unless helper agents or a job are still working (they carry on in the
         background, and `decomp` opens the window again)."""
+        if window.IN_TRAY:
+            jobs.logger.info("window closed; decompdecomp stays in the tray")
+            return
         busy = manager.running() or any(j["state"] == "running" for j in jobs.jobs.values())
         if busy:
             jobs.logger.info("window closed; agents or a job keep working in the background")
@@ -1039,6 +1042,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             return bad
 
         def bye():
+            window.close_app()
             manager.stop()
             manager.on_stop()
             time.sleep(0.5)

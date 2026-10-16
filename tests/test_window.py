@@ -43,3 +43,18 @@ def test_one_window_and_closing_it_tells_the_app(tmp_path, monkeypatch):
 def test_without_an_app_browser_it_is_a_tab(monkeypatch, tmp_path):
     monkeypatch.setattr(window, "browser", lambda: None)
     assert not window.Window(str(tmp_path), lambda: None).open("http://127.0.0.1:6464/")
+
+
+def test_quitting_closes_the_window(tmp_path, monkeypatch):
+    fake = tmp_path / "browser"
+    fake.write_text("#!/bin/sh\nsleep 30\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(window, "browser", lambda: str(fake))
+    closed = []
+    w = window.Window(str(tmp_path / "profile"), lambda: closed.append(1))
+    assert w.open("http://127.0.0.1:6464/")
+    proc = w.proc
+    w.close()
+    proc.wait(timeout=5)
+    time.sleep(0.2)
+    assert not w.is_open() and closed == []  # the app closed it: not taken for the user closing it

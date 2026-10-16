@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # decompdecomp installer for Linux (Windows: install.ps1, in PowerShell). macOS isn't supported.
 #
-#   curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
+#   curl -fsSL https://decomp.ndelic.com/install.sh | bash
 #
 # decompdecomp installs on this computer, with uv:
 #   1. installs uv, Astral's Python tool manager, if you don't have it (asks first)
@@ -16,7 +16,7 @@
 #   --no-start          install only
 #   --source <what>     where decompdecomp comes from: "release" (default), "branch:<name>" (a branch on GitHub, for
 #                       testing; its updates follow that branch) or a folder with decompdecomp's source. Run from a
-#                       git checkout, the checkout is used (and updates follow its branch).
+#                       git checkout, the checkout is used (and updates follow its branch; main's are releases).
 # The same through the environment: DECOMP_SOURCE=..., DECOMP_BRANCH=<name>.
 # On a server, decompdecomp also runs in Docker: docker-compose.yml in the repository.
 set -euo pipefail
@@ -68,7 +68,7 @@ OS="$(uname -s)"
 case "$OS" in
   Linux) ;;
   Darwin) fail "macOS isn't supported: decompdecomp runs on Linux and on Windows (in WSL 2), on x86-64 PCs (the games' compilers are x86 programs). On an Intel Mac, an x86-64 Linux virtual machine works too." ;;
-  *) fail "this installer is for Linux; on Windows run in PowerShell: irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex" ;;
+  *) fail "this installer is for Linux; on Windows run in PowerShell: irm https://decomp.ndelic.com/install.ps1 | iex" ;;
 esac
 case "$(uname -m)" in
   x86_64|amd64) ;;
@@ -92,7 +92,8 @@ case "$SOURCE" in
       BRANCH="$(git -c safe.directory='*' -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
       COMMIT="$(git -c safe.directory='*' -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || true)"
       [ "$BRANCH" = HEAD ] && BRANCH=""
-      [ -n "$BRANCH" ] && CHANNEL=branch
+      # main is the release line: a checkout of it updates on releases, not on every commit
+      [ -n "$BRANCH" ] && [ "$BRANCH" != main ] && CHANNEL=branch
     fi ;;
 esac
 

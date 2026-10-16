@@ -42,6 +42,10 @@ def installed() -> dict:
         data = {}
     if not isinstance(data, dict) or data.get("channel") not in ("release", "branch"):
         data = {"channel": "release"}
+    if data["channel"] == "branch" and data.get("branch") in ("", None, "main"):
+        # main is the release line: installed from a checkout of it, every commit (a website edit too) was offered
+        # as an update; it updates on releases, as an install from the installer does
+        data = {**data, "channel": "release", "branch": "", "commit": ""}
     data.setdefault("repo", REPO)
     data["version"] = __version__
     return data
@@ -157,7 +161,7 @@ def can_apply() -> tuple[bool, str]:
                        f"download the new one from https://github.com/{REPO}/releases")
     if sys.platform == "win32":
         return False, ("decompdecomp now runs in WSL 2 on Windows: run the installer again in PowerShell "
-                       "(irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex) to switch to it")
+                       "(irm https://decomp.ndelic.com/install.ps1 | iex) to switch to it")
     if not uv():
         return False, "uv isn't installed here, so decompdecomp can't update itself: run the installer again"
     return True, ""

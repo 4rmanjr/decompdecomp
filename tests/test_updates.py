@@ -195,3 +195,11 @@ def test_an_appimage_bridge_is_the_appimage_itself(monkeypatch):
     from decompnet.app import connect
     monkeypatch.setenv("APPIMAGE", "/home/me/decompdecomp.AppImage")
     assert connect.bridge_command() == ["/home/me/decompdecomp.AppImage", "mcp"]
+
+
+def test_an_install_from_main_updates_on_releases_only():
+    """Installed from a checkout of main, every commit used to be offered as an update (a website edit too)."""
+    updates.record("branch", branch="main", commit="abc123")
+    assert updates.installed()["channel"] == "release"
+    updates.record("branch", branch="window-fix", commit="abc123")
+    assert updates.installed()["channel"] == "branch"

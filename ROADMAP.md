@@ -6,8 +6,46 @@ same thing.
 
 Want to work on one? Open an issue first, so two people don't build the same thing. CONTRIBUTING.md has the rest.
 
+## What works where
+
+Each feature and the platforms it covers today. A — is a gap: pick one up (the notes under the table say where to
+start). Keep this table true when a feature ships or reaches another platform.
+
+| Feature | N64 | PS1 | PS2 | GBA | GameCube · Wii | DS | Windows PC | Public decomps |
+| :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| Start from your own copy | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | fork by address |
+| Judge | link · compare | link · compare | link · compare | link · compare | objdiff | objdiff | objdiff | objdiff |
+| Machine drafts (m2c, Ghidra for x86) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ Ghidra | by architecture |
+| Autopilot: free matches from drafts | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| Twins: free matches from identical code | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Permuter on near misses | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Hand-written assembly set aside | ✓ | ✓ | ✓ | — | ✓ | — | — | MIPS, PowerPC |
+| Kernel and BIOS stubs set aside | — | ✓ | ✓ | — | — | — | — | — |
+| Function-end reports (`report_boundary`) | ✓ | ✓ | ✓ | — | — | — | — | — |
+| Compiler ranges and suggestions | ✓ | ✓ | ✓ | ✓ | the project's build | the project's build | the project's build | the project's build |
+| Compiler map and the judge's survey | ✓ | ✓ | ✓ | — | — | — | — | — |
+| C++ classes from the code (`get_class`) | ✓ | ✓ | ✓ | — | — | — | — | — |
+| Rebuildable export | ✓ | ✓ | ✓ | ✓ | the project | the project | — | the project |
+| Rooms: decompile together | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Where to start on a gap:
+- **ARM (GBA, DS)**: assembly detection is `handwritten.py` (`mips_reason` and `ppc_reason` show the shape); the
+  compiler map and class recovery read MIPS in `compilermap.quirks` and `classes.scan`, and want an ARM reader.
+- **PowerPC (GameCube, Wii) and x86 (PC)**: class recovery and the compiler map work on a project's objects in fork
+  mode, not on a ROM; the readers are the part to write (CodeWarrior's vtable pointer is often not at offset 0).
+- **Windows PC**: autopilot needs drafts that compile (Ghidra's output doesn't, as it is); the export needs a linker
+  story (the project is delinked COFF objects).
+- **Function-end reports** cut MIPS functions (`engine._cut`); GBA has its own splitter (`_split_gba`).
+
 ## Recently done
 
+- **Compiler map** (MIPS: PlayStation 2, PlayStation, N64): which compiler built each part of the game. Measured on
+  GTA San Andreas, compilers' habits only rule compilers out (-G0 code never reads through `$gp`; its CodeWarrior
+  code never uses branch-likely), so what rules a compiler in is the judge: the survey builds agents' C for unmatched
+  functions with each compiler the project uses, and C that matches with another compiler (and not today's)
+  confirms it. Confirmations spread over their neighbours (one object file is one compiler) up to the furthest
+  evidence; a run big enough becomes a suggestion, checked against every matched function. The ROM map shows it
+  (Compiler view); agents read it with `compiler_map` and in `get_function`.
 - **C++ classes from the game's code** (MIPS: PlayStation 2, PlayStation, N64). Constructors store their class's
   vtable into the object; from those stores decompdecomp finds each class, its virtual functions, its base class and
   every field its functions touch (offset, type). Agents read them with `get_class`; `get_function` names the fields
@@ -18,25 +56,6 @@ Want to work on one? Open an issue first, so two people don't build the same thi
 - **Its own window and a tray icon**, so closing the window doesn't stop helper agents.
 
 ## Next
-
-### Compiler map
-
-Find which compiler built each part of a game from the quirks in its code, not only for the game as a whole. Big
-games mix compilers: GTA San Andreas is EE-GCC 2.95 with CodeWarrior and GCC 2.96 libraries linked in. Today agents
-find the exceptions by hand, one function at a time, and single-function guesses go wrong (43 of them were removed
-from GTA San Andreas).
-
-- Score every function on quirks: branch-likely instructions (in GTA San Andreas, none in 54 large CodeWarrior
-  functions, 9–24% of GCC functions), the delay slot of returns, register moves (`daddu` / `or` / `addu`), how `$ra`
-  is saved (`sq` / `sd`), `$gp`-relative accesses (`-G8` against `-G0`), stack frame setup and teardown, jump table
-  and constant loading.
-- Learn from the project's own matches: each one is a confirmed example of its compiler.
-- Group neighbouring functions (one object file is one compiler) and propose a range for each run that differs from
-  the game's compiler; the judge confirms it with real matches before it applies (256 bytes or 3 functions, as for
-  agents' ranges today).
-- Show it as a band under the ROM map.
-
-Limit: until bigger functions match, the learned part has few examples; the starting rules carry it.
 
 ### Twins across your games
 

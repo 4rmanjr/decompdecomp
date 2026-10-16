@@ -1,6 +1,6 @@
 # decompdecomp installer for Windows (PowerShell).
 #
-#   irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
+#   irm https://decomp.ndelic.com/install.ps1 | iex
 #
 # decompdecomp is a Linux program (the old compilers it runs are), so on Windows it gets its own small Linux: a WSL 2
 # distribution called decomp-wtf, the same Linux as its Docker image for servers. What this does, and nothing else:

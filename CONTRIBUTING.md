@@ -63,7 +63,8 @@ Some things we won't merge:
 - Links to the decomp.wtf website. That domain isn't ours. Keep the internal names (`decomp`, `decompnet`,
   `~/Decomp`, `.decomp.wtf.json`): existing installs depend on them.
 
-Not sure what to work on? [ROADMAP.md](ROADMAP.md) lists what's planned, and why.
+Not sure what to work on? [ROADMAP.md](ROADMAP.md) lists what's planned and why, and has a table of which feature
+works on which platform: every — in it is a gap to fill.
 
 ## Pull requests
 

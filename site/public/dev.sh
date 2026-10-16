@@ -5,7 +5,7 @@
 #
 # Runs the dev branch's own installer (install.sh on GitHub) with DECOMP_BRANCH=dev: decompdecomp installs from the
 # branch's newest commit, and the app then offers every new commit pushed there as an update (one click).
-# Back to releases: curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
+# Back to releases: curl -fsSL https://decomp.ndelic.com/install.sh | bash
 set -euo pipefail
 BRANCH="${DECOMP_BRANCH:-dev}"
 curl -fsSL "https://raw.githubusercontent.com/n-delic/decompdecomp/$BRANCH/site/public/install.sh" | DECOMP_BRANCH="$BRANCH" bash -s -- "$@"

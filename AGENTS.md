@@ -61,7 +61,8 @@ compilers are only installed after the user accepts that in Setup; don't add cod
 
 Shared pieces: `network.py` (claims, attempts, notes, shared header), `compiler.py` (sandboxed compiler runs),
 `scoring.py` (capstone disassembly and diffs for every arch), `elfobj.py` (ELF objects), `classes.py` (C++ classes
-from the vtables constructors store, MIPS: the `get_class` tool and the class lines of `get_function`), `app/tools.py` (the MCP
+from the vtables constructors store, MIPS: the `get_class` tool and the class lines of `get_function`),
+`compilermap.py` (which compiler built each part of a MIPS game; the judge's survey is `engine.survey_compilers`), `app/tools.py` (the MCP
 tools and the agent prompt), `app/window.py` + `app/tray.py` (the app's own window and its tray icon; tests set
 `BROWSER=true` and `DECOMP_TRAY=0` so they open neither), `app/guide/*.md` (know-how agents read through `guide(topic)`), `app/static/` (GUI).
 
@@ -81,7 +82,8 @@ tools and the agent prompt), `app/window.py` + `app/tray.py` (the app's own wind
   (`packaging/linux/build.sh`, which also runs locally) and attaches them to the GitHub release; it can be run by hand
   for a pushed tag (`gh workflow run release -f tag=vX.Y.Z`). Packaged copies set `DECOMP_PACKAGE` and don't update
   themselves.
-- What's planned is in ROADMAP.md: move an item to done when it ships, add new ones there.
+- What's planned is in ROADMAP.md, with a table of which feature works on which platform: when a feature ships or
+  reaches another platform, update the table and move its item to done.
 
 ## Never
 

@@ -4,7 +4,7 @@
 #
 # Runs the dev branch's own installer (install.ps1 on GitHub) with DECOMP_BRANCH=dev: decompdecomp installs from the
 # branch's newest commit, and the app then offers every new commit pushed there as an update (one click).
-# Back to releases: irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
+# Back to releases: irm https://decomp.ndelic.com/install.ps1 | iex
 & {
 $branch = if ($env:DECOMP_BRANCH) { $env:DECOMP_BRANCH } else { "dev" }
 $had = $env:DECOMP_BRANCH

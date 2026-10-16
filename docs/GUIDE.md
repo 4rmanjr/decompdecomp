@@ -131,6 +131,7 @@ decompdecomp helps with these steps:
 | **Shared header** | Structs and prototypes go into one header. decompdecomp accepts a change only if all matches stay matches. |
 | **Safe names** | Matches use addresses. A new name for a function or data cannot break a match. |
 | **Look-alikes** | `find_similar` finds copied and inlined code in the full game. |
+| **Compiler map** | Big games mix compilers. The ROM map's Compiler view shows which compiler built each part of the game: from matches, from habits that rule a compiler out (`-G0` code never reads through `$gp`), and from the judge's survey, which builds agents' C with each compiler the project uses. A part the judge confirms becomes a suggestion. Agents read it with `compiler_map`. MIPS for now. |
 | **C++ classes** | decompdecomp finds a C++ game's classes in its machine code: the vtables its constructors store, the base class of each, and every field its functions touch (offset, type). Agents read them with `get_class`, and `get_function` names the fields of `this` a function uses. MIPS (PlayStation 2, PlayStation, N64) for now. |
 | **Drafts** | m2c for MIPS, PowerPC and ARM. Ghidra (optional) for x86, AArch64 and other architectures. |
 | **Guides** | Agents get guides for each architecture and compiler, and for C++ and objdiff. |
@@ -179,7 +180,7 @@ No data goes through a website of decompdecomp. The team hosts its room and cont
 **Host on a server:**
 
 ```
-curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
+curl -fsSL https://decomp.ndelic.com/install.sh | bash
 decomp host mygame.z64 --own-copy --address http://my-server:6481 --service
 ```
 
@@ -212,6 +213,8 @@ the game.
 | **Nintendo DS** | Beta | ✓ ROM (.nds) | CodeWarrior for DS 1.2 – DSi 1.6 | ✓ ds-decomp | ✓ |
 | **Windows PC** | Beta | ✓ program (32-bit x86 .exe) | Visual C++ 6.0 · 7.0 · 7.1 | — | ✓ |
 | **3DS · PSP · Switch · Xbox · Xbox 360** | Planned | | | | ✓ |
+
+[ROADMAP.md](../ROADMAP.md) has a table of which feature works on which platform.
 
 **Recommended: GameCube, Wii and Nintendo 64.** These platforms have the most tests, from the import to a full
 decomp:
@@ -298,6 +301,7 @@ uv run pytest              # the tests
 | `src/decompnet/forks/` | Fork mode: forks by repository address, project setup, objdiff, drafts, linked files, and the from-scratch importers. |
 | `src/decompnet/network.py` | Claims, attempts, notes and the shared header. |
 | `src/decompnet/classes.py` | C++ classes found in MIPS code: vtables, base classes, fields. |
+| `src/decompnet/compilermap.py` | The compiler map: which compiler built each part of a MIPS game. |
 | `src/decompnet/toolchains.py` | The pinned compilers and tools. |
 | `packaging/linux/` | `build.sh` makes the `.deb` and the AppImage; `.github/workflows/release.yml` runs it for each `v*` tag. |
 | `projects/demo-*/` | Homemade demo games for the tests. Each has its own `build.py`. |
@@ -310,7 +314,7 @@ If decompdecomp is installed and running on your computer, start the checkout wi
 [ROADMAP.md](../ROADMAP.md) lists what's planned.
 
 **Test a branch.** Run the installer from a checkout of the branch. The app then follows that branch on GitHub, and
-each new commit shows as an update.
+each new commit shows as an update. A checkout of `main` updates on releases only, like a normal install.
 
 ```
 git clone -b <branch> https://github.com/n-delic/decompdecomp && cd decompdecomp

@@ -49,7 +49,7 @@ compilers are only installed after the user accepts that in Setup; don't add cod
 
 1. **ROM mode** (N64, PS1, PS2, GBA): `src/decompnet/rom/` splits the game (splat/spimdisasm, luvdis), and
    `rom/match.py` (MIPS) / `rom/match_arm.py` (ARM) *link* each compiled candidate at the function's real address
-   and compare bytes. Driven by `app/engine.py`. Exported as a rebuildable tree by `rom/export*.py`.
+   and compare bytes. Driven by `app/engine/` (one module per topic, `__init__.py` lists them). Exported as a rebuildable tree by `rom/export*.py`.
 2. **Fork mode** (public decomps forked by repository address, and GameCube/Wii/DS/PC started from scratch): a community-shaped
    project on disk with an `objdiff.json`; objdiff judges each unit. `forks/project.py` detects and builds projects,
    `app/forkengine.py` drives them. From-scratch importers generate such a project:

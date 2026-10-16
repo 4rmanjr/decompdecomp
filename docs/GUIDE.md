@@ -297,7 +297,7 @@ uv run pytest              # the tests
 | Path | Contents |
 | :-- | :-- |
 | `src/decompnet/rom/` | ROM mode: reading, splitting with splat, symbols, the matcher (`match.py`) and the export. |
-| `src/decompnet/app/` | The app: `engine.py` (ROM projects), `forkengine.py` (forks), `tools.py` (MCP tools), `agents.py`, `server.py`, `collab.py` (rooms), `window.py` (its own window), `tray.py` (the tray icon), `static/` (GUI), `guide/` (guides for agents). |
+| `src/decompnet/app/` | The app: `engine/` (ROM projects, a module per topic), `forkengine.py` (forks), `tools.py` (MCP tools), `agents.py`, `server.py` and `routes/` (the GUI's API, a module per part of the app), `collab.py` (rooms), `window.py` (its own window), `tray.py` (the tray icon), `static/` (GUI), `guide/` (guides for agents). |
 | `src/decompnet/forks/` | Fork mode: forks by repository address, project setup, objdiff, drafts, linked files, and the from-scratch importers. |
 | `src/decompnet/network.py` | Claims, attempts, notes and the shared header. |
 | `src/decompnet/classes.py` | C++ classes found in MIPS code: vtables, base classes, fields. |

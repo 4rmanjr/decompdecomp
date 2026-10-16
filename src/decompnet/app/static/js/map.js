@@ -21,14 +21,15 @@ function readColors() {
 
 /* The compiler map (MIPS ROM projects): each square in the colour of the compiler its code looks like, the game's
    main compiler in grey; a ringed square looks built by another compiler than the one it's built with today. */
-const CC_COLORS = ["--tried", "--color-status-info-fill", "--hl", "--color-status-danger-fill", "--color-status-success-fill", "--color-status-warning-fill"];
+const CC_COLORS = ["--cc-0", "--cc-1", "--cc-2", "--cc-3", "--cc-4", "--cc-5", "--cc-6", "--cc-7"];  // app.css
 let ccIndex = new Map();
 const PROGRESS_LEGEND = $("mapLegend").innerHTML;
 function compilerKinds() {
   const n = new Map();
   for (const f of S.map) if (f.cc) n.set(f.cc, (n.get(f.cc) || 0) + 1);
   const kinds = [...n.entries()].sort((a, b) => b[1] - a[1]);
-  ccIndex = new Map(kinds.map(([k], i) => [k, Math.min(i, CC_COLORS.length - 1)]));
+  // past eight compilers the colours come round again, never the main compiler's grey
+  ccIndex = new Map(kinds.map(([k], i) => [k, i < CC_COLORS.length ? i : 1 + (i - 1) % (CC_COLORS.length - 1)]));
   return kinds;
 }
 function renderMapView() {
@@ -36,16 +37,18 @@ function renderMapView() {
   $("mapView").hidden = !has;
   if (!has) S.mapView = "progress";
   $("mapView").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.view === S.mapView));
-  const note = $("compilerNote");
+  const note = $("mapCompilerNote");  // (compilerNote is the import screen's)
   if (S.mapView !== "compiler") { $("mapLegend").innerHTML = PROGRESS_LEGEND; note.hidden = true; return; }
   const kinds = compilerKinds();
-  $("mapLegend").innerHTML = kinds.map(([k, n]) => `<span><i class="sw" style="background:var(${CC_COLORS[ccIndex.get(k)]})"></i>${esc(k)} (${n.toLocaleString()})</span>`).join("");
+  $("mapLegend").innerHTML = kinds.map(([k, n]) => `<span><i class="sw" data-cc="${ccIndex.get(k)}"></i>${esc(k)} (${n.toLocaleString()})</span>`).join("");
+  // the page's CSP refuses inline style attributes: the swatches get their colour through the DOM
+  $("mapLegend").querySelectorAll("[data-cc]").forEach((sw) => { sw.style.background = `var(${CC_COLORS[sw.dataset.cc]})`; });
   const odd = S.map.filter((f) => f.ccx).length;
   const sv = S.survey || {}, run = sv.survey && sv.survey.state === "running";
   note.innerHTML = `${odd ? `${odd.toLocaleString()} ringed functions look built by another compiler than today's.` : "The code agrees with the compilers the game builds it with today."} `
     + (run ? `The judge's survey is running: ${sv.survey.tried} tried, ${sv.survey.confirmed} confirmed.`
        : `${sv.tried ? `The judge's survey: ${sv.confirmed} confirmed in ${sv.tried} functions tried.` : "The judge's survey builds agents' C with each compiler the project uses: what matches becomes a suggestion."}`
-          + ` <button class="btn btn-small" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`)
+          + ` <button class="ghost small-btn" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`)
     + rangeChecksLine(sv.checks || []);
   note.hidden = false;
   const btn = $("surveyBtn");
@@ -67,7 +70,7 @@ function rangeChecksLine(checks) {
   const parts = [];
   if (checks.some((c) => !c.audit)) parts.push(`suggested ranges: ${n(["checking", "waiting"], false)} being checked, ${n("confirmed", false)} confirmed, ${n("quirk", false)} quirks`);
   if (checks.some((c) => c.audit)) parts.push(`applied ranges: ${n("confirmed", true)} confirmed, ${n("quirk", true)} look like quirks, ${n(["checking", "waiting"], true)} unsettled`);
-  return `<br>${parts.length ? "Range checks: " + parts.join("; ") + ". " : ""}<button class="btn btn-small" type="button" id="auditBtn">Check the applied ranges</button>`;
+  return `<button class="ghost small-btn" type="button" id="auditBtn">Check the applied ranges</button>${parts.length ? "<br>Range checks: " + parts.join("; ") + "." : ""}`;
 }
 async function watchSurvey() {
   const slug = S.slug;

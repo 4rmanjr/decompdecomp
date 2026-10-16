@@ -1528,7 +1528,7 @@ class RomNetwork(Network):
         note = f" ({check})" if check else ""
         if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
             try:
-                self.resolve_suggestion(slug, s["id"], apply=True)
+                self.resolve_suggestion(slug, s["id"], apply=True, guard=True)
             except NetworkError as e:  # it would break matched code: it waits for the user
                 return f"Suggested, not applied by itself: {e}.{note}"
             return (f"Applied (the user lets agreed compiler changes apply themselves): the project builds with "
@@ -1556,7 +1556,7 @@ class RomNetwork(Network):
                                    else scoring.diff(self._target_obj(fn, proj), cand).bytes_match)
         return f"checked: {fn['name']}'s C {'matches the game byte for byte' if ok else 'does not match'} with it"
 
-    def resolve_suggestion(self, slug: str, sid: int, apply: bool) -> None:
+    def resolve_suggestion(self, slug: str, sid: int, apply: bool, guard: bool = False) -> None:
         """The user's answer to a suggestion: apply it (a compiler: the project switches to it) or dismiss it."""
         hit = next((s for s in self.cfg(self._project(slug)).get("suggestions", []) if s["id"] == sid), None)
         if hit is None:
@@ -1564,7 +1564,7 @@ class RomNetwork(Network):
         if apply and hit["toolchain"] and hit.get("ranges"):
             self.set_compiler_ranges(slug, hit["ranges"], hit["toolchain"], hit["flags"])
         elif apply and hit["toolchain"]:
-            self.set_compiler(slug, hit["toolchain"], hit["flags"])
+            self.set_compiler(slug, hit["toolchain"], hit["flags"], guard=guard)
         self._update_cfg(slug, lambda cfg: next(s for s in cfg["suggestions"] if s["id"] == sid).__setitem__(
             "status", "applied" if apply else "dismissed"))
 
@@ -1901,18 +1901,29 @@ class RomNetwork(Network):
         return {"events": [dict(e) for e in reversed(events)], "attempts": [dict(t) for t in reversed(attempts)],
                 "claims": claims, "overview": self.overview(slug)}
 
-    def set_compiler(self, slug: str, toolchain: str, flags: list[str] | None = None) -> None:
+    def set_compiler(self, slug: str, toolchain: str, flags: list[str] | None = None, guard: bool = False) -> None:
+        """`guard` (auto-adjust, unattended): matched functions must still match with it, checked on up to 40 of them
+        across the game, or nothing changes."""
         if self.fork_slug(slug):
             raise NetworkError("a fork builds with the project's own compilers and flags")
         proj = self._project(slug)
         tc = toolchains.get(toolchain)
         cfg = self.cfg(proj)
+        before = cfg["compiler"]
         cfg["compiler"] = {"toolchain": tc.id, "flags": flags or _default_flags(tc.id, cfg.get("platform", ""), cfg.get("gp")),
                            "timeout": 20}
         with self.store.tx() as db:
             db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
             db.execute("UPDATE functions SET seed=NULL WHERE project_id=? AND status='open'", (proj["id"],))
             self._event(db, proj["id"], None, "compiler", f"{tc.name} {' '.join(cfg['compiler']['flags'])}")
+        matched = self.store.all("SELECT * FROM functions WHERE project_id=? AND status='matched' ORDER BY vram", proj["id"])
+        sample = matched[::max(1, len(matched) // 40)][:40]
+        broken = self.regression_test(self._project(slug), None, only=sample,
+                                      header_for=lambda f: self._context(proj["id"], f["unit"])["header"]) if guard and sample else []
+        if broken:
+            self._update_cfg(slug, lambda c: c.__setitem__("compiler", before))
+            raise NetworkError(f"{len(broken)} matched function(s) wouldn't match with it any more "
+                               f"({', '.join(n for n, _ in broken[:5])})")
 
     def chat_agent(self, base: str) -> tuple[Agent, str]:
         """An identity for an agent the user talks to (Claude Code, Codex, ... connected with `decomp mcp`): `base`,

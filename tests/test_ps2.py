@@ -233,6 +233,26 @@ def test_auto_adjust_applies_a_proven_compiler(tmp_path):
         net.suggest(agents_[0], slug, "again", "ee-gcc-2.9-991111")  # already the project's
 
 
+def test_auto_adjust_never_breaks_matched_code(tmp_path):
+    """Unattended, three agents agreeing on the wrong compiler for the whole game: matched functions would stop
+    matching, so it isn't applied; the suggestion waits for the user."""
+    tc = "ee-gcc-2.95.3"
+    if any(toolchains.installed(t) is None for t in (tc, "ee-gcc-3.2", "wibo")):
+        pytest.skip(f"needs {tc}, ee-gcc-3.2 and wibo")
+    build = DEMO / "build" / tc
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), tc], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    net.auto_compiler = True
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain=tc)
+    agent = _name_the_game(net, slug, build / "demoq_ps2.elf")
+    _attempt_every_function(net, slug, agent)
+    said = [net.suggest(net.local_agent(f"voter-{k}")[0], slug, "looks like 3.2", "ee-gcc-3.2") for k in range(3)]
+    assert said[-1].startswith("Suggested, not applied by itself") and "wouldn't match" in said[-1]
+    ov = net.overview(slug)
+    assert ov["compiler"]["toolchain"] == tc and ov["suggestions"][0]["toolchain"] == "ee-gcc-3.2"
+
+
 def test_a_game_built_with_two_compilers(tmp_path):
     """GTA San Andreas: EE-GCC 2.95.3 for most of it, CodeWarrior 3.0.1 -O3 for some address ranges. The demo built the
     same way (its game code with CodeWarrior): an agent suggests CodeWarrior for that range, naming a function whose C

@@ -192,7 +192,11 @@ def test_agents_suggest_a_compiler_and_the_user_applies_it(tmp_path):
     assert not net.attempt(a, name, source, slug)["matched"]  # right C, wrong compiler
     net.release(a, name, "", slug)
 
-    assert "does not match" in net.suggest(a, slug, "daddu moves: some EE-GCC", "ee-gcc-2.96", function=name)
+    assert "not a match" in net.try_compiler(a, slug, name, "ee-gcc-2.96")  # testing records nothing
+    assert "MATCHES" in net.try_compiler(a, slug, name, tc)
+    assert net.overview(slug)["suggestions"] == []
+    with pytest.raises(NetworkError):  # a suggestion its own check disproves isn't filed
+        net.suggest(a, slug, "daddu moves: some EE-GCC", "ee-gcc-2.96", function=name)
     b, _ = net.local_agent("agent-b")
     assert "matches the game" in net.suggest(b, slug, "sd $ra, filled delay slots: SN's 2.95.3", tc, function=name)
     c, _ = net.local_agent("agent-c")
@@ -201,12 +205,12 @@ def test_agents_suggest_a_compiler_and_the_user_applies_it(tmp_path):
         net.suggest(c, slug, "?", "gcc-9000")
     shown = net.overview(slug)["suggestions"]
     right = next(s for s in shown if s["toolchain"] == tc)
-    assert right["agents"] == ["agent-b", "agent-c"] and "matches the game" in right["check"] and len(shown) == 2
+    assert right["agents"] == ["agent-b", "agent-c"] and "matches the game" in right["check"] and len(shown) == 1
 
     net.resolve_suggestion(slug, right["id"], apply=True)
     ov = net.overview(slug)
     assert ov["compiler"]["toolchain"] == tc and ov["compiler"]["flags"] == ["-O2", "-G8"]
-    assert [s["toolchain"] for s in ov["suggestions"]] == ["ee-gcc-2.96"]
+    assert ov["suggestions"] == []
     assert net.attempt(a, name, source, slug)["matched"]
 
 

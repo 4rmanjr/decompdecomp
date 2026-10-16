@@ -74,7 +74,8 @@ Use only the decomp tools. Repeat for up to {count} claims (a batch is one), the
 4. Score 0 = matched and saved. Before moving on, share what you learned: edit_context for prototypes and
    structs you worked out, rename_symbol for functions/data whose purpose is now clear, and add_note (no
    function) for a compiler quirk or convention every agent here should know: the next sessions start with it.
-   Right C that can't match because the project's compiler or flags look wrong? suggest(...) it to the user.
+   Right C that can't match because the project's compiler or flags look wrong? try_compiler(...) others, then
+   suggest(...) the one that matches to the user.
 5. compile_and_diff says when to move on (no better after 4 compiles in a row; up to 10 for big functions):
    then release_function with precise notes (what you tried, what is left) and claim the next one.
 
@@ -152,7 +153,8 @@ def _project_info(net: RomNetwork, slug: str) -> str:
     return (f"{ov['title']} ({ov['rom']['game_code']}, {ov['rom']['region']})\n"
             f"compiler: {ov['compiler']['name']} {' '.join(ov['compiler']['flags'])}"
             + (f"; these address ranges are built with another:{ranges}" if ranges else "") + "\n"
-            f"progress: {ov['matched']}/{ov['functions']} functions matched ({pct:.1f}% of code), "
+            + (f"this platform's compilers (for try_compiler): {', '.join(ov['compilers'])}\n" if len(ov["compilers"]) > 1 else "")
+            + f"progress: {ov['matched']}/{ov['functions']} functions matched ({pct:.1f}% of code), "
             f"{ov['attempts']} compiles so far, context.h v{ov['context_version']}\n"
             f"Next: claim_function(). Guides: guide().")
 
@@ -198,8 +200,10 @@ HANDLERS: dict[str, Callable[..., str]] = {
                                                             if net.fork_slug(slug) else net.read_data(slug, what, length)),
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
     "add_note": lambda net, agent, slug, text, function="": net.add_note(agent, slug, text, function or None),
-    "suggest": lambda net, agent, slug, text, compiler="", flags="", function="", ranges="":
-        net.suggest(agent, slug, text, compiler, flags, function or None, ranges),
+    "suggest": lambda net, agent, slug, text, compiler="", flags="", function="", ranges="", source="":
+        net.suggest(agent, slug, text, compiler, flags, function or None, ranges, source),
+    "try_compiler": lambda net, agent, slug, function, compiler, flags="", source="":
+        net.try_compiler(agent, slug, function, compiler, flags, source),
     "search_notes": lambda net, agent, slug, query: net.search_notes(slug, query),
     "find_similar": lambda net, agent, slug, function, limit=5: net.find_similar(slug, function, limit),
     "guide": lambda net, agent, slug, topic="": _guide(topic),
@@ -348,11 +352,12 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def suggest(ctx: Context, text: str, compiler: str = "", flags: str = "", function: str = "",
-                      ranges: str = "") -> str:
+                      ranges: str = "", source: str = "") -> str:
         """Suggest a change to the project's setup you can't make yourself, for the user to apply: above all a
         different compiler or flags, when C that is right can't match (the code's style says another compiler built
-        it). Say what you saw. project_info lists open suggestions: suggesting the same compiler and flags is a vote
-        for it; with the user's permission, a proven or agreed one is applied at once.
+        it). Test it with try_compiler first: a suggestion whose function doesn't match with it is refused. Say what
+        you saw. project_info lists open suggestions: suggesting the same compiler and flags is a vote for it; with
+        the user's permission, a proven or agreed one is applied at once.
 
         Args:
             text: what should change and the evidence
@@ -360,8 +365,23 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
             flags: its flags, if not the defaults
             function: a function whose best attempt should match with that compiler: it's checked right away
             ranges: when only parts of the game were built with it: "0x10BFD0-0x10CD40, 0x1106C0-0x1107C0"
+            source: the C to check it with (default: the function's best attempt)
         """
-        return await run(ctx, "suggest", text=text, compiler=compiler, flags=flags, function=function, ranges=ranges)
+        return await run(ctx, "suggest", text=text, compiler=compiler, flags=flags, function=function, ranges=ranges,
+                         source=source)
+
+    @mcp.tool(meta=ALWAYS_LOAD)
+    async def try_compiler(ctx: Context, function: str, compiler: str, flags: str = "", source: str = "") -> str:
+        """Compile a function's C with another compiler and flags and see the diff, recording nothing: to find out
+        which compiler built a part of the game before you suggest it. Cheap: try several.
+
+        Args:
+            function: the function to judge it against
+            compiler: a toolchain id (project_info lists this platform's)
+            flags: its flags (default: that compiler's defaults for this game)
+            source: the C (default: the function's best attempt)
+        """
+        return await run(ctx, "try_compiler", function=function, compiler=compiler, flags=flags, source=source)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def search_notes(ctx: Context, query: str) -> str:

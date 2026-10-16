@@ -65,8 +65,18 @@ def test_opencode_2_starts_and_its_quota_error_says_so(tmp_path, monkeypatch):
     cmd, _, _ = m._command(agents.Session("opencode-1", "opencode", "o", "demo", "opencode-1", {}), "t", tmp_path)
     assert "--log-level" not in cmd and "--print-logs" in cmd
     assert agents.clean_stderr("opencode", 'level=error message=failed error="quota exceeded"') == "quota exceeded"
-    assert "out of credit" in agents.no_credit("provider.quota: quota exceeded")
     assert not agents._SIGNIN.search("quota exceeded") and agents._SIGNIN.search("ProviderAuthError: no key")
+
+
+def test_a_used_up_plan_waits_instead_of_stopping():
+    """A night's run lost most of its helpers to their plans' usage limits: those reset, so the helper waits (a short
+    rate limit is still a throttle, and a prepaid account out of credit still stops)."""
+    for said in ("Claude AI usage limit reached|1792140000", "You've hit your usage limit. Upgrade or try again later",
+                 "RESOURCE_EXHAUSTED: quota exhausted", "provider.quota: quota exceeded"):
+        assert agents._LIMIT.search(said) and not agents.no_credit(said), said
+    for said in ("Rate limit exceeded", "429 Too Many Requests"):
+        assert not agents._LIMIT.search(said) and agents._THROTTLED.search(said), said
+    assert agents.no_credit("Insufficient Balance") and not agents._LIMIT.search("Insufficient Balance")
 
 
 def _manager(tmp_path, monkeypatch, kind):

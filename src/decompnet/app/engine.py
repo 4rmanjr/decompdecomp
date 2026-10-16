@@ -1381,7 +1381,9 @@ class RomNetwork(Network):
                                              "helper_matches": helpers,
                                              "spend": cfg.get("spend"), "instructions": cfg.get("instructions") or "",
                                              "priority": cfg.get("priority", []),
-                                             "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"],
+                                             # (a suggestion its own check disproved isn't one: older ones were filed)
+                                             "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"
+                                                             and not re.search(r"does not match|doesn't compile", s["check"] or "")],
                                              "compiler_ranges": [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"])}
                                                                  for r in cfg.get("compiler_ranges", [])]}
 
@@ -1481,7 +1483,7 @@ class RomNetwork(Network):
         return self.cfg(self._project(slug)).get("instructions") or ""
 
     def suggest(self, agent: Agent, slug: str, text: str, compiler: str = "", flags: str = "",
-                function: str | None = None, ranges: str = "") -> str:
+                function: str | None = None, ranges: str = "", source: str = "") -> str:
         """A change to the project's setup an agent can't make itself (the compiler, its flags, anything), for the user
         to apply or dismiss. With a compiler and a function whose C is ready, it's checked first: that C, built with the
         suggested compiler, matches the game or doesn't (GTA San Andreas: agents said EE-GCC 2.96, then 2.95.3). The
@@ -1499,15 +1501,15 @@ class RomNetwork(Network):
         if compiler:
             if self.fork_slug(slug):
                 raise NetworkError("a fork builds with its project's own compilers: suggest the change in words only")
-            names = PLATFORM_COMPILERS.get(cfg.get("platform"), [])
-            tc = next((t for t in names if compiler.strip().lower() in (t, SHORT_NAMES.get(t, "").lower())), None)
-            if tc is None:
-                raise NetworkError(f"no compiler {compiler!r} for this game; its platform's: {', '.join(names)}")
+            tc = self._toolchain_named(cfg, compiler)
             flag_list = flags.split() or _default_flags(tc, cfg.get("platform", ""), cfg.get("gp"))
             if not spans and (tc, flag_list) == (cfg["compiler"]["toolchain"], cfg["compiler"]["flags"]):
                 raise NetworkError("that's already the project's compiler and flags")
             if function:
-                check = self._check_compiler(proj, tc, flag_list, function)
+                check = self._check_compiler(proj, tc, flag_list, function, source)
+                if re.search(r"does not match|doesn't compile", check):
+                    raise NetworkError(f"not suggested: {check.removeprefix('checked: ')}. Test compilers with "
+                                       "try_compiler first; suggest the one its C matches with")
 
         def change(cfg):
             items = cfg.setdefault("suggestions", [])
@@ -1535,26 +1537,71 @@ class RomNetwork(Network):
                     f"{SHORT_NAMES.get(tc, tc)} {' '.join(flag_list)} from now on.{note}")
         return f"Suggested: the user sees it on the project page and can apply it.{note}"
 
-    def _check_compiler(self, proj, toolchain: str, flags: list[str], function: str) -> str:
-        """Whether a function's best C (else its latest attempt) matches the game when built with this compiler."""
+    def _toolchain_named(self, cfg: dict, compiler: str) -> str:
+        names = PLATFORM_COMPILERS.get(cfg.get("platform"), [])
+        tc = next((t for t in names if compiler.strip().lower() in (t, SHORT_NAMES.get(t, "").lower())), None)
+        if tc is None:
+            raise NetworkError(f"no compiler {compiler!r} for this game; its platform's: {', '.join(names)}")
+        return tc
+
+    def _judge_with(self, proj, fn, toolchain: str, flags: list[str], source: str):
+        """(matched, diff or None, log) for C built with this compiler and flags, judged like an attempt, recording
+        nothing."""
         from ..compiler import compile_source
         from ..project import compiler_config
 
-        fn = self._function(function, proj["slug"])
-        row = self.store.one("SELECT source FROM attempts WHERE function_id=? AND source IS NOT NULL ORDER BY id DESC "
-                             "LIMIT 1", fn["id"])
-        source = fn["best_source"] or (row["source"] if row else None)
-        if not source:
-            return f"not checked: {fn['name']} has no attempt yet"
         header = self._context(proj["id"], fn["unit"])["header"]
         settings = {"toolchain": toolchain, "flags": flags, "timeout": 20}
         result = compile_source(compiler_config(Path(proj["root"]), {"compiler": settings}), header, source)
         if not result.ok:
-            return f"checked: {fn['name']}'s C doesn't compile with it"
+            return False, None, result.log
         cand, verdict, _ = self._evaluate(fn, proj, result.obj)
-        ok = cand is not None and (verdict if verdict is not None
-                                   else scoring.diff(self._target_obj(fn, proj), cand).bytes_match)
+        if cand is None:
+            return False, None, "the function isn't in what it compiled to"
+        d = scoring.diff(self._target_obj(fn, proj), cand)
+        return (verdict if verdict is not None else d.bytes_match), d, ""
+
+    def _source_of(self, fn) -> str | None:
+        """A function's best C, else its latest attempt."""
+        row = self.store.one("SELECT source FROM attempts WHERE function_id=? AND source IS NOT NULL ORDER BY id DESC "
+                             "LIMIT 1", fn["id"])
+        return fn["best_source"] or (row["source"] if row else None)
+
+    def _check_compiler(self, proj, toolchain: str, flags: list[str], function: str, source: str = "") -> str:
+        """Whether a function's C (`source`, else its best attempt, else its latest) matches the game when built with
+        this compiler."""
+        fn = self._function(function, proj["slug"])
+        source = source.strip() or self._source_of(fn)
+        if not source:
+            return f"not checked: {fn['name']} has no attempt yet"
+        ok, d, _ = self._judge_with(proj, fn, toolchain, flags, source)
+        if d is None:
+            return f"checked: {fn['name']}'s C doesn't compile with it"
         return f"checked: {fn['name']}'s C {'matches the game byte for byte' if ok else 'does not match'} with it"
+
+    def try_compiler(self, agent: Agent, slug: str, function: str, compiler: str, flags: str = "",
+                     source: str = "") -> str:
+        """A function's C (`source`, else its best attempt) built with another compiler and flags, judged like an
+        attempt but recorded nowhere: to work out which compiler built a part of the game before suggesting it (on GTA
+        San Andreas an agent tried compilers by suggesting them: 128 of its 149 suggestions were disproved)."""
+        if self.fork_slug(slug):
+            raise NetworkError("a fork builds with its project's own compilers")
+        proj = self._project(slug)
+        cfg = self.cfg(proj)
+        tc = self._toolchain_named(cfg, compiler)
+        flag_list = flags.split() or _default_flags(tc, cfg.get("platform", ""), cfg.get("gp"))
+        fn = self._function(function, slug)
+        source = source.strip() or self._source_of(fn)
+        if not source:
+            raise NetworkError(f"{fn['name']} has no attempt yet: pass the C as source")
+        ok, d, problem = self._judge_with(proj, fn, tc, flag_list, source)
+        what = f"{SHORT_NAMES.get(tc, tc)} {' '.join(flag_list)}"
+        if d is None:
+            return f"{what}: doesn't compile:\n{problem.strip()[-1500:]}"
+        if ok:
+            return (f"{what}: MATCHES the game byte for byte. Suggest it: suggest(compiler=\"{tc}\", flags=\"{' '.join(flag_list)}\", "
+                    f"function=\"{fn['name']}\", ranges=<the address range it built>, source=<this C>)")
+        return f"{what}: score {d.score} ({d.percent:.1f}%), not a match\n{d.render(context=1, max_rows=40)}"
 
     def resolve_suggestion(self, slug: str, sid: int, apply: bool, guard: bool = False) -> None:
         """The user's answer to a suggestion: apply it (a compiler: the project switches to it) or dismiss it."""

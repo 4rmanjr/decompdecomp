@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import os
 import re
 import shutil
@@ -156,10 +157,17 @@ _SIGNED_OUT = re.compile(r"not logged in|run /login|invalid api key|not authenti
 # what a model's provider says when the account has no credit left (DeepSeek: "Insufficient Balance", OpenAI:
 # "insufficient_quota", Anthropic: "credit balance is too low", OpenCode: "quota exceeded"): trying again can't help
 # until it's topped up
-_NO_CREDIT = re.compile(r"insufficient[ _](?:balance|credits?|funds|quota)|exceeded your current quota|quota[ _]exceeded|"
+_NO_CREDIT = re.compile(r"insufficient[ _](?:balance|credits?|funds|quota)|exceeded your current quota|"
                         r"credit balance is too low|payment required|out of credits?", re.I)
 # and when it's asked too much at once (HTTP 429): it works again in a while
 _THROTTLED = re.compile(r"too many requests|rate[ _-]?limit|concurrency limit|\b429\b|overloaded", re.I)
+# and when a subscription's allowance is used up for now (Claude Code: "usage limit reached", Codex: "You've hit your
+# usage limit", Antigravity: RESOURCE_EXHAUSTED, OpenCode Go: "quota exceeded"): it resets by itself in hours, so a
+# helper waits for it instead of stopping (a night's run lost most of its helpers that way)
+_LIMIT = re.compile(r"usage limit|(?<!rate )(?<!rate-)(?<!rate_)limit (?:reached|exceeded)|hit your (?:usage )?limit|quota[ _](?:exceeded|exhausted)|"
+                    r"resource[ _]exhausted|out of (?:usage|messages)", re.I)
+LIMIT_WAIT = 15 * 60
+log = logging.getLogger("decompdecomp")
 
 
 def no_credit(said: str) -> str | None:
@@ -520,10 +528,13 @@ class Session:
     tokens: int = 0
     signed_out: bool = False  # the agent CLI isn't signed in: trying again won't help
     throttled: bool = False  # the last run ended on the provider's limit of requests at once: not a failure
+    limited: bool = False  # the last run ended on the plan's usage limit: wait for it to reset (LIMIT_WAIT)
 
     def push(self, kind: str, text: str) -> None:
         self.seq += 1
         self.feed.append({"seq": self.seq, "t": time.time(), "type": kind, "text": text[:4000]})
+        if kind in ("info", "error"):  # starts, waits, stops and errors outlive the session: why a night went as it did
+            log.info("helper %s (%s): %s", self.id, self.slug, text[:500])
 
     def snapshot(self, since: int = 0) -> dict:
         return {"id": self.id, "kind": self.kind, "label": self.label, "slug": self.slug, "agent": self.agent_name,
@@ -721,6 +732,12 @@ class Manager:
             if s.signed_out:
                 s.state = "error"
                 break
+            if s.limited:  # the plan's allowance is used up for now: it resets, so wait as long as it takes
+                s.limited, s.state = False, "waiting"
+                s.push("info", f"{KINDS[s.kind].name}'s usage limit is reached: trying again in {LIMIT_WAIT // 60} "
+                               "minutes (it resets by itself; this helper carries on then)")
+                s.stop.wait(LIMIT_WAIT)
+                continue
             if s.throttled and throttles < 10:  # the provider's limit, not the agent's failure: wait it out
                 s.throttled, throttles = False, throttles + 1
                 s.state = "waiting"
@@ -906,7 +923,9 @@ class Manager:
         s.proc = None
         if refused and not s.stop.is_set():
             raise Fatal(refused)  # every retry would be refused the same way
-        if code != 0 and not s.stop.is_set() and (why := no_credit(" ".join([*said, *errors]))):
+        if not s.stop.is_set() and _LIMIT.search(" ".join([*said, *errors])):
+            s.limited = True  # whatever the exit code: Claude Code says so in an ordinary result
+        elif code != 0 and not s.stop.is_set() and (why := no_credit(" ".join([*said, *errors]))):
             raise Fatal(why)  # every agent on this account fails the same way until it's topped up
         if code != 0 and not s.stop.is_set() and _THROTTLED.search(" ".join([*said, *errors])):
             s.throttled = True
@@ -961,7 +980,8 @@ class Manager:
                 if r.status_code != 200:
                     if (why := no_credit(r.text)) or r.status_code == 402:
                         raise Fatal(why or no_credit("payment required"))
-                    s.throttled = r.status_code == 429 or bool(_THROTTLED.search(r.text))
+                    s.limited = bool(_LIMIT.search(r.text))
+                    s.throttled = not s.limited and (r.status_code == 429 or bool(_THROTTLED.search(r.text)))
                     s.error = f"API error {r.status_code}: {r.text[:300]}"
                     if _too_long(r):
                         s.error = ("the model's context is too small for this work even after trimming: give it at "
@@ -1078,7 +1098,11 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
         "suggest": ("Suggest a setup change for the user (another compiler or flags), with evidence.",
                     s(text=st("what and why", True), compiler=st("toolchain id"), flags=st("flags"),
                       function=st("a function whose best attempt should match with it: checked now"),
-                      ranges=st("address ranges it built, when not the whole game: 0x10BFD0-0x10CD40, ..."))),
+                      ranges=st("address ranges it built, when not the whole game: 0x10BFD0-0x10CD40, ..."),
+                      source=st("the C to check it with (default: the best attempt)"))),
+        "try_compiler": ("Compile a function's C with another compiler and flags, recording nothing: test before suggesting.",
+                         s(function=st("function", True), compiler=st("toolchain id", True), flags=st("flags"),
+                           source=st("the C (default: the best attempt)"))),
         "search_notes": ("Search notes.", s(query=st("text", True))),
         "find_similar": ("Functions that look like this one, matched ones first, with the best one's source.",
                          s(function=st("function", True), limit=it("how many"))),

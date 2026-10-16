@@ -41,7 +41,8 @@ def _running_version(port: int) -> str | None:
 
 
 def _version_key(v: str) -> tuple[int, ...]:
-    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
+    from .updates import version_key  # one rule for which version is newer (pre-releases come before their release)
+    return version_key(v)
 
 
 def replace_older(state_file: Path, log=print) -> dict | None:

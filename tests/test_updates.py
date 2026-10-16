@@ -30,7 +30,7 @@ def test_install_info_round_trip():
 
 
 def test_release_update(monkeypatch):
-    newer = ".".join(str(x + (1 if i == 2 else 0)) for i, x in enumerate(updates.version_key(__version__)))
+    newer = ".".join(str(x + (1 if i == 2 else 0)) for i, x in enumerate(updates.version_key(__version__)[:3]))
     def get(url, timeout=15):
         assert url == "https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh"
         return f'#!/bin/sh\nVERSION="{newer}"\n'.encode()
@@ -174,3 +174,11 @@ def test_apply_installs_what_a_fresh_check_finds(monkeypatch):
         if t.name == "update":
             t.join(10)
     assert installed == [new]
+
+
+def test_a_pre_release_comes_before_its_release():
+    """An alpha must update to its beta and to the release (comparing only the numbers, 1.0.0-alpha == 1.0.0)."""
+    order = ["0.11.5", "1.0.0-alpha", "1.0.0a1", "1.0.0-beta.2", "1.0.0rc1", "1.0.0", "1.0.1", "1.1.0"]
+    keys = [updates.version_key(v) for v in order]
+    assert keys == sorted(keys) and len(set(keys)) == len(keys)
+    assert updates.version_key("v1.0.0-alpha") == updates.version_key("1.0.0a0")  # a tag and Python's spelling

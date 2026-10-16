@@ -58,7 +58,16 @@ def record(channel: str, branch: str = "", commit: str = "", repo: str = REPO) -
 
 
 def version_key(v: str) -> tuple[int, ...]:
-    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
+    """(major, minor, patch, stage, n), so a pre-release comes before its release: 1.0.0-alpha (or 1.0.0a0, as
+    Python spells it) < 1.0.0-beta.2 < 1.0.0rc1 < 1.0.0. Comparing only the numbers, an alpha never updated to its
+    release."""
+    m = re.match(r"\D*(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)", v.strip())
+    if not m:
+        return (0,)
+    nums = tuple(int(x or 0) for x in m.group(1, 2, 3))
+    pre = re.match(r"[-._]?(alpha|beta|rc|a|b|c)[-._]?(\d*)", m.group(4).strip().lower())
+    stage = {"alpha": 0, "a": 0, "beta": 1, "b": 1, "rc": 2, "c": 2}[pre.group(1)] if pre else 3
+    return nums + (stage, int(pre.group(2) or 0) if pre else 0)
 
 
 def _get(url: str, timeout: float = 15) -> bytes:

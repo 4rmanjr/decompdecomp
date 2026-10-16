@@ -21,7 +21,7 @@
 # On a server, decompdecomp also runs in Docker: docker-compose.yml in the repository.
 set -euo pipefail
 
-VERSION="0.11.4"
+VERSION="0.11.5"
 REPO="n-delic/decompdecomp"
 START=1
 SOURCE="${DECOMP_SOURCE:-}"

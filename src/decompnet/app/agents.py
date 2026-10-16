@@ -282,6 +282,22 @@ def _which(cmd: str) -> str | None:
 _NPM_SHIM = re.compile(r'"%_prog%"\s+(?P<opts>[^"\r\n]*?)\s*"%~?dp0%?\\(?P<script>[^"\r\n]+)"\s+%\*', re.I)
 
 
+def _opencode_2(exe: str) -> bool:
+    """opencode 2 runs every `opencode run` in one background service, which connects the user's own MCP servers once,
+    without a helper's session token: both GTA San Andreas helpers worked as the user's one chat agent, on one claim,
+    whatever their folders said. --standalone gives each helper a server of its own, started from its own process
+    (before 2.0 there's no such service, and the flag would stop it)."""
+    text = (_versions.get("opencode") or (0, None))[1]
+    if text is None:
+        try:
+            text = subprocess.run(argv([exe, "--version"]), capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=15).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            text = ""
+    m = re.search(r"(\d+)\.\d+", text or "")
+    return bool(m) and int(m.group(1)) >= 2
+
+
 def argv(cmd: list[str]) -> list[str]:
     """The command to start, as Windows needs it. npm installs agents there as .cmd scripts, which run through cmd.exe:
     it cuts an argument at its first line break (a prompt loses everything after its first line, and the flags after
@@ -869,7 +885,7 @@ class Manager:
             # --print-logs: opencode's JSON error only says "Unexpected server error"; the log line says what failed.
             # (No --dir: it runs in workdir, and OpenCode before 1.4 stops at the flag. No --log-level either: before
             # 2.0 it took only ERROR, from 2.0 only error, and either stops the other at once.)
-            cmd = [exe, "run", "--format", "json", "--print-logs"]
+            cmd = [exe, "run", *(["--standalone"] if _opencode_2(exe) else []), "--format", "json", "--print-logs"]
             if model:
                 cmd += ["-m", model]
         else:

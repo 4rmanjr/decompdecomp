@@ -16,8 +16,10 @@ import pytest
 from elftools.elf.elffile import ELFFile
 
 from decompnet import toolchains
+from decompnet.app import tools
 from decompnet.app.engine import RomNetwork
 from decompnet.forks import csource
+from decompnet.network import NetworkError
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = ROOT / "projects" / "demo-ps2"
@@ -155,3 +157,67 @@ def test_a_librarys_note_does_not_name_the_compiler(monkeypatch):
         pytest.skip("needs the PS2 demo built")
     monkeypatch.setattr(ps2, "_sections", lambda data: {".comment": b"MW MIPS C Compiler (2.4.1.01)\0PlayStation2\0"})
     assert ps2.guess_compiler(EXE.read_bytes()) == "EEGCC"
+
+
+def test_agents_suggest_a_compiler_and_the_user_applies_it(tmp_path):
+    """GTA San Andreas: agents worked out the compiler was wrong (one said EE-GCC 2.96, another 2.95.3). They suggest
+    it; each suggestion naming a function is checked with that function's C before the user sees it, agreement is
+    counted, and applying it switches the project."""
+    tc = "ee-gcc-2.95.3"
+    if any(toolchains.installed(t) is None for t in (tc, "ee-gcc-2.96", "wibo")):
+        pytest.skip(f"needs {tc}, ee-gcc-2.96 and wibo")
+    build = DEMO / "build" / tc
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), tc], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain="ee-gcc-3.2")
+    addr = {s.name: s["st_value"] for s in ELFFile(open(build / "demoq_ps2.elf", "rb")).get_section_by_name(".symtab")
+            .iter_symbols()}["entity_default_hp"]
+    name = net.symbols(net.project_row(slug)["id"]).name_at(addr)[0]
+    header = (GAME / "game.h").read_text()
+    enums = "\n".join(l for l in header.splitlines() if l.startswith(("enum ", "#define ENTITY")))
+    source = enums + "\n" + csource.get((GAME / "game.c").read_text(), "entity_default_hp").replace(
+        "entity_default_hp(", f"{name}(", 1)
+    a, _ = net.local_agent("agent-a")
+    assert not net.attempt(a, name, source, slug)["matched"]  # right C, wrong compiler
+    net.release(a, name, "", slug)
+
+    assert "does not match" in net.suggest(a, slug, "daddu moves: some EE-GCC", "ee-gcc-2.96", function=name)
+    b, _ = net.local_agent("agent-b")
+    assert "matches the game" in net.suggest(b, slug, "sd $ra, filled delay slots: SN's 2.95.3", tc, function=name)
+    c, _ = net.local_agent("agent-c")
+    net.suggest(c, slug, "agreed", tc)
+    with pytest.raises(NetworkError):
+        net.suggest(c, slug, "?", "gcc-9000")
+    shown = net.overview(slug)["suggestions"]
+    right = next(s for s in shown if s["toolchain"] == tc)
+    assert right["agents"] == ["agent-b", "agent-c"] and "matches the game" in right["check"] and len(shown) == 2
+
+    net.resolve_suggestion(slug, right["id"], apply=True)
+    ov = net.overview(slug)
+    assert ov["compiler"]["toolchain"] == tc and ov["compiler"]["flags"] == ["-O2", "-G8"]
+    assert [s["toolchain"] for s in ov["suggestions"]] == ["ee-gcc-2.96"]
+    assert net.attempt(a, name, source, slug)["matched"]
+
+
+def test_auto_adjust_applies_a_proven_compiler(tmp_path):
+    """Settings: auto-adjust the compiler. A suggestion proven by a function's C applies at once; others wait for
+    agreement (three agents) or the user."""
+    tc = "ee-gcc-2.95.3"
+    if any(toolchains.installed(t) is None for t in (tc, "ee-gcc-3.2", "wibo")):
+        pytest.skip(f"needs {tc}, ee-gcc-3.2 and wibo")
+    build = DEMO / "build" / tc
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), tc], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    net.auto_compiler = True
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain="ee-gcc-3.2")
+    agents_ = [net.local_agent(f"agent-{k}")[0] for k in range(3)]
+    for k, a in enumerate(agents_[:2]):  # agreement without proof: two isn't enough
+        assert net.suggest(a, slug, "looks like 2.9", "ee-gcc-2.9-991111").startswith("Suggested")
+    assert net.overview(slug)["compiler"]["toolchain"] == "ee-gcc-3.2"
+    assert "Open suggestions" in tools.project_info(net, slug)
+    assert net.suggest(agents_[2], slug, "me too", "ee-gcc-2.9-991111").startswith("Applied")
+    assert net.overview(slug)["compiler"]["toolchain"] == "ee-gcc-2.9-991111"
+    with pytest.raises(NetworkError):
+        net.suggest(agents_[0], slug, "again", "ee-gcc-2.9-991111")  # already the project's

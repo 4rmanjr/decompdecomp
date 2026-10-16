@@ -148,6 +148,10 @@ def _preview(data: bytes | None, kind: str) -> str:
 
 
 class RomNetwork(Network):
+    # Settings: auto-adjust compiler. A suggested compiler is applied without asking once it's proven (a function's
+    # C matches with it) or three agents agree on it (see suggest)
+    auto_compiler = False
+    AGREE = 3
     def __init__(self, db_path: str | Path, workspace: Path, claim_ttl: int = 30 * 60):
         super().__init__(db_path, claim_ttl=claim_ttl)
         self.workspace = Path(workspace)
@@ -1368,7 +1372,8 @@ class RomNetwork(Network):
                                                  k: getattr(twins, k) for k in ("state", "pairs", "tried", "matched", "asm")},
                                              "helper_matches": helpers,
                                              "spend": cfg.get("spend"), "instructions": cfg.get("instructions") or "",
-                                             "priority": cfg.get("priority", [])}
+                                             "priority": cfg.get("priority", []),
+                                             "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"]}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -1464,6 +1469,84 @@ class RomNetwork(Network):
 
     def instructions(self, slug: str) -> str:
         return self.cfg(self._project(slug)).get("instructions") or ""
+
+    def suggest(self, agent: Agent, slug: str, text: str, compiler: str = "", flags: str = "",
+                function: str | None = None) -> str:
+        """A change to the project's setup an agent can't make itself (the compiler, its flags, anything), for the user
+        to apply or dismiss. With a compiler and a function whose C is ready, it's checked first: that C, built with the
+        suggested compiler, matches the game or doesn't (GTA San Andreas: agents said EE-GCC 2.96, then 2.95.3). The
+        same compiler and flags suggested again counts as another agent agreeing."""
+        text = " ".join(text.split())[:1000]
+        if not text:
+            raise NetworkError("say what should change, and what you saw that says so")
+        proj = self._project(slug)
+        cfg = self.cfg(proj)
+        tc, flag_list, check = None, [], None
+        if compiler:
+            if self.fork_slug(slug):
+                raise NetworkError("a fork builds with its project's own compilers: suggest the change in words only")
+            names = PLATFORM_COMPILERS.get(cfg.get("platform"), [])
+            tc = next((t for t in names if compiler.strip().lower() in (t, SHORT_NAMES.get(t, "").lower())), None)
+            if tc is None:
+                raise NetworkError(f"no compiler {compiler!r} for this game; its platform's: {', '.join(names)}")
+            flag_list = flags.split() or _default_flags(tc, cfg.get("platform", ""), cfg.get("gp"))
+            if (tc, flag_list) == (cfg["compiler"]["toolchain"], cfg["compiler"]["flags"]):
+                raise NetworkError("that's already the project's compiler and flags")
+            if function:
+                check = self._check_compiler(proj, tc, flag_list, function)
+
+        def change(cfg):
+            items = cfg.setdefault("suggestions", [])
+            same = next((s for s in items if tc and s["status"] == "open" and s["toolchain"] == tc
+                         and s["flags"] == flag_list), None)
+            if same is None:
+                same = {"id": max((s["id"] for s in items), default=0) + 1, "text": text, "toolchain": tc,
+                        "flags": flag_list, "agents": [], "check": None, "status": "open", "t": time.time()}
+                items.append(same)
+            same["agents"] = sorted({*same["agents"], agent.name})
+            if check and (not same["check"] or "matches the game" in check):
+                same["check"] = check
+            found.append(same)
+        found: list[dict] = []
+        self._update_cfg(slug, change)
+        s = found[0]
+        note = f" ({check})" if check else ""
+        if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
+            self.resolve_suggestion(slug, s["id"], apply=True)
+            return (f"Applied (the user lets agreed compiler changes apply themselves): the project builds with "
+                    f"{SHORT_NAMES.get(tc, tc)} {' '.join(flag_list)} from now on.{note}")
+        return f"Suggested: the user sees it on the project page and can apply it.{note}"
+
+    def _check_compiler(self, proj, toolchain: str, flags: list[str], function: str) -> str:
+        """Whether a function's best C (else its latest attempt) matches the game when built with this compiler."""
+        from ..compiler import compile_source
+        from ..project import compiler_config
+
+        fn = self._function(function, proj["slug"])
+        row = self.store.one("SELECT source FROM attempts WHERE function_id=? AND source IS NOT NULL ORDER BY id DESC "
+                             "LIMIT 1", fn["id"])
+        source = fn["best_source"] or (row["source"] if row else None)
+        if not source:
+            return f"not checked: {fn['name']} has no attempt yet"
+        header = self._context(proj["id"], fn["unit"])["header"]
+        settings = {"toolchain": toolchain, "flags": flags, "timeout": 20}
+        result = compile_source(compiler_config(Path(proj["root"]), {"compiler": settings}), header, source)
+        if not result.ok:
+            return f"checked: {fn['name']}'s C doesn't compile with it"
+        cand, verdict, _ = self._evaluate(fn, proj, result.obj)
+        ok = cand is not None and (verdict if verdict is not None
+                                   else scoring.diff(self._target_obj(fn, proj), cand).bytes_match)
+        return f"checked: {fn['name']}'s C {'matches the game byte for byte' if ok else 'does not match'} with it"
+
+    def resolve_suggestion(self, slug: str, sid: int, apply: bool) -> None:
+        """The user's answer to a suggestion: apply it (a compiler: the project switches to it) or dismiss it."""
+        hit = next((s for s in self.cfg(self._project(slug)).get("suggestions", []) if s["id"] == sid), None)
+        if hit is None:
+            raise NetworkError(f"no suggestion {sid}")
+        if apply and hit["toolchain"]:
+            self.set_compiler(slug, hit["toolchain"], hit["flags"])
+        self._update_cfg(slug, lambda cfg: next(s for s in cfg["suggestions"] if s["id"] == sid).__setitem__(
+            "status", "applied" if apply else "dismissed"))
 
     def set_priority(self, slug: str, name: str, on: bool = True) -> list[str]:
         """Functions the user wants done next: automatic claims take these first."""

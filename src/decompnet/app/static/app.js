@@ -2250,7 +2250,24 @@ function renderSteering(ov) {
   $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)} spent${n ? ` · ${money(sp.usd / n)}/match` : ""}`
     : sp && sp.tokens ? `· ${(sp.tokens / 1000).toFixed(0)}k tokens` : "";
   $("instrState").textContent = ov.instructions ? "agents get these" : "none yet";
+  const sg = ov.suggestions || [];
+  const tcName = (id) => (S.st?.toolchains || []).find((t) => t.id === id)?.name || id;
+  $("suggestPanel").hidden = !sg.length;
+  $("suggestList").innerHTML = sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
+    ${s.check ? `<p class="small ${s.check.includes("matches the game") ? "" : "muted"}">${s.check.includes("matches the game") ? "✓ " : ""}${esc(s.check)}</p>` : ""}
+    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
 }
+$("suggestList").onclick = async (e) => {
+  const b = e.target.closest("button[data-apply], button[data-dismiss]");
+  if (!b) return;
+  const apply = b.dataset.apply != null;
+  try {
+    S.ov = await api("/api/suggestion", { method: "POST", body: { slug: S.slug, id: Number(b.dataset.apply || b.dataset.dismiss), action: apply ? "apply" : "dismiss" } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast(apply ? "Applied. Agents compile with it from their next attempt on." : "Dismissed.");
+  } catch (err) { toast(esc(err.message), "err"); }
+};
 $("instrSave").onclick = async () => {
   try {
     S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });
@@ -2539,7 +2556,8 @@ async function showSettingsPage() {
   $("setAgents").innerHTML = `
     <label class="field"><span>Functions per agent session (a fresh session keeps the agent's context small)</span><input id="perSession" type="number" min="1" max="20" value="${st.settings.per_session}"></label>
     <label class="field"><span>Budget: stop helper agents when a project's agents have spent this much (US dollars, as the agents report it; 0 = no limit)</span><input id="budgetSet" type="number" min="0" step="0.5" value="${st.settings.budget_usd || 0}"></label>
-    <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span><b>Autopilot after each import</b>: try every function's machine draft first, so free matches cost no agent time.</span></label>`;
+    <label class="check"><input type="checkbox" id="autopilotSet" ${st.settings.autopilot !== false ? "checked" : ""}><span><b>Autopilot after each import</b>: try every function's machine draft first, so free matches cost no agent time.</span></label>
+    <label class="check"><input type="checkbox" id="autoCompilerSet" ${st.settings.auto_compiler ? "checked" : ""}><span><b>Auto-adjust the compiler</b>: when agents suggest other compiler settings, use them by themselves once they're proven (a function's C matches with them) or three agents agree. Otherwise suggestions wait for you on the project page.</span></label>`;
   const theme = savedTheme();
   $("setComputer").innerHTML = `
     <div class="field"><span>Appearance</span><div class="seg" id="themeSeg">${[["", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button type="button" data-theme="${k}" class="${theme === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
@@ -2574,6 +2592,8 @@ async function showSettingsPage() {
   const save = (body, msg) => api("/api/settings", { method: "POST", body }).then((s) => { S.st.settings = s; toast(msg); }).catch((e) => toast(esc(e.message), "err"));
   $("perSession").onchange = () => save({ per_session: Number($("perSession").value) }, "Saved.");
   $("autopilotSet").onchange = () => save({ autopilot: $("autopilotSet").checked }, "Saved.");
+  $("autoCompilerSet").onchange = () => save({ auto_compiler: $("autoCompilerSet").checked }, $("autoCompilerSet").checked
+    ? "Agents' proven or agreed compiler settings now apply by themselves." : "Compiler suggestions wait for you.");
   $("budgetSet").onchange = () => save({ budget_usd: Number($("budgetSet").value) || 0 }, "Budget saved.");
 }
 

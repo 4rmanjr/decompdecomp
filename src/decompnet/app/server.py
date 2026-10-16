@@ -199,6 +199,7 @@ class Settings:
                 "per_session": self.data.get("per_session", agents.PER_SESSION), "last_project": self.data.get("last_project"),
                 "autopilot": self.data.get("autopilot", True), "budget_usd": self.data.get("budget_usd") or 0,
                 "auto_update": bool(self.data.get("auto_update")), "check_updates": self.data.get("check_updates", True) is not False,
+                "auto_compiler": bool(self.data.get("auto_compiler")),
                 "launcher": _launcher(self.data.get("launcher") or {}), "recent_models": self.data.get("recent_models") or {}}
 
 
@@ -262,6 +263,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     manager = agents.Manager(net, home, mcp_url)
     jobs = Jobs(home / "logs" / "decomp.log")
     settings = Settings(home / "settings.json")
+    net.auto_compiler = bool(settings.data.get("auto_compiler"))
     manager.budget = lambda: float(settings.data.get("budget_usd") or 0)
 
     def remember(running: list[dict]) -> None:
@@ -633,6 +635,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             raise ValueError("write the note first")
         return {"message": net.add_note(agent, slug, text[:2000], str(data.get("function", "")) or None)}
 
+    def p_suggestion(slug, request, data):
+        net.resolve_suggestion(slug, int(data.get("id", 0)), data.get("action") == "apply")
+        return net.overview(slug)
+
     def p_autopilot(slug, request, data):
         if data.get("action") == "stop":
             net.stop_autopilot(slug)
@@ -651,6 +657,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
         "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]),
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
+        "/api/suggestion": (p_suggestion, ["POST"]),
         "/api/stats": (lambda s, r, d: net.stats(s), ["GET"]),
     }
     for path, (fn, methods) in routes.items():
@@ -946,6 +953,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             settings.data["auto_update"] = bool(data["auto_update"])
         if "check_updates" in data:
             settings.data["check_updates"] = bool(data["check_updates"])
+        if "auto_compiler" in data:
+            settings.data["auto_compiler"] = net.auto_compiler = bool(data["auto_compiler"])
         settings.save()
         return JSONResponse(settings.public())
 

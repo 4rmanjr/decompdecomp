@@ -224,11 +224,11 @@ jr      $ra
       <p class="step-n">1 · Install</p>
       <div class="os js-only" role="radiogroup" aria-label="Your system" hidden>
         <label><input type="radio" name="os" value="linux" checked><span>Linux</span></label>
-        <label><input type="radio" name="os" value="win"><span>Windows <small>unstable</small></span></label>
+        <label><input type="radio" name="os" value="win"><span>Windows <small>WSL · experimental</small></span></label>
       </div>
       <p class="cmd" data-os="linux"><code id="cmd-linux">curl -fsSL https://decomp.ndelic.com/install.sh | bash</code><button type="button" class="copy" data-copy-from="cmd-linux">Copy</button></p>
       <p class="cmd" data-os="win"><code id="cmd-win">irm https://decomp.ndelic.com/install.ps1 | iex</code><button type="button" class="copy" data-copy-from="cmd-win">Copy</button></p>
-      <p class="step-note">It installs the app and the compilers, then opens the app in your browser. macOS is not supported.</p>
+      <p class="step-note">It installs the app and the compilers, then opens the app. Windows is experimental: decompdecomp runs in WSL 2 there, which the installer turns on. macOS is coming.</p>
     </div>
     <div class="step">
       <p class="step-n">2 · Tell your agent</p>

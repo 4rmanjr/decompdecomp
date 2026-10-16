@@ -255,7 +255,7 @@ projects are ds-decomp projects. They build the game again on each build.
 The installer installs [uv](https://docs.astral.sh/uv/), the app, the compilers and the m2c draft decompiler. All
 compilers are pinned and have checksums. To start the app, use your apps menu or type `decomp` in a terminal.
 
-**Windows.** Some compilers are Linux programs. Thus the installer makes a small Linux (a WSL 2 distribution with
+**Windows (WSL 2, experimental).** Some compilers are Linux programs. Thus the installer makes a small Linux (a WSL 2 distribution with
 the name `decomp-wtf`) from the official Debian image. Windows can ask for permission and a restart one time. Your
 projects are in `\\wsl.localhost\decomp-wtf\home\decomp\Decomp`. The results are identical to Linux.
 

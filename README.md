@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-157a49?style=flat-square"></a>
-  <img alt="Linux and Windows" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20(unstable)-15140f?style=flat-square">
+  <img alt="Linux, and Windows through WSL (experimental)" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20WSL%20(experimental)-15140f?style=flat-square">
   <img alt="Works with any MCP agent" src="https://img.shields.io/badge/agents-any%20MCP%20client-157a49?style=flat-square">
 </p>
 
@@ -28,14 +28,15 @@ game compiles it. If the result is identical to the game, byte for byte, the fun
 curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 ```
 
-**Windows** (PowerShell, unstable)
+**Windows** (experimental: decompdecomp runs in WSL 2, which the installer turns on)
 
 ```
 irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
 ```
 
-The installer installs the app and the compilers. Then the app opens in your browser. To start it again, type
-`decomp`. macOS is not supported.
+The installer installs the app and the compilers, then opens the app. To start it again, type
+`decomp`. It opens in a window of its own (with Edge, Chrome, Brave or Chromium) and quits when you close it,
+unless agents are still working. macOS is coming.
 
 ## Start
 

@@ -433,7 +433,7 @@ def host_app(net, rooms: dict[str, Room]) -> Starlette:
                             "<h1>decompdecomp room</h1><p>This is an invite to decompile a game together. Open "
                             "<b>decompdecomp</b>, choose <b>Join a friend</b>, and paste this page's address. "
                             "You'll need your own copy of the game.</p><p>Don't have the app? "
-                            "<a href='https://github.com/n-delic/decomp.wtf'>decompdecomp</a></p>")
+                            "<a href='https://github.com/n-delic/decompdecomp'>decompdecomp</a></p>")
 
     routes = [
         Route("/", landing), Route("/join/{code}", landing),

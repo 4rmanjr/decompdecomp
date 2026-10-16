@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             from .server import install_command, join_command
             token = net.register_agent(args.name, args.owner)
             print(f"token: {token}\n\nsend this to the person; it sets everything up and starts their agent:\n"
-                  f"  {install_command('https://github.com/n-delic/decomp.wtf', token)}\n\n"
+                  f"  {install_command('https://github.com/n-delic/decompdecomp', token)}\n\n"
                   f"or, manually in Claude Code:\n  {join_command(args.url.rstrip('/'), token)}")
         elif args.cmd == "agent" and args.agent_cmd == "revoke":
             net.revoke_agent(args.name, erase=args.erase)

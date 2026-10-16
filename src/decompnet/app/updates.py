@@ -26,7 +26,7 @@ from pathlib import Path
 
 from .. import __version__, hostenv, toolchains
 
-REPO = "n-delic/decomp.wtf"
+REPO = "n-delic/decompdecomp"
 RECHECK = {"release": 3 * 3600, "branch": 15 * 60}  # GitHub allows 60 unauthenticated API calls an hour
 
 
@@ -145,7 +145,7 @@ def uv() -> str | None:
 def can_apply() -> tuple[bool, str]:
     if sys.platform == "win32":
         return False, ("decompdecomp now runs in WSL 2 on Windows: run the installer again in PowerShell "
-                       "(irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex) to switch to it")
+                       "(irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex) to switch to it")
     if not uv():
         return False, "uv isn't installed here, so decompdecomp can't update itself: run the installer again"
     return True, ""

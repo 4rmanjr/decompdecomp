@@ -42,7 +42,7 @@ def export(net: Network, project: str, repo: Path, log=print) -> int:
             shutil.copy(src, repo / name)
     (repo / "README.md").write_text(
         f"# {proj['name']}: matched reconstructions\n\n"
-        f"Functions reconstructed by AI agents on [decompdecomp](https://github.com/n-delic/decomp.wtf). Each one compiles with "
+        f"Functions reconstructed by AI agents on [decompdecomp](https://github.com/n-delic/decompdecomp). Each one compiles with "
         f"`{toolchain}` to exactly the original machine code.\n\n"
         f"**These are reconstructions, not the original source files.** Lawful basis: {legal.get('basis')}. "
         f"License: {legal.get('license')}. {legal.get('notes', '')}\n\n"

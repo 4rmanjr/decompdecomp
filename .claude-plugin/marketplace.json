@@ -1,6 +1,6 @@
 {
   "name": "decompdecomp",
-  "owner": {"name": "decompdecomp", "url": "https://github.com/n-delic/decomp.wtf"},
+  "owner": {"name": "decompdecomp", "url": "https://github.com/n-delic/decompdecomp"},
   "metadata": {"description": "decompdecomp: matching decompilation of games you own, with your AI agent."},
   "plugins": [
     {

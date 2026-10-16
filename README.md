@@ -69,13 +69,13 @@ same script as on Linux. macOS isn't supported.
 **Linux**
 
 ```
-curl -fsSL https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 ```
 
-**Windows** (PowerShell; new and still unstable: problems are worth an [issue](https://github.com/n-delic/decomp.wtf/issues))
+**Windows** (PowerShell; new and still unstable: problems are worth an [issue](https://github.com/n-delic/decompdecomp/issues))
 
 ```
-irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex
+irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
 ```
 
 It turns on WSL 2 if it isn't yet (Windows asks for permission once, and may want a restart), makes decompdecomp's
@@ -113,7 +113,7 @@ when needed; you can also add it yourself (`claude mcp add decomp -- decomp mcp`
 
 | Agent | Install it as a package instead |
 | :-- | :-- |
-| **Claude Code** | `/plugin marketplace add n-delic/decomp.wtf`, then `/plugin install decompdecomp@decompdecomp` (adds a "decompile" skill) |
+| **Claude Code** | `/plugin marketplace add n-delic/decompdecomp`, then `/plugin install decompdecomp@decompdecomp` (adds a "decompile" skill) |
 | **Codex, Antigravity CLI, opencode** | `decomp connect codex`, `decomp connect antigravity`, `decomp connect opencode` |
 
 ## How it works
@@ -266,7 +266,7 @@ website: the people who decompile together host their room and decide who's in.
 **On a server** (or any always-on machine):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 decomp host mygame.z64 --own-copy --address http://my-server:6481 --service
 ```
 
@@ -313,7 +313,7 @@ full decomp you can port and mod:
 
 **Beta: PlayStation, PlayStation 2, Game Boy Advance, DS and Windows PC.** They work end to end and are tested on homemade
 games, much less on real ones so far. Expect rough edges, and please
-[report](https://github.com/n-delic/decomp.wtf/issues) what you hit: the app's error panel copies everything an issue
+[report](https://github.com/n-delic/decompdecomp/issues) what you hit: the app's error panel copies everything an issue
 needs. Public decomps of any platform run in their own project's build, so their status is the project's.
 
 **From scratch.** splat and spimdisasm split MIPS games, decomp-toolkit analyses GameCube and Wii programs inside a
@@ -348,7 +348,7 @@ browser as usual, and the results are byte-identical to Linux. macOS isn't suppo
 
 **When something goes wrong.** A failed import stays on screen with the reason and what happened, and **Copy for a
 bug report** puts the version, the error and the log on your clipboard for an
-[issue](https://github.com/n-delic/decomp.wtf/issues). The full log is `.decomp/logs/decomp.log` in your projects folder
+[issue](https://github.com/n-delic/decompdecomp/issues). The full log is `.decomp/logs/decomp.log` in your projects folder
 (`~/Decomp`), also at **The full log** in that panel.
 
 ## Development
@@ -385,13 +385,13 @@ and the installed app then follows the branch on GitHub (every new commit pushed
 app: one click installs it).
 
 ```
-git clone -b <branch> https://github.com/n-delic/decomp.wtf && cd decomp.wtf
+git clone -b <branch> https://github.com/n-delic/decompdecomp && cd decompdecomp
 powershell -ExecutionPolicy Bypass -File site\public\install.ps1      # Windows
 bash site/public/install.sh                                           # Linux
 ```
 
-Without a checkout: `$env:DECOMP_BRANCH = "<branch>"; irm https://raw.githubusercontent.com/n-delic/decomp.wtf/<branch>/site/public/install.ps1 | iex`
-on Windows, `curl -fsSL https://raw.githubusercontent.com/n-delic/decomp.wtf/<branch>/site/public/install.sh | DECOMP_BRANCH=<branch> bash`
+Without a checkout: `$env:DECOMP_BRANCH = "<branch>"; irm https://raw.githubusercontent.com/n-delic/decompdecomp/<branch>/site/public/install.ps1 | iex`
+on Windows, `curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/<branch>/site/public/install.sh | DECOMP_BRANCH=<branch> bash`
 on Linux. `decomp update` (or the app's Settings) installs the newest commit by hand.
 
 </details>

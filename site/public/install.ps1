@@ -1,6 +1,6 @@
 # decompdecomp installer for Windows (PowerShell).
 #
-#   irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
 #
 # decompdecomp is a Linux program (the old compilers it runs are), so on Windows it gets its own small Linux: a WSL 2
 # distribution called decomp-wtf, the same Linux as its Docker image for servers. What this does, and nothing else:
@@ -12,7 +12,7 @@
 # Your projects live in it: \\wsl.localhost\decomp-wtf\home\decomp\Decomp. Nothing is sent anywhere.
 # Uninstall: decomp uninstall
 #
-# Testing a branch:  $env:DECOMP_BRANCH = "<name>"; irm https://raw.githubusercontent.com/n-delic/decomp.wtf/<name>/site/public/install.ps1 | iex
+# Testing a branch:  $env:DECOMP_BRANCH = "<name>"; irm https://raw.githubusercontent.com/n-delic/decompdecomp/<name>/site/public/install.ps1 | iex
 # From a checkout:   powershell -ExecutionPolicy Bypass -File site\public\install.ps1   (installs that checkout)
 
 # Everything runs in its own block: `irm | iex` runs a script in your PowerShell session, and its settings shouldn't
@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # Windows PowerShell downloads many times slower while drawing a progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $Version = "0.10.6"
-$Repo = "n-delic/decomp.wtf"
+$Repo = "n-delic/decompdecomp"
 $Distro = "decomp-wtf"
 $Wsl = Join-Path $env:SystemRoot "System32\wsl.exe"
 # Say who's downloading. salsa.debian.org (Debian's WSL image) answers browser-like agents, as Windows PowerShell's

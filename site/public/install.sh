@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # decompdecomp installer for Linux (Windows: install.ps1, in PowerShell). macOS isn't supported.
 #
-#   curl -fsSL https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 #
 # decompdecomp installs on this computer, with uv:
 #   1. installs uv, Astral's Python tool manager, if you don't have it (asks first)
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 VERSION="0.10.6"
-REPO="n-delic/decomp.wtf"
+REPO="n-delic/decompdecomp"
 START=1
 SOURCE="${DECOMP_SOURCE:-}"
 [ -z "$SOURCE" ] && [ -n "${DECOMP_BRANCH:-}" ] && SOURCE="branch:${DECOMP_BRANCH}"
@@ -68,7 +68,7 @@ OS="$(uname -s)"
 case "$OS" in
   Linux) ;;
   Darwin) fail "macOS isn't supported: decompdecomp runs on Linux and on Windows (in WSL 2), on x86-64 PCs (the games' compilers are x86 programs). On an Intel Mac, an x86-64 Linux virtual machine works too." ;;
-  *) fail "this installer is for Linux; on Windows run in PowerShell: irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex" ;;
+  *) fail "this installer is for Linux; on Windows run in PowerShell: irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex" ;;
 esac
 case "$(uname -m)" in
   x86_64|amd64) ;;

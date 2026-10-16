@@ -44,7 +44,8 @@ compilers are only installed after the user accepts that in Setup; don't add cod
 
 Shared pieces: `network.py` (claims, attempts, notes, shared header), `compiler.py` (sandboxed compiler runs),
 `scoring.py` (capstone disassembly and diffs for every arch), `elfobj.py` (ELF objects), `app/tools.py` (the MCP
-tools and the agent prompt), `app/guide/*.md` (know-how agents read through `guide(topic)`), `app/static/` (GUI).
+tools and the agent prompt), `app/window.py` + `app/tray.py` (the app's own window and its tray icon; tests set
+`BROWSER=true` and `DECOMP_TRAY=0` so they open neither), `app/guide/*.md` (know-how agents read through `guide(topic)`), `app/static/` (GUI).
 
 ## Conventions
 

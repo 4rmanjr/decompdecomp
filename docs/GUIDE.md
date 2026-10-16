@@ -259,6 +259,13 @@ compilers are pinned and have checksums. To start the app, use your apps menu or
 the name `decomp-wtf`) from the official Debian image. Windows can ask for permission and a restart one time. Your
 projects are in `\\wsl.localhost\decomp-wtf\home\decomp\Decomp`. The results are identical to Linux.
 
+**Its window and the tray.** decompdecomp opens in a window of its own: a Chromium-family browser (Edge, which every
+Windows has; Chrome, Brave, Chromium, Edge or Vivaldi on Linux) shows it as an app, without tabs. There is only one
+window: `decomp` or the apps menu shows the open one. Closing the window keeps decompdecomp running in the system
+tray, so helper agents keep working; the tray's menu opens the window again or quits. Without a tray (some
+desktops), closing the window quits when no agent is working. Without a Chromium-family browser, the app opens in a
+normal browser tab.
+
 **Updates.** When a new version is available, the app asks you one time. One click installs it and restarts the app.
 Helper agents continue their work. To change this behavior, go to Settings.
 
@@ -281,7 +288,7 @@ uv run pytest              # the tests
 | Path | Contents |
 | :-- | :-- |
 | `src/decompnet/rom/` | ROM mode: reading, splitting with splat, symbols, the matcher (`match.py`) and the export. |
-| `src/decompnet/app/` | The app: `engine.py` (ROM projects), `forkengine.py` (forks), `tools.py` (MCP tools), `agents.py`, `server.py`, `collab.py` (rooms), `static/` (GUI), `guide/` (guides for agents). |
+| `src/decompnet/app/` | The app: `engine.py` (ROM projects), `forkengine.py` (forks), `tools.py` (MCP tools), `agents.py`, `server.py`, `collab.py` (rooms), `window.py` (its own window), `tray.py` (the tray icon), `static/` (GUI), `guide/` (guides for agents). |
 | `src/decompnet/forks/` | Fork mode: forks by repository address, project setup, objdiff, drafts, linked files, and the from-scratch importers. |
 | `src/decompnet/network.py` | Claims, attempts, notes and the shared header. |
 | `src/decompnet/toolchains.py` | The pinned compilers and tools. |

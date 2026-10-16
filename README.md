@@ -35,8 +35,9 @@ irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/inst
 ```
 
 The installer installs the app and the compilers, then opens the app. To start it again, type
-`decomp`. It opens in a window of its own (with Edge, Chrome, Brave or Chromium) and quits when you close it,
-unless agents are still working. macOS is coming.
+`decomp` or use your apps menu. It opens in a window of its own (with Edge, Chrome, Brave or Chromium). Closing the
+window keeps decompdecomp in the system tray, so your agents keep working; quit it from the tray or the app's ⏻
+button. macOS is coming.
 
 ## Start
 

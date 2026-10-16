@@ -1,5 +1,6 @@
 # A tag v* (e.g. v1.0.0-alpha) builds decompdecomp as a Linux app (.deb and AppImage) and attaches both to the tag's
-# GitHub release, creating the release when there isn't one yet (a pre-release when the version has a "-"). It can
+# GitHub release, creating the release when there isn't one yet, as the latest (alphas too: the version says what it
+# is, and GitHub shows "Latest" and serves releases/latest only for a release that isn't a pre-release). It can
 # also be run by hand for a tag that's already pushed: gh workflow run release -f tag=v1.0.0-alpha
 name: release
 
@@ -38,6 +39,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.deb dist/*.AppImage --clobber
           else
-            gh release create "$TAG" dist/*.deb dist/*.AppImage --generate-notes \
-              $([[ "$TAG" == *-* ]] && echo --prerelease)
+            gh release create "$TAG" dist/*.deb dist/*.AppImage --generate-notes --latest
           fi

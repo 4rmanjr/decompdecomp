@@ -164,7 +164,7 @@
     <div class="ph-row">
       <div class="ph-title">
         <div class="ph-chips" id="phChips"></div>
-        <h1 id="phTitle"></h1>
+        <div class="ph-name"><h1 id="phTitle"></h1><button class="ghost icon sm ph-rename" id="phRename" type="button" aria-label="Rename this project" title="Rename"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 1.9a1.6 1.6 0 0 1 2.3 0l.5.5a1.6 1.6 0 0 1 0 2.3L5.5 13.3 2 14l.7-3.5 8.6-8.6Zm-.6 2.4-6.6 6.6-.3 1.3 1.3-.3 6.6-6.6-1-1Z"/></svg></button></div>
       </div>
       <div class="ph-actions">
         <button class="pill-btn" id="phWorking" type="button" hidden><span class="dot on"></span><span id="phWorkingText"></span></button>
@@ -289,6 +289,13 @@
           <div id="sessions" class="sessions"></div>
           <p class="empty muted small" id="noSessions">No agent is working on this project yet.</p>
         </section>
+        <section class="panel">
+          <header class="panel-head"><h2>Your own agent</h2></header>
+          <div class="pad">
+            <p class="muted small">Work with the agent you talk to (Claude Code, Codex, Antigravity CLI…): connect it once, then ask it to work on this game. It shows up here like any other agent.</p>
+            <div class="row"><button class="ghost small-btn" id="talkBtn" type="button">Connect your agent</button></div>
+          </div>
+        </section>
       </div>
       <div class="stack-col">
         <section class="panel">
@@ -299,23 +306,16 @@
             <div class="row"><button class="primary small-btn" id="instrSave" type="button">Save instructions</button></div>
           </div>
         </section>
-        <section class="panel" id="suggestPanel" hidden>
-          <header class="panel-head"><h2>Suggestions from agents</h2><span class="muted small">changes they can't make themselves</span></header>
-          <div class="pad" id="suggestList"></div>
-        </section>
         <section class="panel">
           <header class="panel-head"><h2>Next in line</h2><span class="muted small">★ functions agents take first</span></header>
           <ol class="mini-list" id="prioList"></ol>
         </section>
-        <section class="panel">
-          <header class="panel-head"><h2>Your own agent</h2></header>
-          <div class="pad">
-            <p class="muted small">Work with the agent you talk to (Claude Code, Codex, Antigravity CLI…): connect it once, then ask it to work on this game. It shows up here like any other agent.</p>
-            <div class="row"><button class="ghost small-btn" id="talkBtn" type="button">Connect your agent</button></div>
-          </div>
-        </section>
       </div>
     </div>
+    <section class="panel suggest-panel" id="suggestPanel" hidden>
+      <header class="panel-head"><h2>Suggestions from agents</h2><span class="muted small">changes they can't make themselves</span></header>
+      <div class="pad" id="suggestList"></div>
+    </section>
   </section>
 
   <!-- activity -->

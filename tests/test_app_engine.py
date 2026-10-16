@@ -187,3 +187,14 @@ def test_stats_say_who_matched_what_and_how_fast(net):
     me = next(r for r in st["agents"] if r["agent"] == "statsy")
     assert me["compiles"] == 1 and st["compiles_last_hour"] >= 1
     assert all("matched_by" in r for r in net.function_map("demo-quest-64"))
+
+
+def test_a_project_can_be_renamed(net):
+    """A disc's title is often only its serial (GTA San Andreas imports as SLES-52541): the user names it. The slug
+    stays, so links, folders and history keep working."""
+    slug = net.store.one("SELECT slug FROM projects LIMIT 1")["slug"]
+    assert net.set_title(slug, "  Demo   Quest  ") == "Demo Quest"
+    assert net.overview(slug)["title"] == "Demo Quest" and net.overview(slug)["slug"] == slug
+    for bad in ("   ", "x" * 81):
+        with pytest.raises(NetworkError):
+            net.set_title(slug, bad)

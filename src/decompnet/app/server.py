@@ -642,6 +642,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         net.set_instructions(slug, str(data.get("text", "")))
         return net.overview(slug)
 
+    def p_title(slug, request, data):
+        net.set_title(slug, str(data.get("title", "")))
+        return net.overview(slug)
+
     def p_priority(slug, request, data):
         return {"priority": net.set_priority(slug, str(data.get("name", "")), bool(data.get("on", True)))}
 
@@ -673,7 +677,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/compiler": (p_compiler, ["POST"]), "/api/export": (p_export, ["POST"]), "/api/open": (p_open, ["POST"]),
         "/api/delete": (p_delete, ["POST"]), "/api/agents/manual": (p_manual, ["POST"]),
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
-        "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]),
+        "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]), "/api/title": (p_title, ["POST"]),
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
         "/api/suggestion": (p_suggestion, ["POST"]),
         "/api/stats": (lambda s, r, d: net.stats(s), ["GET"]),

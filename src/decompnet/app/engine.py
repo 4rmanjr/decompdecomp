@@ -1482,6 +1482,19 @@ class RomNetwork(Network):
     def instructions(self, slug: str) -> str:
         return self.cfg(self._project(slug)).get("instructions") or ""
 
+    def set_title(self, slug: str, title: str) -> str:
+        """The name the project shows by, which the user can change: a disc's title is often only its serial
+        (GTA San Andreas imports as SLES-52541). The slug, folders and history keep the name they were made with."""
+        title = " ".join(title.split())
+        if not title:
+            raise NetworkError("give the project a name")
+        if len(title) > 80:
+            raise NetworkError("keep the name under 80 characters")
+        proj = self._project(slug)
+        with self.store.tx() as db:
+            db.execute("UPDATE projects SET name=? WHERE id=?", (title, proj["id"]))
+        return title
+
     def suggest(self, agent: Agent, slug: str, text: str, compiler: str = "", flags: str = "",
                 function: str | None = None, ranges: str = "", source: str = "") -> str:
         """A change to the project's setup an agent can't make itself (the compiler, its flags, anything), for the user

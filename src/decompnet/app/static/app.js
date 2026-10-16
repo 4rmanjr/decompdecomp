@@ -2255,6 +2255,25 @@ $("suggestList").onclick = async (e) => {
     toast(apply ? "Applied. Agents compile with it from their next attempt on." : "Dismissed.");
   } catch (err) { toast(esc(err.message), "err"); }
 };
+// a disc's title is often only its serial (GTA San Andreas imports as SLES-52541): the user names it
+$("phRename").onclick = () => {
+  const body = dialog("Rename this project", `<label class="field"><span>Name</span><input id="renameText" maxlength="80" value="${esc(S.ov.title)}"></label>
+    <p class="muted small">Only the name it shows by changes; its folder and history stay as they are.</p>
+    <div class="row"><button class="primary" id="renameGo" type="button">Rename</button><button class="ghost" data-close type="button">Cancel</button></div>`);
+  const input = body.querySelector("#renameText");
+  input.select();
+  const go = async () => {
+    try {
+      S.ov = await api("/api/title", { method: "POST", body: { slug: S.slug, title: input.value } });
+      renderHeader(S.ov);
+      $("dialog").hidden = true;
+      document.body.classList.remove("locked");
+      loadNav();
+    } catch (e) { toast(esc(e.message), "err"); }
+  };
+  body.querySelector("#renameGo").onclick = go;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+};
 $("instrSave").onclick = async () => {
   try {
     S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });

@@ -198,3 +198,35 @@ def test_a_project_can_be_renamed(net):
     for bad in ("   ", "x" * 81):
         with pytest.raises(NetworkError):
             net.set_title(slug, bad)
+
+
+def test_boundary_reports_wait_for_the_user(net):
+    """A function that runs on into padding or linker leftovers can never match whole. An agent reports where it
+    really ends; nothing changes until the user approves, then it ends there and the rest is set aside."""
+    slug = "demo-quest-64"
+    pid = net.project_row(slug)["id"]
+    agent, _ = net.local_agent("boundary-agent")
+    fns = net.store.all("SELECT * FROM functions WHERE project_id=? AND status='open' AND size>=16 ORDER BY vram LIMIT 2", pid)
+    fn, other = fns[0], fns[1]
+    end = fn["vram"] + fn["size"] - 8
+    with pytest.raises(NetworkError, match="isn't a word inside"):
+        net.request_boundary(agent, slug, fn["name"], f"0x{fn['vram'] + fn['size'] + 4:X}", "padding")
+    with pytest.raises(NetworkError, match="say what the bytes"):
+        net.request_boundary(agent, slug, fn["name"], f"0x{end:X}", "   ")
+    assert net.request_boundary(agent, slug, fn["name"], f"0x{end:X}", "two words of alignment padding").startswith("Reported")
+    [req] = [r for r in net.overview(slug)["boundaries"] if r["function"] == fn["name"]]
+    assert req["cut"] == 8 and len(req["rest"].split()) == 2
+    assert net.store.one("SELECT size FROM functions WHERE id=?", fn["id"])["size"] == fn["size"]  # not before approval
+    net.resolve_boundary(slug, req["id"], apply=True)
+    assert net.store.one("SELECT size FROM functions WHERE id=?", fn["id"])["size"] == fn["size"] - 8
+    pad = net.store.one("SELECT * FROM functions WHERE project_id=? AND name=?", pid, f"pad_{end:08X}")
+    assert pad["status"] == "asm" and pad["size"] == 8 and "alignment padding" in pad["meta"]
+    assert not [r for r in net.overview(slug)["boundaries"] if r["function"] == fn["name"]]
+    if toolchains.installed("binutils-mips") is not None:  # the set-aside bytes are still built, as assembly
+        out = net.export_rom(slug, log=lambda *_: None)
+        assert out["identical"], out.get("log")
+    # dismissed: nothing changes
+    net.request_boundary(agent, slug, other["name"], f"0x{other['vram'] + 4:X}", "data, not code")
+    [req] = [r for r in net.overview(slug)["boundaries"] if r["function"] == other["name"]]
+    net.resolve_boundary(slug, req["id"], apply=False)
+    assert net.store.one("SELECT size FROM functions WHERE id=?", other["id"])["size"] == other["size"]

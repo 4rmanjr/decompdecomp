@@ -858,6 +858,14 @@ class RomNetwork(Network):
             raise NetworkError(f"`{new_name}` is not a free C identifier")
         if self.cfg(proj).get("platform") == "gba":
             return self._split_gba(agent, proj, fn, addr, new_name, syms)
+        head, tail = self._cut(proj, fn, addr, new_name, syms, agent.id, "split", f"{fn['name']} / {new_name}")
+        return (f"✅ split: {fn['name']} is now {len(head.lines)} instructions; {new_name} at 0x{addr:08X} has "
+                f"{len(tail.lines)}. Continue with {fn['name']} (get_function shows its new assembly).")
+
+    def _cut(self, proj, fn, addr: int, new_name: str, syms: SymbolTable, agent_id: int | None, kind: str, detail: str,
+             tail_meta: dict | None = None):
+        """Cut a MIPS function in two at `addr`: the head keeps its row, the tail becomes `new_name` (status 'asm'
+        with `tail_meta` when it isn't code agents should work on). Returns (head, tail)."""
         rf = self._parse_asm(fn["name"], fn["asm"], fn["unit"])
         try:
             head, tail = split.split_function(rf, addr, new_name)
@@ -872,17 +880,71 @@ class RomNetwork(Network):
             db.execute("UPDATE functions SET size=?, n_insns=?, target=?, relocs=?, asm=?, seed=NULL, best_score=NULL "
                        "WHERE id=?", (head.size, len(head.lines), th.code, json.dumps(th.to_json()),
                                       self._asm_source(head), fn["id"]))
-            db.execute("INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset) "
-                       "VALUES(?,?,?,?,?,?,?,?,?,?,?)", (proj["id"], new_name, tail.size, len(tail.lines), tt.code,
-                                                        json.dumps(tt.to_json()), self._asm_source(tail), None,
-                                                        fn["unit"], addr, tail.rom))
+            db.execute("INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,unit,vram,rom_offset,"
+                       "status,meta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (proj["id"], new_name, tail.size, len(tail.lines), tt.code, json.dumps(tt.to_json()),
+                        self._asm_source(tail), None, fn["unit"], addr, tail.rom, "asm" if tail_meta else "open",
+                        json.dumps(tail_meta) if tail_meta else None))
             db.execute("UPDATE symbols SET size=? WHERE project_id=? AND name=?", (head.size, proj["id"], fn["name"]))
             db.execute("INSERT OR REPLACE INTO symbols(project_id,name,address,size,kind) VALUES(?,?,?,?,?)",
                        (proj["id"], new_name, addr, tail.size, "func"))
-            self._event(db, proj["id"], agent.id, "split", f"{fn['name']} / {new_name}")
+            self._event(db, proj["id"], agent_id, kind, detail)
         self._xrefs.pop(proj["id"], None)
-        return (f"✅ split: {fn['name']} is now {len(head.lines)} instructions; {new_name} at 0x{addr:08X} has "
-                f"{len(tail.lines)}. Continue with {fn['name']} (get_function shows its new assembly).")
+        return head, tail
+
+    # ------------------------------------------------------------------ boundary requests
+
+    def request_boundary(self, agent: Agent, slug: str, function: str, end: str, reason: str) -> str:
+        """An agent's report that a function really ends earlier: what follows is alignment padding, linker leftovers
+        or data, not code anyone wrote. Changing the function list is the user's call, so it waits for them on the
+        project page (resolve_boundary); approved, the function is cut there and the rest set aside."""
+        self._rom_only(slug, "report_boundary")
+        if self._link(slug) is not None:
+            raise NetworkError("in a team room the host's project decides where functions end: tell the host (add_note)")
+        fn = self._function(function, slug)
+        proj = self._project(slug)
+        if self.cfg(proj).get("platform") == "gba" or (proj["arch"] or "mips") != "mips":
+            raise NetworkError("boundary reports are for MIPS games (N64, PlayStation, PlayStation 2) for now")
+        if fn["status"] == "matched":
+            raise NetworkError(f"{fn['name']} is matched: its boundaries are proven")
+        m = _ADDRESS.match(str(end).strip())
+        if not m:
+            raise NetworkError("`end` must be an address like 0x80001234: where the function's last instruction ends")
+        addr = int(m.group(1), 16)
+        off = addr - fn["vram"]
+        if off <= 0 or off >= fn["size"] or off % 4:
+            raise NetworkError(f"0x{addr:08X} isn't a word inside {fn['name']} (0x{fn['vram']:08X}, {fn['size']} bytes)")
+        reason = " ".join(reason.split())[:600]
+        if not reason:
+            raise NetworkError("say what the bytes after it are (padding, linker leftovers, data) and how you can tell")
+        order = "big" if proj["big_endian"] else "little"
+        rest = " ".join(f"{int.from_bytes(fn['target'][at:at + 4], order):08X}" for at in range(off, min(fn["size"], off + 32), 4))
+
+        def change(cfg):
+            items = cfg.setdefault("boundaries", [])
+            items[:] = [r for r in items if not (r["status"] == "open" and r["function"] == fn["name"])]
+            items.append({"id": max((r["id"] for r in items), default=0) + 1, "function": fn["name"], "vram": fn["vram"],
+                          "end": addr, "cut": fn["size"] - off, "rest": rest, "reason": reason, "agent": agent.name,
+                          "t": time.time(), "status": "open"})
+        self._update_cfg(slug, change)
+        return (f"Reported: {fn['name']} ends at 0x{addr:08X} ({fn['size'] - off} bytes after it set aside if the user "
+                f"approves). Until then it stays as it is; release it or work on with its current size.")
+
+    def resolve_boundary(self, slug: str, rid: int, apply: bool) -> None:
+        """The user's answer to a boundary report: cut the function there (the rest set aside as not code) or dismiss."""
+        proj = self._project(slug)
+        req = next((r for r in self.cfg(proj).get("boundaries", []) if r["id"] == rid and r["status"] == "open"), None)
+        if req is None:
+            raise NetworkError(f"no open boundary report {rid}")
+        if apply:
+            fn = self._function(req["function"], slug)
+            if fn["vram"] != req["vram"] or not 0 < req["end"] - fn["vram"] < fn["size"] or fn["status"] == "matched":
+                raise NetworkError(f"{fn['name']} changed since it was reported: dismiss this one")
+            name = f"pad_{req['end']:08X}"
+            self._cut(proj, fn, req["end"], name, self.symbols(proj["id"]), None, "boundary", f"{fn['name']} ends at 0x{req['end']:08X}",
+                      {"asm_code": f"not code (set aside from {fn['name']}): {req['reason']}"})
+        self._update_cfg(slug, lambda cfg: next(r for r in cfg["boundaries"] if r["id"] == rid).__setitem__(
+            "status", "applied" if apply else "dismissed"))
 
     def _split_gba(self, agent: Agent, proj, fn, addr: int, new_name: str, syms: SymbolTable) -> str:
         """Cut a GBA function's bytes and assembly in two at `addr` (Thumb: a halfword boundary)."""
@@ -1384,6 +1446,7 @@ class RomNetwork(Network):
                                              # (a suggestion its own check disproved isn't one: older ones were filed)
                                              "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"
                                                              and not re.search(r"does not match|doesn't compile", s["check"] or "")],
+                                             "boundaries": [r for r in cfg.get("boundaries", []) if r["status"] == "open"],
                                              "compiler_ranges": [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"])}
                                                                  for r in cfg.get("compiler_ranges", [])]}
 

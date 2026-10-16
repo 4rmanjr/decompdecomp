@@ -75,7 +75,8 @@ Use only the decomp tools. Repeat for up to {count} claims (a batch is one), the
    structs you worked out, rename_symbol for functions/data whose purpose is now clear, and add_note (no
    function) for a compiler quirk or convention every agent here should know: the next sessions start with it.
    Right C that can't match because the project's compiler or flags look wrong? try_compiler(...) others, then
-   suggest(...) the one that matches to the user.
+   suggest(...) the one that matches to the user. The function runs on past its end into padding, linker
+   leftovers or data? report_boundary(...) where it really ends, then work on as it is.
 5. compile_and_diff says when to move on (no better after 4 compiles in a row; up to 10 for big functions):
    then release_function with precise notes (what you tried, what is left) and claim the next one.
 
@@ -196,6 +197,8 @@ HANDLERS: dict[str, Callable[..., str]] = {
     "rename_symbol": lambda net, agent, slug, old, new, message="": net.rename_symbol(agent, slug, old, new, message),
     "split_function": lambda net, agent, slug, function, at, new_name="":
         net.split_function(agent, slug, function, at, new_name),
+    "report_boundary": lambda net, agent, slug, function, end, reason:
+        net.request_boundary(agent, slug, function, end, reason),
     "read_data": lambda net, agent, slug, what, length=64: (net.forks.read_data(agent, slug, what, length)
                                                             if net.fork_slug(slug) else net.read_data(slug, what, length)),
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
@@ -217,7 +220,7 @@ HANDLERS: dict[str, Callable[..., str]] = {
         net.forks.split_file(agent, _fork(net, slug, "split_file"), path, at, new_name, data),
 }
 
-ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function"}
+ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function", "report_boundary"}
 FORK_ONLY = {"read_file", "search_code", "edit_file", "file_status", "split_file"}
 
 
@@ -333,6 +336,13 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         """Split a function the disassembler merged with the next one (e.g. after a function that never
         returns). `at` is the address where the second function starts."""
         return await run(ctx, "split_function", function=function, at=at, new_name=new_name)
+
+    @mcp.tool(meta=ALWAYS_LOAD)
+    async def report_boundary(ctx: Context, function: str, end: str, reason: str) -> str:
+        """Report that a function really ends earlier: the words after `end` are alignment padding, linker
+        leftovers or data, not code anyone wrote, so no C can match the whole thing. The user approves it on the
+        project page; then the function ends at `end` and the rest is set aside. Say how you can tell."""
+        return await run(ctx, "report_boundary", function=function, end=end, reason=reason)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def read_data(ctx: Context, what: str, length: int = 64) -> str:

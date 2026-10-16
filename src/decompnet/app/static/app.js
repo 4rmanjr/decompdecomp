@@ -2239,12 +2239,26 @@ function renderSteering(ov) {
   $("instrState").textContent = ov.instructions ? "agents get these" : "none yet";
   const sg = ov.suggestions || [];
   const tcName = (id) => (S.st?.toolchains || []).find((t) => t.id === id)?.name || id;
-  $("suggestPanel").hidden = !sg.length;
-  $("suggestList").innerHTML = sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
+  const bd = ov.boundaries || [];
+  $("suggestPanel").hidden = !sg.length && !bd.length;
+  $("suggestList").innerHTML = bd.map((r) => `<div class="note"><small>${esc(r.agent)} · ${clock(r.t)} · where a function ends</small>
+    <b class="mono">${esc(r.function)}</b> ends at <span class="mono">${hex8(r.end)}</span>: the ${r.cut} bytes after it aren't code. ${esc(r.reason)}
+    <p class="small muted mono">after ${hex8(r.end)}: ${esc(r.rest)}</p>
+    <div class="row"><button class="primary small-btn" type="button" data-bapply="${r.id}">Cut it there</button><button class="ghost small-btn" type="button" data-bdismiss="${r.id}">Dismiss</button></div></div>`).join("") + sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
     ${s.check ? `<p class="small ${s.check.includes("matches the game") ? "" : "muted"}">${s.check.includes("matches the game") ? "✓ " : ""}${esc(s.check)}</p>` : ""}
     <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}${(s.ranges || []).length ? ` for ${s.ranges.length} range${s.ranges.length > 1 ? "s" : ""}` : ""}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
 }
 $("suggestList").onclick = async (e) => {
+  const cut = e.target.closest("button[data-bapply], button[data-bdismiss]");
+  if (cut) {
+    const apply = cut.dataset.bapply != null;
+    try {
+      S.ov = await api("/api/boundary", { method: "POST", body: { slug: S.slug, id: Number(cut.dataset.bapply || cut.dataset.bdismiss), action: apply ? "apply" : "dismiss" } });
+      renderStats(S.ov);
+      toast(apply ? "Cut. The rest is set aside as not code." : "Dismissed.");
+    } catch (err) { toast(esc(err.message), "err"); }
+    return;
+  }
   const b = e.target.closest("button[data-apply], button[data-dismiss]");
   if (!b) return;
   const apply = b.dataset.apply != null;
@@ -2425,7 +2439,7 @@ async function renderProjectSettings() {
     $("setRanges").value = "";
     const hex = (n) => "0x" + n.toString(16).toUpperCase();
     $("rangeList").innerHTML = (ov.compiler_ranges || []).length ? `<p class="col-title">Built with another compiler</p>` + ov.compiler_ranges.map((r) =>
-      `<div class="row"><code class="grow">${hex(r.start)}-${hex(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex(r.end)}">Remove</button></div>`).join("") : "";
+      `<div class="row"><code class="grow">${hex(r.start)}-${hex8(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex8(r.end)}">Remove</button></div>`).join("") : "";
   }
   const facts = [["Platform", ov.platform_name], ["Game", ov.rom?.title || ov.title], [fork ? "Version" : "Game code", ov.rom?.game_code || ov.version],
     !fork && ov.rom?.region ? ["Region", ov.rom.region] : null, fork ? ["Layout", ov.origin === "scratch" ? (LAYOUT[ov.platform] || "decomp") + " (from scratch)" : ov.fork_kind] : ["Compiler", `${ov.compiler.name} ${ov.compiler.flags.join(" ")}`],

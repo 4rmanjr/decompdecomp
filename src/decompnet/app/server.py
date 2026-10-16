@@ -661,6 +661,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         net.resolve_suggestion(slug, int(data.get("id", 0)), data.get("action") == "apply")
         return net.overview(slug)
 
+    def p_boundary(slug, request, data):
+        net.resolve_boundary(slug, int(data.get("id", 0)), data.get("action") == "apply")
+        return net.overview(slug)
+
     def p_autopilot(slug, request, data):
         if data.get("action") == "stop":
             net.stop_autopilot(slug)
@@ -679,7 +683,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
         "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]), "/api/title": (p_title, ["POST"]),
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
-        "/api/suggestion": (p_suggestion, ["POST"]),
+        "/api/suggestion": (p_suggestion, ["POST"]), "/api/boundary": (p_boundary, ["POST"]),
         "/api/stats": (lambda s, r, d: net.stats(s), ["GET"]),
     }
     for path, (fn, methods) in routes.items():

@@ -342,3 +342,45 @@ def test_fit_keeps_the_task_and_the_latest_exchange():
     assert msgs[0]["content"] == "rules " * 100 and msgs[1]["content"] == "task " * 100
     assert msgs[-1]["content"] == "assembly 5 " * 400  # the latest result, whole
     assert "trimmed" in msgs[3]["content"]
+
+
+def test_an_agents_open_project_survives_a_restart(tmp_path):
+    """An agent you talk to opened GTA San Andreas; after the app restarted (an update), its calls went to the project
+    the GUI showed last, where none of its functions exist. The project it opened is saved and comes back."""
+    (tmp_path / ".decomp").mkdir()
+    (tmp_path / ".decomp" / "settings.json").write_text(json.dumps({"agent_projects": {"7": "sles-52541"},
+                                                                     "last_project": "king-king"}))
+    net = RomNetwork(tmp_path / ".decomp" / "decomp.db", tmp_path)
+    _, manager, _ = build(net, tmp_path / ".decomp", PORT, SECRET)
+    assert manager.project_of(7) == "sles-52541" and manager.project_of(8) is None
+
+
+def test_settings_saved_from_many_threads_stay_whole(tmp_path):
+    """Helpers' threads and the page save the settings at once while the app reads them: a file caught half-written
+    came back as empty settings, and with them the helpers to resume."""
+    import threading
+
+    from decompnet.app.server import Settings
+
+    st = Settings(tmp_path / "settings.json")
+    st.save()
+    broken = []
+
+    def write(n):
+        for k in range(150):
+            st.data["running_agents"] = [{"kind": "opencode", "slug": "king-king", "options": {}}] * ((n * k) % 60 + 1)
+            st.save()
+
+    def read():
+        for _ in range(600):
+            try:
+                json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+            except ValueError:
+                broken.append(1)
+
+    threads = [threading.Thread(target=write, args=(n,)) for n in range(1, 5)] + [threading.Thread(target=read)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not broken

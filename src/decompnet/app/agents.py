@@ -642,6 +642,8 @@ class Manager:
 
     def stop(self, sid: str | None = None) -> None:
         """Stop one helper (for good) or all of them (the app is quitting: they resume next time)."""
+        if sid is None:  # what resumes is what was working now, whatever was saved before (king.exe's lost its helpers)
+            self.persist(self.running())
         for s in list(self.sessions.values()):
             if sid in (None, s.id):
                 s.stop.set()

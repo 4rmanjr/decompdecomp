@@ -70,6 +70,7 @@ def register(mcp, net, manager, jobs, settings, port: int, secret: str) -> None:
 
     def opened(agent, slug: str) -> None:
         manager.assignments[agent.id] = slug
+        settings.data.setdefault("agent_projects", {})[str(agent.id)] = slug  # kept across restarts (see server.build)
         settings.data["last_project"] = slug
         settings.save()
 

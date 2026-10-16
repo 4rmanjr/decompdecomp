@@ -134,12 +134,20 @@ class Settings:
             old = self.data.get("api") if isinstance(self.data.get("api"), dict) else {}
             self.data["endpoints"] = [agents.endpoint_entry(old | {"id": "e1"})] if old.get("base_url") or old.get("provider") else []
 
+    _lock = threading.Lock()
+
     def save(self) -> None:
-        self.path.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:
-            pass
+        """Whole or not at all: helpers' threads and the page save at once, and a file two writes had garbled was read
+        back as empty settings (endpoints, budget, the helpers to resume)."""
+        with self._lock:
+            text = json.dumps(self.data, indent=2)
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp, self.path)
 
     # -- API endpoints: OpenAI-compatible servers for the built-in agent, each with its own address, model and key
 
@@ -265,6 +273,10 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     settings = Settings(home / "settings.json")
     net.auto_compiler = bool(settings.data.get("auto_compiler"))
     manager.budget = lambda: float(settings.data.get("budget_usd") or 0)
+    # the project each agent you talk to opened stays theirs after a restart: they used to fall back to the project the
+    # GUI showed last (opencode sessions on GTA San Andreas found its functions missing from another game)
+    for agent_id, slug in (settings.data.get("agent_projects") or {}).items():
+        manager.assignments.setdefault(int(agent_id), slug)
 
     def remember(running: list[dict]) -> None:
         settings.data["running_agents"] = running
@@ -605,6 +617,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         name = f"manual-{secrets.token_hex(2)}"
         agent, token = net.local_agent(name)
         manager.assignments[agent.id] = slug
+        settings.data.setdefault("agent_projects", {})[str(agent.id)] = slug
+        settings.save()
         return {"agent": name, "url": mcp_url, "token": token,
                 "claude": f'claude mcp add --transport http decomp {mcp_url} --header "Authorization: Bearer {token}"',
                 "json": json.dumps({"mcpServers": {"decomp": {"type": "http", "url": mcp_url,

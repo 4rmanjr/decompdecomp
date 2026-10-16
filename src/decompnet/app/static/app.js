@@ -76,6 +76,7 @@ $("themeBtn").onclick = () => setTheme(getComputedStyle(document.documentElement
 
 /* ------------------------------------------------------------------ state + routing */
 const S = {
+  mapView: "progress",  // the ROM map's colours: progress, or the compiler map
   st: null, slug: null, ov: null, map: [], byName: new Map(), e: 0, a: 0, seq: {}, sessions: [], tab: "overview",
   scores: new Map(), claims: [], flash: new Map(), timer: null, statsTimer: null, lastMapFetch: 0, fn: null, stats: null,
   projects: [],
@@ -605,6 +606,7 @@ async function refreshMap(force = true) {
   S.byName = new Map(S.map.map((f, i) => [f.name, i]));
   S.map.forEach((f, i) => { f.i = i; });
   baseDirty = true;
+  renderMapView();
   $("fnTabCount").textContent = S.map.length.toLocaleString();
   if (S.tab === "overview") layoutMap(); else applyClaims(false);
   renderList();
@@ -640,7 +642,7 @@ async function poll(first) {
     let mapDirty = false;
     for (const ev of live.events) {
       S.e = Math.max(S.e, ev.id);
-      if (["match", "split", "rename"].includes(ev.kind)) mapDirty = true;
+      if (["match", "split", "rename", "compiler"].includes(ev.kind)) mapDirty = true;
       if (ev.kind === "match" && !first) {
         S.flash.set(ev.detail, performance.now());
         if (ev.agent !== AUTO && ev.agent !== "@" + AUTO) toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");
@@ -1273,8 +1275,59 @@ function cssColor(name) {
   return [...swatch.getImageData(0, 0, 1, 1).data.slice(0, 3)];
 }
 function readColors() {
-  colors = { open: cssColor("--open"), tried: cssColor("--tried"), work: cssColor("--hl"), match: cssColor("--match"), hi: cssColor("--match-hi"), ink: cssColor("--ink") };
+  colors = { open: cssColor("--open"), tried: cssColor("--tried"), work: cssColor("--hl"), match: cssColor("--match"), hi: cssColor("--match-hi"), ink: cssColor("--ink"),
+             cc: CC_COLORS.map(cssColor) };
 }
+
+/* The compiler map (MIPS ROM projects): each square in the colour of the compiler its code looks like, the game's
+   main compiler in grey; a ringed square looks built by another compiler than the one it's built with today. */
+const CC_COLORS = ["--tried", "--color-status-info-fill", "--hl", "--color-status-danger-fill", "--color-status-success-fill", "--color-status-warning-fill"];
+let ccIndex = new Map();
+const PROGRESS_LEGEND = $("mapLegend").innerHTML;
+function compilerKinds() {
+  const n = new Map();
+  for (const f of S.map) if (f.cc) n.set(f.cc, (n.get(f.cc) || 0) + 1);
+  const kinds = [...n.entries()].sort((a, b) => b[1] - a[1]);
+  ccIndex = new Map(kinds.map(([k], i) => [k, Math.min(i, CC_COLORS.length - 1)]));
+  return kinds;
+}
+function renderMapView() {
+  const has = S.map.some((f) => f.cc);
+  $("mapView").hidden = !has;
+  if (!has) S.mapView = "progress";
+  $("mapView").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.view === S.mapView));
+  const note = $("compilerNote");
+  if (S.mapView !== "compiler") { $("mapLegend").innerHTML = PROGRESS_LEGEND; note.hidden = true; return; }
+  const kinds = compilerKinds();
+  $("mapLegend").innerHTML = kinds.map(([k, n]) => `<span><i class="sw" style="background:var(${CC_COLORS[ccIndex.get(k)]})"></i>${esc(k)} (${n.toLocaleString()})</span>`).join("");
+  const odd = S.map.filter((f) => f.ccx).length;
+  const sv = S.survey || {}, run = sv.survey && sv.survey.state === "running";
+  note.innerHTML = `${odd ? `${odd.toLocaleString()} ringed functions look built by another compiler than today's.` : "The code agrees with the compilers the game builds it with today."} `
+    + (run ? `The judge's survey is running: ${sv.survey.tried} tried, ${sv.survey.confirmed} confirmed.`
+       : `${sv.tried ? `The judge's survey: ${sv.confirmed} confirmed in ${sv.tried} functions tried.` : "The judge's survey builds agents' C with each compiler the project uses: what matches becomes a suggestion."}`
+          + ` <button class="btn btn-small" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`);
+  note.hidden = false;
+  const btn = $("surveyBtn");
+  if (btn) btn.onclick = async () => {
+    try { S.survey = await api("/api/compilermap", { method: "POST", body: { slug: S.slug } }); } catch (e) { toast(esc(e.message), "err"); return; }
+    renderMapView(); watchSurvey();
+  };
+}
+async function watchSurvey() {
+  const slug = S.slug;
+  try { S.survey = await api(`/api/compilermap?slug=${slug}`); } catch { return; }
+  if (slug !== S.slug) return;
+  if (S.mapView === "compiler") renderMapView();
+  if (S.survey.survey && S.survey.survey.state === "running") setTimeout(watchSurvey, 4000);
+  else if (S.survey.survey && S.survey.survey.state === "done") refreshMap(true);
+}
+$("mapView").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-view]");
+  if (!b) return;
+  S.mapView = b.dataset.view;
+  renderMapView(); mapChanged(); drawMap();
+  if (S.mapView === "compiler") watchSurvey();
+});
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
@@ -1320,6 +1373,7 @@ function applyAttempts(attempts) {
 }
 
 function cellColor(f) {
+  if (S.mapView === "compiler" && f.cc) return [colors.cc[ccIndex.get(f.cc) ?? 0], 1];
   if (f.status === "matched") return [colors.match, 1];
   if (f.status === "asm") return [colors.tried, 0.35];
   if (f.best != null) return [mix(colors.tried, colors.hi, Math.pow(pctOf(f.best, f.insns) || 0, 3)), 1];
@@ -1340,6 +1394,10 @@ function drawBase() {
     const [c, a] = cellColor(f);
     ctx.fillStyle = rgb(c, a);
     ctx.beginPath(); ctx.roundRect(x, y, size, size, r); ctx.fill();
+    if (S.mapView === "compiler" && f.ccx) {
+      ctx.strokeStyle = rgb(colors.ink, 1); ctx.lineWidth = size >= 10 ? 1.5 : 1;
+      ctx.beginPath(); ctx.roundRect(x + 0.75, y + 0.75, size - 1.5, size - 1.5, r); ctx.stroke();
+    }
   });
   baseDirty = false;
 }
@@ -1396,7 +1454,8 @@ $("map").addEventListener("mousemove", (ev) => {
   const p = pctOf(f.best, f.insns);
   const status = f.status === "matched" ? `matched${f.matched_by ? " by " + esc(f.matched_by) : ""}` : f.status === "working" ? `${esc(f.agent)} is on it` : f.best != null ? `best ${pctText(p)}` : "not started";
   const where = S.ov && S.ov.kind === "fork" ? esc(f.unit || "") : hex8(f.vram);
-  tip.innerHTML = `<b>${esc(f.name)}</b><br>${where} · ${f.insns} instructions<br>${status}`;
+  const cc = f.cc ? `<br>looks built by ${esc(f.cc)}${f.ccx ? ", not its compiler today" : ""}` : "";
+  tip.innerHTML = `<b>${esc(f.name)}</b><br>${where} · ${f.insns} instructions<br>${status}${cc}`;
   tip.hidden = false;
   const wrap = $("mapWrap").getBoundingClientRect();
   let left = ev.clientX - wrap.left + 14, top = ev.clientY - wrap.top + 14;

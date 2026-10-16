@@ -520,7 +520,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             return {"slug": slug}
         return JSONResponse({"job": jobs.start("import", work)})
 
-    MAP_KEYS = ("name", "vram", "size", "insns", "unit", "status", "best", "attempts", "agent", "matched_at", "matched_by")
+    MAP_KEYS = ("name", "vram", "size", "insns", "unit", "status", "best", "attempts", "agent", "matched_at", "matched_by",
+                "cc", "ccx")
 
     @mcp.custom_route("/api/map", methods=["GET"])
     async def api_map(request: Request) -> Response:
@@ -614,6 +615,14 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             return {k: v for k, v in res.items() if k != "log"} | {"log": res.get("log", "")[-1500:]}
         return {"job": jobs.start("export", work)}
 
+    def p_compilermap(slug, request, data):
+        """The judge's compiler survey: start it (POST), or how it goes (GET)."""
+        if request.method == "POST":
+            net.start_survey(slug)
+        last = net.cfg(net._project(slug)).get("compiler_survey") or {}
+        return {"survey": net.surveys.get(slug), "confirmed": len(last.get("confirmed", {})),
+                "tried": len(last.get("tried", {})), "t": last.get("t")}
+
     def p_open(slug, request, data):
         why = hostenv.open_folder(Path(net.project_row(slug)["root"]))
         return {"ok": why is None, "message": why}
@@ -701,6 +710,7 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]),
         "/api/suggestion": (p_suggestion, ["POST"]), "/api/boundary": (p_boundary, ["POST"]),
         "/api/stats": (lambda s, r, d: net.stats(s), ["GET"]),
+        "/api/compilermap": (p_compilermap, ["GET", "POST"]),
     }
     for path, (fn, methods) in routes.items():
         mcp.custom_route(path, methods=methods)(with_project(fn))

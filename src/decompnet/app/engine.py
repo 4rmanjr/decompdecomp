@@ -23,8 +23,9 @@ import threading
 import time
 from pathlib import Path
 
-from .. import classes, scoring, seeds, similarity, toolchains
+from .. import classes, compilermap, scoring, seeds, similarity, toolchains
 from ..elfobj import FunctionObj
+from ..project import compiler_for
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
 from ..rom.symbols import IDENT, Symbol, SymbolTable
@@ -174,6 +175,8 @@ class RomNetwork(Network):
         self._ops: dict[int, dict] = {}  # project id -> look-alike index
         self._diffs: dict[tuple, dict] = {}  # (function, source, context, compiler) -> diff for the GUI
         self.autopilots: dict[str, dict] = {}  # slug -> progress of trying every function's machine draft
+        self._cmaps: dict[int, tuple] = {}  # project id -> (what it was built from, compiler map)
+        self.surveys: dict[str, dict] = {}  # slug -> the judge's compiler survey, running or last
         from .forkengine import ForkEngine  # forks build on this class's claims, attempts and live view
         from .permute import Permuter
         from .twins import Twins
@@ -753,6 +756,205 @@ class RomNetwork(Network):
                          f"+0x{cls.vptr:X}" + (f"; this function uses {', '.join(used[:16])}" if used else ""))
         return lines
 
+    # ------------------------------------------------------------------ the compiler map (compilermap.py)
+
+    SURVEY_MIN_INSNS = 12  # a shorter function comes out the same from several compilers: it proves nothing
+
+    def compiler_map(self, proj) -> compilermap.CompilerMap | None:
+        """Which compiler built each part of a MIPS game: matches, the judge's confirmations and the habits that rule
+        compilers out. Rebuilt when a match, a range or a confirmation changes it. None: not MIPS code."""
+        if not self.is_rom(proj) or self.cfg(proj).get("platform") == "gba" or (proj["arch"] or "mips") != "mips":
+            return None
+        cfg = self.cfg(proj)
+        done = self.store.one("SELECT COUNT(*) AS n, COALESCE(SUM(status='matched'), 0) AS m, COALESCE(MAX(matched_at), 0) "
+                              "AS t FROM functions WHERE project_id=?", proj["id"])
+        confirmed = (cfg.get("compiler_survey") or {}).get("confirmed", {})
+        key = (tuple(done), json.dumps([cfg.get("compiler"), cfg.get("compiler_ranges")], sort_keys=True), len(confirmed))
+        cached = self._cmaps.get(proj["id"])
+        if cached and cached[0] == key:
+            return cached[1]
+
+        def label(c: dict) -> compilermap.Label:
+            return c["toolchain"], tuple(c["flags"])
+        rows = self.store.all("SELECT vram, size, target, status FROM functions WHERE project_id=? AND target IS NOT NULL",
+                              proj["id"])
+        built = compilermap.build(
+            [(r["vram"], r["size"], r["target"], label(compiler_for(cfg, r["vram"])), r["status"] == "matched",
+              (lambda c: (c[0], tuple(c[1])) if c else None)(confirmed.get(str(r["vram"])))) for r in rows],
+            bool(cfg.get("big_endian", True)))
+        self._cmaps[proj["id"]] = (key, built)
+        return built
+
+    def _short(self, lab: compilermap.Label) -> str:
+        return f"{SHORT_NAMES.get(lab[0], lab[0])} {' '.join(lab[1])}".strip()
+
+    def compiler_map_text(self, slug: str, survey: bool = False) -> str:
+        """The map for agents: where it differs from the compiler the game builds with today, and why."""
+        self._rom_only(slug, "compiler_map")
+        proj = self._project(slug)
+        cmap = self.compiler_map(proj)
+        if cmap is None:
+            raise NetworkError("the compiler map reads MIPS code (PlayStation 2, PlayStation, N64) for now")
+        started = ""
+        if survey:
+            started = self.start_survey(slug)["state"] + ". "
+        cfg = self.cfg(proj)
+        syms = self.symbols(proj["id"])
+        lines = [f"{started}The game builds with {self._short((cfg['compiler']['toolchain'], tuple(cfg['compiler']['flags'])))}"
+                 f" and {len(cfg.get('compiler_ranges', []))} address ranges with others.",
+                 "Evidence, matched or confirmed by the judge, per compiler: "
+                 + ", ".join(f"{t} {s}".strip() + f": {n}" for (t, s), n in cmap.examples.most_common())]
+        if cmap.never:
+            lines.append("Habits that rule a compiler out (its matched code never shows them): "
+                         + "; ".join(f"{t} {s}".strip() + ": " + ", ".join(h) for (t, s), h in cmap.never.items()))
+        differ = [r for r in cmap.runs if r.differs()]
+        if differ:
+            lines.append("Where the code looks built by another compiler than today's (runs of neighbouring functions):")
+            for r in differ[:30]:
+                today = self._short(r.assigned.most_common(1)[0][0])
+                lines.append(f"- 0x{r.start:08X}-0x{r.end:08X}: {self._short(r.label)}, {r.functions} functions "
+                             f"({r.confirmed} confirmed by the judge, {r.matched} matched); today {today}")
+        else:
+            lines.append("The code agrees with the compilers the game builds it with today.")
+        if cmap.contradicted:
+            names = ", ".join(syms.label(a) for a in sorted(cmap.contradicted)[:12])
+            lines.append(f"{len(cmap.contradicted)} functions show a habit their compiler never does: {names}"
+                         + (", ..." if len(cmap.contradicted) > 12 else "") + ". try_compiler them with another one.")
+        state = self.surveys.get(slug) or {}
+        last = (cfg.get("compiler_survey") or {})
+        lines.append(f"The judge's survey (agents' C built with each compiler the project uses): "
+                     + (f"running, {state.get('tried', 0)} tried, {state.get('confirmed', 0)} confirmed" if state.get("state") == "running"
+                        else f"{len(last.get('confirmed', {}))} confirmed in {len(last.get('tried', {}))} functions tried"
+                        if last else "not run yet")
+                     + ". compiler_map(survey=true) runs it in the background; runs with confirmations become suggestions, "
+                       "checked against every matched function before they apply.")
+        return "\n".join(lines)
+
+    def start_survey(self, slug: str, limit: int = 400) -> dict:
+        """The survey in the background (one per project)."""
+        state = self.surveys.get(slug)
+        if state and state["state"] == "running":
+            return state
+        state = self.surveys[slug] = {"state": "running", "tried": 0, "confirmed": 0, "suggested": [], "error": None,
+                                      "t": time.time()}
+
+        def run():
+            try:
+                state.update(self.survey_compilers(slug, limit=limit, state=state))
+                state["state"] = "done"
+            except Exception as e:  # noqa: BLE001: a background job says why it stopped
+                logging.getLogger("decompdecomp").exception("compiler survey failed")
+                state.update(state="error", error=str(e))
+        threading.Thread(target=run, daemon=True, name=f"survey-{slug}").start()
+        return state
+
+    def survey_compilers(self, slug: str, log=lambda line: None, limit: int = 400, state: dict | None = None) -> dict:
+        """The judge's part of the compiler map. Agents' C for functions that don't match yet, built with each other
+        compiler the project uses: C that matches the game with another compiler (and not with today's) confirms that
+        compiler for its function. Contradicted functions first, then the closest attempts; C already tried is
+        skipped. Then each run of the map with confirmations becomes a suggestion, checked like an agent's."""
+        self._rom_only(slug, "the compiler survey")
+        proj = self._project(slug)
+        if self.compiler_map(proj) is None:
+            raise NetworkError("the compiler map reads MIPS code (PlayStation 2, PlayStation, N64) for now")
+        cmap = self.compiler_map(proj)
+        cfg = self.cfg(proj)
+        candidates = sorted({(cfg["compiler"]["toolchain"], tuple(cfg["compiler"]["flags"]))}
+                            | {(r["toolchain"], tuple(r["flags"])) for r in cfg.get("compiler_ranges", [])})
+        old = cfg.get("compiler_survey") or {}
+        tried, confirmed = dict(old.get("tried", {})), dict(old.get("confirmed", {}))
+        rows = self.store.all("SELECT * FROM functions WHERE project_id=? AND status NOT IN ('matched', 'asm') AND n_insns>=?",
+                              proj["id"], self.SURVEY_MIN_INSNS)
+        rows.sort(key=lambda f: (f["vram"] not in cmap.contradicted, f["best_score"] if f["best_score"] is not None else 1 << 30))
+        state = state if state is not None else {}
+        n = found = 0
+        for fn in rows:
+            if n >= limit:
+                break
+            source = self._source_of(fn)
+            if not source:
+                continue
+            digest = hashlib.sha1(source.encode()).hexdigest()[:16]
+            if tried.get(str(fn["vram"])) == digest:
+                continue
+            n += 1
+            own = compiler_for(cfg, fn["vram"])
+            today = (own["toolchain"], tuple(own["flags"]))
+            for tc, flags in candidates:
+                if (tc, flags) == today or not self._judge_with(proj, fn, tc, list(flags), source)[0]:
+                    continue
+                if self._judge_with(proj, fn, today[0], list(today[1]), source)[0]:
+                    break  # it matches with today's compiler too: no evidence (and an agent's next compile matches it)
+                confirmed[str(fn["vram"])] = [tc, list(flags)]
+                found += 1
+                log(f"{fn['name']}: its C matches the game with {self._short((tc, flags))}, not with {self._short(today)}")
+                break
+            tried[str(fn["vram"])] = digest
+            state.update(tried=n, confirmed=found)
+            if n % 25 == 0:
+                log(f"{n} functions tried, {found} confirmed")
+        self._update_cfg(slug, lambda c: c.__setitem__("compiler_survey", {"tried": tried, "confirmed": confirmed,
+                                                                           "t": time.time()}))
+        suggested = self._suggest_from_map(proj, confirmed)
+        for line in suggested:
+            log(line)
+        if found:
+            with self.store.tx() as db:
+                self._event(db, proj["id"], None, "compiler",
+                            f"the compiler survey: {found} function(s) match with another compiler than today's")
+        return {"tried": n, "confirmed": found, "suggested": suggested}
+
+    def _suggest_from_map(self, proj, confirmed: dict) -> list[str]:
+        """Each run of the map that the judge says another compiler built, as a suggestion from the autopilot (applied
+        by itself only where the user lets proven compiler changes apply; checked against matched functions)."""
+        proj = self._project(proj["slug"])  # its settings as the survey left them
+        cmap = self.compiler_map(proj)
+        agent, _ = self.local_agent("autopilot")
+        out = []
+        for run in cmap.proposals(self.RANGE_PROOF_BYTES, self.RANGE_PROOF_FUNCTIONS):
+            proof = next((int(a) for a, lab in sorted(confirmed.items())
+                          if run.start <= int(a) < run.end and compilermap.kind((lab[0], tuple(lab[1]))) == compilermap.kind(run.label)), None)
+            if proof is None:
+                continue
+            fn = self.store.one("SELECT * FROM functions WHERE project_id=? AND vram=?", proj["id"], proof)
+            source = self._source_of(fn) if fn else None
+            if not source:
+                continue
+            tc, flags = confirmed[str(proof)][0], tuple(confirmed[str(proof)][1])
+            text = (f"The compiler map: {run.functions} functions at 0x{run.start:X}-0x{run.end:X} look built by "
+                    f"{self._short((tc, flags))}; {run.confirmed} of them match the game with it and not with today's "
+                    f"compiler ({fn['name']}'s C is the check).")
+            try:
+                said = self.suggest(agent, proj["slug"], text, compiler=tc, flags=" ".join(flags), function=fn["name"],
+                                    ranges=f"0x{run.start:X}-0x{run.end:X}", source=source)
+            except NetworkError as e:
+                said = f"not suggested: {e}"
+            out.append(f"0x{run.start:X}-0x{run.end:X} {self._short((tc, flags))}: {said}")
+        return out
+
+    def _compiler_brief(self, fn, proj) -> list[str]:
+        """What get_function says when the map disagrees with the compiler a function is built with."""
+        try:
+            cmap = self.compiler_map(proj)
+        except Exception:  # never stands between an agent and the function
+            logging.getLogger("decompdecomp").exception("the compiler map failed")
+            return []
+        if cmap is None or fn["status"] == "matched":
+            return []
+        own = compiler_for(self.cfg(proj), fn["vram"])
+        today = (own["toolchain"], tuple(own["flags"]))
+        looks = cmap.of.get(fn["vram"])
+        lines = []
+        if looks and compilermap.kind(looks) != compilermap.kind(today):
+            lines.append(f"The compiler map says this part of the game looks built by {self._short(looks)}, not "
+                         f"{self._short(today)}: if it won't match, try_compiler(\"{fn['name']}\", \"{looks[0]}\", "
+                         f"\"{' '.join(looks[1])}\").")
+        if fn["vram"] in cmap.contradicted:
+            habits = ", ".join(cmap.never.get(compilermap.kind(today), []))
+            lines.append(f"Its code shows a habit {self._short(today)} never has here ({habits}): it was probably "
+                         f"built by another compiler. compiler_map() shows which compilers this game uses.")
+        return ["", "### Compiler"] + lines if lines else []
+
     def _extra_brief(self, fn, proj) -> list[str]:
         if not self.is_rom(proj):
             return []
@@ -777,7 +979,7 @@ class RomNetwork(Network):
                 if r and r["preview"]:
                     desc += f": {r['preview']}"
                 lines.append(f"- {syms.label(a)} (0x{a:08X}; {desc})")
-        lines += self._class_brief(fn, proj)
+        lines += self._class_brief(fn, proj) + self._compiler_brief(fn, proj)
         twin = self._twin_lines(proj, fn) if fn["status"] != "matched" else []
         lines += twin
         alike = [] if twin else [(r, sim) for r, sim in self.similar(proj, fn, top=3) if r["status"] == "matched"]
@@ -1560,10 +1762,32 @@ class RomNetwork(Network):
         # who works on what in the room: by address, or by name in a git project (its functions have no addresses)
         key = (lambda r: r["name"]) if link is not None and link.fork else (lambda r: r["vram"])
         remote = {key(c): "@" + c["agent"] for c in (link.claims if link is not None else [])}
+        looks = self._map_columns(proj)
         return [{"name": r["name"], "vram": r["vram"], "size": r["size"], "insns": r["n_insns"], "unit": r["unit"],
                  "status": r["status"] if r["status"] in ("matched", "asm") else "working" if (r["agent"] or key(r) in remote) else "open",
                  "best": r["best_score"], "attempts": r["attempts"], "agent": r["agent"] or remote.get(key(r)),
-                 "matched_at": r["matched_at"], "matched_by": r["matched_by"]} for r in rows]
+                 "matched_at": r["matched_at"], "matched_by": r["matched_by"]}
+                | looks.get(r["vram"], {}) for r in rows]
+
+    def _map_columns(self, proj) -> dict[int, dict]:
+        """The compiler map's view of each function for the ROM map: the compiler its code looks like (cc), and
+        whether that isn't the one it's built with today, or a habit rules today's out (ccx)."""
+        try:
+            cmap = self.compiler_map(proj)
+        except Exception:  # the map never stands between the user and the ROM map
+            logging.getLogger("decompdecomp").exception("the compiler map failed")
+            return {}
+        if cmap is None:
+            return {}
+        cfg = self.cfg(proj)
+        out = {}
+        for addr, looks in cmap.of.items():
+            own = compiler_for(cfg, addr)
+            tc, small = compilermap.kind(looks)
+            out[addr] = {"cc": f"{SHORT_NAMES.get(tc, tc)} {small}".strip(),
+                         "ccx": compilermap.kind(looks) != compilermap.kind((own["toolchain"], tuple(own["flags"])))
+                         or addr in cmap.contradicted}
+        return out
 
     def map_signature(self, slug: str) -> str:
         """What the function map shows, summed up: it changes when a function is added, matched, tried or claimed.

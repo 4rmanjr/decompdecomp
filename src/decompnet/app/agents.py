@@ -1093,6 +1093,7 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
     s = lambda **props: {"type": "object", "properties": props, "required": [k for k, v in props.items() if v.pop("req", False)]}
     st = lambda desc, req=False: {"type": "string", "description": desc, "req": req}
     it = lambda desc: {"type": "integer", "description": desc}
+    bo = lambda desc: {"type": "boolean", "description": desc}
     defs = {
         "project_info": ("Which game, compiler and progress.", s()),
         "claim_function": ("Claim the next function (or one by name/address). Returns assembly, data, best attempt, "
@@ -1118,6 +1119,8 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
         "get_class": ("C++ class layout found in the game's code: fields by offset and virtual functions by slot. "
                       "Give a vtable address or one of its functions; empty lists the classes.",
                       s(what=st("vtable address, or a virtual function / constructor"))),
+        "compiler_map": ("Which compiler built each part of the game, where it differs from today's. survey=true starts "
+                         "the judge's survey of other compilers in the background.", s(survey=bo("start the survey"))),
         "list_functions": ("List functions by status.", s(status=st("open | matched | all"), limit=it("max rows"))),
         "add_note": ("Leave a note for other agents.", s(text=st("note", True), function=st("function"))),
         "suggest": ("Suggest a setup change for the user (another compiler or flags), with evidence.",

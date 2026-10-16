@@ -21,7 +21,10 @@ flags) tests one without recording anything (try several), then suggest(compiler
 the one that matches: it's checked again, and refused if it doesn't match. Games can mix compilers (GTA San Andreas: EE-GCC
 2.95.3, and CodeWarrior 3.0.1 -O3 for some ranges: CodeWarrior's frame keeps $ra at 0($sp) with locals above it,
 GCC's at the top; at -O3 CodeWarrior fills delay slots too). Then pass ranges="0x...-0x..." to suggest it for those
-address ranges only; the brief says when a function is in such a range.
+address ranges only; the brief says when a function is in such a range. compiler_map() shows where the code looks
+built by another compiler than today's, and the brief says so for the function you hold; compiler_map(survey=true)
+has the judge build agents' unmatched C with each compiler the project uses (in the background), and turns what it
+confirms into suggestions. A one-function range proves nothing: neighbouring functions decide.
 - CodeWarrior: small data is `-sdatathreshold 8`, not `-G8`; it gives each function its own section and
   loves `lui`/`addiu` pairs over `$gp` when the threshold is 0.
 - EE-GCC 3.2 loads a switch's jump table with `addiu %lo(jtbl)` then `lw 0(reg)`; 2.9x/2.96 use

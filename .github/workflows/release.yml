@@ -1,10 +1,16 @@
 # A tag v* (e.g. v1.0.0-alpha) builds decompdecomp as a Linux app (.deb and AppImage) and attaches both to the tag's
-# GitHub release, creating the release when there isn't one yet (a pre-release when the version has a "-").
+# GitHub release, creating the release when there isn't one yet (a pre-release when the version has a "-"). It can
+# also be run by hand for a tag that's already pushed: gh workflow run release -f tag=v1.0.0-alpha
 name: release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: the tag to build and release (v1.2.3)
+        required: true
 
 permissions:
   contents: write
@@ -12,20 +18,24 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: astral-sh/setup-uv@v6
       - name: the version in the tag is the version in the code
-        run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)" = "$GITHUB_REF_NAME"
+        run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)" = "$TAG"
       - name: build the .deb and the AppImage
         run: packaging/linux/build.sh
       - name: attach them to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.AppImage --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.deb dist/*.AppImage --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.AppImage --generate-notes \
-              $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
+            gh release create "$TAG" dist/*.deb dist/*.AppImage --generate-notes \
+              $([[ "$TAG" == *-* ]] && echo --prerelease)
           fi

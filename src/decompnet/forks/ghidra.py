@@ -29,38 +29,49 @@ def _headless() -> Path:
     return base / ("analyzeHeadless.bat" if os.name == "nt" else "analyzeHeadless")
 
 
+def _run_script(binary: Path, script: str, timeout: float, *, analyse: bool = True) -> list[dict]:
+    """Import `binary` into a throwaway Ghidra project, run one of our post-scripts on it and return the JSON objects
+    it wrote, one per line ([] when Ghidra failed or took longer than `timeout`)."""
+    with tempfile.TemporaryDirectory(prefix="decompwtf-ghidra-") as tmp:
+        scripts = Path(tmp) / "scripts"
+        scripts.mkdir()
+        src = resources.files("decompnet.forks").joinpath("ghidra_scripts", script)
+        (scripts / script).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        out = Path(tmp) / "out.jsonl"
+        target = Path(tmp) / binary.name
+        shutil.copyfile(binary, target)
+        argv = [str(_headless()), tmp, "decompwtf", "-import", str(target), "-scriptPath", str(scripts),
+                "-postScript", script, str(out), "-deleteProject", *([] if analyse else ["-noanalysis"])]
+        try:
+            subprocess.run(capped(argv), capture_output=True, text=True, timeout=timeout,
+                           encoding="utf-8", errors="replace")
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        rows = []
+        if out.exists():
+            for line in out.read_text(encoding="utf-8").splitlines():
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+        return rows
+
+
 def decompile_object(obj: Path, cache_dir: Path, timeout: float = 900) -> dict[str, str]:
     """name -> decompiled C for every function in an object file (cached by the object's content)."""
-    data = obj.read_bytes()
-    key = hashlib.sha1(data).hexdigest()[:16]
+    key = hashlib.sha1(obj.read_bytes()).hexdigest()[:16]
     cache = cache_dir / f"{obj.stem}-{key}.json"
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
     if not available():
         return {}
-    with tempfile.TemporaryDirectory(prefix="decompwtf-ghidra-") as tmp:
-        scripts = Path(tmp) / "scripts"
-        scripts.mkdir()
-        src = resources.files("decompnet.forks").joinpath("ghidra_scripts", "DecompWtfExport.java")
-        (scripts / "DecompWtfExport.java").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        out = Path(tmp) / "out.jsonl"
-        target = Path(tmp) / obj.name
-        shutil.copyfile(obj, target)
-        argv = [str(_headless()), tmp, "decompwtf", "-import", str(target), "-scriptPath", str(scripts),
-                "-postScript", "DecompWtfExport.java", str(out), "-deleteProject"]
-        try:
-            subprocess.run(capped(argv), capture_output=True, text=True, timeout=timeout,
-                           encoding="utf-8", errors="replace")
-        except (OSError, subprocess.TimeoutExpired):
-            return {}
-        result = {}
-        if out.exists():
-            for line in out.read_text(encoding="utf-8").splitlines():
-                try:
-                    row = json.loads(line)
-                except ValueError:
-                    continue
-                result[row["name"]] = row["c"]
+    result = {row["name"]: row["c"] for row in _run_script(obj, "DecompWtfExport.java", timeout)}
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(result), encoding="utf-8")
     return result
+
+
+def functions(program: Path, timeout: float = 3600) -> list[dict]:
+    """Every function Ghidra's analysis finds in a whole program (a Windows .exe: Ghidra reads its imports, exports and
+    the C runtime's functions too): {"entry", "end", "name", "source", "purge", "convention", "params", "thunk"}."""
+    return _run_script(program, "DecompWtfFunctions.java", timeout)

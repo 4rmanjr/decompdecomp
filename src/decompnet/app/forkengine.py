@@ -25,7 +25,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .. import similarity, toolchains
-from ..forks import catalog, csource, datadiff, drafts, dtksplits, ghidra, scratch_dsd, scratch_dtk
+from ..forks import catalog, csource, datadiff, drafts, dtksplits, ghidra, scratch_dsd, scratch_dtk, scratch_pe
 from ..forks.objdiff import ObjdiffError
 from ..forks.project import EDITABLE, STATE, ForkError, ForkProject
 from ..network import Agent, Network, NetworkError
@@ -147,6 +147,7 @@ def _matched_in(rep: dict, broken: set[str] = frozenset()) -> set[tuple[str, str
 _INCLUDE_LINE = re.compile(r'^#\s*include\s*"[^"]+"\s*$')
 _ASM_KEYS = ("asm_twin", "asm_code")  # meta saying a function is hand-written assembly (kept by sync)
 _ASM_DEF = re.compile(r"\s*(?:(?:static|inline|extern)\s+)*asm\b")
+_MSVC_C = re.compile(r"[_@]([A-Za-z_]\w*?)(?:@\d+)?")  # how MSVC decorates a C function's name (PC, Xbox)
 # a source file that includes another source file: Mario Party 6's REL runtime.c files are one line,
 # #include "src/Runtime.PPCEABI.H/runtime.c" (its asm helpers, which every module links a copy of)
 _SOURCE_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+\.(?:c|cc|cp|cpp))"', re.M)
@@ -452,13 +453,13 @@ class ForkEngine:
             self.net._event(db, pid, None, "fork", event)
 
     def create_scratch(self, game: Path, *, compiler: str | None = None, log=print) -> str:
-        """A GameCube, Wii or DS game, from scratch: generate the community's project layout for it (dtk-template,
-        ds-decomp) and open it like a fork."""
+        """A GameCube, Wii, DS or PC game, from scratch: generate the community's project layout for it (dtk-template,
+        ds-decomp; for PC, decomp.wtf's own from Ghidra's analysis) and open it like a fork."""
         with open(game, "rb") as f:
-            ds = scratch_dsd.is_nds(f.read(0x200))
-        maker = scratch_dsd if ds else scratch_dtk
+            head = f.read(0x1000)
+        maker = scratch_dsd if scratch_dsd.is_nds(head) else scratch_pe if scratch_pe.is_pe(head) else scratch_dtk
         info = maker.game_info(game)
-        sha1 = info["sha1"] if ds else hashlib.sha1(info["dol"]).hexdigest()
+        sha1 = info["sha1"] if maker is not scratch_dtk else hashlib.sha1(info["dol"]).hexdigest()
         for p in self.net.store.all("SELECT slug, config FROM projects"):
             if json.loads(p["config"]).get("program_sha1") == sha1:
                 log(f"already set up as {p['slug']}")
@@ -1494,6 +1495,8 @@ class ForkEngine:
             if len(parts) > 1:
                 out.append(parts[-1])
         out.append(meta.get("symbol") or fn["name"].split("@")[0])
+        if (c := _MSVC_C.fullmatch(meta.get("symbol") or "")):  # _f, _f@8 (__stdcall), @f@8 (__fastcall): f in C
+            out.append(c.group(1))
         return list(dict.fromkeys(out))
 
     def _find(self, text: str, names: list[str]):
@@ -2060,6 +2063,8 @@ class ForkEngine:
 
         proj, fp, _ = self.get(slug)
         name = what.strip().strip("`'\"")
+        if (fp.manifest or {}).get("platform") == "win32":  # the program's data isn't in the target objects
+            return scratch_pe.read_data(fp.root, fp.manifest, name, length)
         held = agent and self.net.store.one("SELECT f.unit FROM claims c JOIN functions f ON f.id=c.function_id "
                                             "WHERE c.agent_id=?", agent.id)
         units = [held["unit"]] if held else []

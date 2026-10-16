@@ -755,7 +755,8 @@ class Manager:
         ov = self.net.overview(s.slug)
         if ov.get("kind") == "fork":
             # CodeWarrior's register and stack rules decide most of what's left on GameCube, Wii and DS
-            topics = ["fork", "objdiff", *(["mwcc"] if ov.get("platform") in ("gc", "wii", "nds") else [])]
+            topics = ["fork", "objdiff", *(["mwcc"] if ov.get("platform") in ("gc", "wii", "nds") else
+                                           ["x86"] if ov.get("platform") == "win32" else [])]
         else:
             topics = ["workflow", {"psx": "psx", "ps2": "ps2", "gba": "agbcc"}.get(ov.get("platform")) or (
                 "ido" if ov["compiler"]["toolchain"].startswith("ido") else "gcc-kmc")]

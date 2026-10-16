@@ -251,10 +251,11 @@ function parseRom(buf) {
 
 /* What the user dropped, from its first bytes (nothing is uploaded until they confirm). */
 const PLATFORM_NAME = { n64: "Nintendo 64", psx: "PlayStation", ps2: "PlayStation 2", playstation: "PlayStation 1 or 2",
-  gc: "GameCube", wii: "Wii", gcwii: "GameCube or Wii", gba: "Game Boy Advance", nds: "Nintendo DS" };
+  gc: "GameCube", wii: "Wii", gcwii: "GameCube or Wii", gba: "Game Boy Advance", nds: "Nintendo DS", win32: "Windows PC" };
 const CW_PACK = {
   gcwii: { id: "mwcc", text: "Install CodeWarrior, the compilers GameCube and Wii games were built with (about 80 MB). It's proprietary software, kept by the decomp community: only if you accept that." },
   nds: { id: "mwccarm", text: "Install CodeWarrior for DS, the compilers DS games were built with (about 50 MB). It's proprietary software, kept by the decomp community: only if you accept that." },
+  win32: { id: "msvc", text: "Install Visual C++ 6.0, 7.0 and 7.1, the compilers most PC games of 1998-2005 were built with (about 50 MB). It's proprietary software, kept by the decomp community: only if you accept that." },
 };
 function crc16(bytes, from, to) {
   let crc = 0xffff;
@@ -272,6 +273,9 @@ function identifyHead(head, file) {
   const ascii = (a, b) => text(a, b).split("\0")[0].replace(/[^\x20-\x7e]/g, "").trim();
   const stem = file.name.replace(/\.[^.]*$/, "");
   const base = { title: stem, size: file.size };
+  const pe = text(0, 2) === "MZ" && head.length >= 0x40 ? dv.getUint32(0x3c, true) : 0;
+  if (pe && pe + 0x1a <= head.length && text(pe, pe + 4) === "PE\0\0" && dv.getUint16(pe + 4, true) === 0x14c && dv.getUint16(pe + 24, true) === 0x10b)
+    return { ...base, platform: "win32", order: "Windows program (.exe)", entry: dv.getUint32(pe + 52, true) + dv.getUint32(pe + 40, true) };
   if (text(0, 8) === "PS-X EXE") return { ...base, platform: "psx", order: "PS-X EXE", entry: dv.getUint32(0x10, true) };
   if (head.length > 0xc0 && head[0xb2] === 0x96 && head[3] === 0xea) {  // GBA: fixed byte, header checksum, ARM branch
     let sum = 0;
@@ -307,7 +311,7 @@ function identifyHead(head, file) {
 function notSupported(head, file) {
   const text = (a, b) => String.fromCharCode(...head.slice(a, b));
   const ext = (file.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
-  if (text(0, 2) === "MZ") return "That's a Windows program. PC games aren't supported yet: decomp.wtf starts from N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance and DS games.";
+  if (text(0, 2) === "MZ") return "That's a 64-bit or non-x86 Windows program (or a DOS one). decomp.wtf starts PC games from their 32-bit x86 .exe.";
   if (text(0, 4) === "XEX2" || ext === "xex") return "That's an Xbox 360 program. Xbox 360 games aren't supported yet.";
   if (["nsp", "xci", "nso", "nro", "nca"].includes(ext) || text(0, 4) === "NSO0" || text(0, 4) === "PFS0") return "That's a Nintendo Switch file. Switch games aren't supported yet.";
   if (["sfc", "smc"].includes(ext)) return "That's a Super Nintendo ROM. SNES games were written in assembly, not compiled from C, so there's no C source to match.";
@@ -341,7 +345,7 @@ async function pickFile(file) {
        ["Entry", hex8(info.entry)], ["Looks like", info.compiler === "IDO" ? "IDO" : "GCC (KMC)"]]
     : [["Platform", PLATFORM_NAME[p]], ["Format", info.order], ["Size", MB(info.size)],
        info.code ? ["Game ID", info.code] : ["Entry", info.entry != null ? hex8(info.entry) : "from the disc"],
-       ["Project", ["gc", "wii", "gcwii"].includes(p) ? "dtk-template" : p === "nds" ? "ds-decomp" : p === "gba" ? "luvdis" : "splat"]];
+       ["Project", ["gc", "wii", "gcwii"].includes(p) ? "dtk-template" : p === "nds" ? "ds-decomp" : p === "gba" ? "luvdis" : p === "win32" ? "Ghidra + objdiff" : "splat"]];
   $("romFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
   const level = platformStatus(p);
   $("romStatus").hidden = !level;
@@ -366,6 +370,13 @@ function setupCompilers(info) {
   else if (p === "playstation") {
     $("compilerRow").hidden = true; note.hidden = false;
     note.textContent = "The compiler is picked from the disc: PSY-Q-era GCC for PlayStation, EE-GCC for PlayStation 2. You can change it later.";
+  } else if (p === "win32") {
+    select.innerHTML = `<optgroup label="Windows PC">${(cw.msvc || []).map((v) => `<option value="${esc(v)}" ${v === "MSVC/6.0" ? "selected" : ""}>Visual C++ ${esc(v.slice(5))}</option>`).join("")}</optgroup><option value="">Let decomp.wtf pick (from the program's Rich header)</option>`;
+    select.value = "";
+    note.hidden = false;
+    note.textContent = "decomp.wtf reads which Visual C++ built the game from the program itself when it can; you can change it later in tools/configure.py. The functions are found by Ghidra (installed once, 540 MB, needs Java 21+).";
+    $("mwText").textContent = CW_PACK.win32.text;
+    $("mwConsent").hidden = cw.msvc_installed;
   } else if (p === "nds") {
     select.innerHTML = `<optgroup label="Nintendo DS">${cw.ds.map((v) => `<option value="${esc(v)}" ${v === "DS/2.0/sp1p5" ? "selected" : ""}>CodeWarrior for DS ${esc(v.slice(3))}</option>`).join("")}</optgroup>`;
     note.hidden = false;
@@ -450,8 +461,8 @@ $("errBack").onclick = (e) => { e.stopPropagation(); resetDrop(); };
 
 async function ensureCodeWarrior() {
   if ($("mwConsent").hidden) return;
-  $("busyTitle").textContent = "Installing CodeWarrior…";
-  const pack = picked && picked.info.platform === "nds" ? CW_PACK.nds : CW_PACK.gcwii;
+  $("busyTitle").textContent = picked?.info.platform === "win32" ? "Installing Visual C++…" : "Installing CodeWarrior…";
+  const pack = CW_PACK[picked?.info.platform] || CW_PACK.gcwii;
   const { job } = await api("/api/toolchain", { method: "POST", body: { id: pack.id, accept_license: true } });
   await followJob(job, $("jobLog"));
   await loadState();
@@ -463,7 +474,7 @@ $("analyse").onclick = async () => {
   const title = `Analysing ${picked.info.title}…`;
   if (!$("mwConsent").hidden) {
     $("dropPicked").hidden = true; $("dropBusy").hidden = false; $("impUp").hidden = true;
-    try { await ensureCodeWarrior(); } catch (e) { importFailed("CodeWarrior", e, $("jobLog").textContent); return; }
+    try { await ensureCodeWarrior(); } catch (e) { importFailed(picked.info.platform === "win32" ? "Visual C++" : "CodeWarrior", e, $("jobLog").textContent); return; }
   }
   const body = picked.buf instanceof Blob ? picked.buf : new Blob([picked.buf]);
   runImport(`confirmed=1${tc ? `&toolchain=${encodeURIComponent(tc)}` : ""}`, body, title, picked.name);
@@ -2314,7 +2325,7 @@ function renderAutopilot(ov) {
   };
 }
 
-const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp" };
+const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp", win32: "Ghidra + objdiff" };
 const cwName = (c) => (c.startsWith("DS/") ? `CodeWarrior for DS ${c.slice(3)}` : `CodeWarrior ${c}`);
 
 /* ------------------------------------------------------------------ source: the base for ports and mods */

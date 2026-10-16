@@ -405,7 +405,8 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
                 "api_presets": agents.API_PRESETS, "settings": settings.public(), "mcp_url": mcp_url,
                 "platform_status": PLATFORM_STATUS,
                 "codewarrior": {"installed": toolchains.installed("mwcc") is not None,
-                                "ds_installed": toolchains.installed("mwccarm") is not None, **MW_VERSIONS}}
+                                "ds_installed": toolchains.installed("mwccarm") is not None,
+                                "msvc_installed": toolchains.installed("msvc") is not None, **MW_VERSIONS}}
 
     def autopilot(slug: str) -> None:
         """Free matches first, in the background, when the user wants that (the default): a game started from

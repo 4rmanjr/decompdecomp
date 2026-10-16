@@ -100,10 +100,7 @@ mark, .hl-word, .score {
 .bytes-rows span:first-child { position: relative; z-index: 0; }
 @keyframes draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .bytes { position: relative; }
-.bytes figcaption {
-  max-width: 44ch; margin-top: var(--space-4); margin-left: auto; margin-right: var(--page);
-  font-size: var(--typography-body-sm-size); color: var(--color-text-secondary);
-}
+
 .bytes .addr { font-family: var(--typography-code-family); color: var(--color-text-primary); }
 .claim-row { display: grid; gap: var(--space-8); margin-top: var(--space-8); align-items: end; }
 h1 {
@@ -115,10 +112,6 @@ h1 {
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-8); margin-top: var(--space-8); }
 @media (min-width: 905px) {
   .claim-row { grid-template-columns: minmax(min-content, 1.7fr) minmax(16rem, 1fr); margin-top: var(--space-6); }
-  /* the caption is a margin note laid over the faded second row, as a reader would pencil it in */
-  .bytes figcaption { position: absolute; right: 0; bottom: var(--space-4); margin: 0; width: calc(36ch + var(--page));
-    max-width: none; padding: var(--space-4) var(--page) var(--space-4) var(--space-6); background: var(--color-surface-base);
-    border-left: var(--border-width-strong) solid var(--color-mark-fill); }
 }
 
 /* ---------------------------------------------------------------- 2 · check */
@@ -254,7 +247,6 @@ h1 {
   h1 { font-size: 2.75rem; font-stretch: 112%; }
   .cmd code { white-space: normal; overflow-wrap: anywhere; }
   .pane pre { font-size: var(--typography-body-sm-size); }
-  .bytes figcaption { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { animation: none !important; transition: none !important; }

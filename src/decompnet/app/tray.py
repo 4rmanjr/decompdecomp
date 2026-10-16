@@ -93,7 +93,7 @@ def _gi():
     try:
         import gi  # noqa: F401
     except ImportError:
-        system = f"/usr/lib/python3/dist-packages"
+        system = "/usr/lib/python3/dist-packages"
         if sys.platform != "linux" or not os.path.isdir(system):
             return None
         sys.path.append(system)

@@ -141,7 +141,7 @@ async def proxy(info: dict, token: str, name: str, helper: bool = False) -> None
                     if conn["gen"] == gen:  # the first call to notice: ask for a new session
                         conn["remote"] = None
                         want_new.set()
-                    await changed.wait_for(lambda: conn["gen"] > gen)
+                    await changed.wait_for(lambda: conn["gen"] > gen)  # noqa: B023  called within this pass of the loop
 
     async with anyio.create_task_group() as tg:
         tg.start_soon(keep_connected)

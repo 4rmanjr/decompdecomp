@@ -152,7 +152,7 @@ def build_objects(todo: list[tuple[str, str, str]]) -> None:
                 fail(f"compiling {src} failed:\n{(res.stdout + res.stderr)[-3000:]}")
             if src.endswith(".cpp"):  # C++ names back to the game's, as decompdecomp judged it
                 names = {*B["symbols"], *(f["name"] for f in B["functions"])}
-                target.write_bytes(unmangle(target.read_bytes(), lambda n: n in names or bool(AUTO_NAME.match(n))))
+                target.write_bytes(unmangle(target.read_bytes(), lambda n: n in names or bool(AUTO_NAME.match(n))))  # noqa: B023  called within this pass of the loop
             trim(target)
             weaken_data(obj)
 

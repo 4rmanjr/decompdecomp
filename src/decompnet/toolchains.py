@@ -145,7 +145,7 @@ def installed(tid: str, linux: bool | None = None) -> dict | None:
 def require(tid: str, linux: bool | None = None) -> Path:
     """Directory of an installed toolchain, or a clear error telling the operator how to install it."""
     if installed(tid, linux) is None:
-        raise ToolchainError(f"toolchain {tid!r} is not installed: run `decompnet toolchain install {tid}`")
+        raise ToolchainError(f"toolchain {tid!r} is not installed: install it in decompdecomp, under Compilers & tools")
     return path(tid, linux)
 
 

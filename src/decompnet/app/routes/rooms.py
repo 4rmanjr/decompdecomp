@@ -24,7 +24,7 @@ from . import App
 
 
 def register(app: App) -> None:
-    net, mcp, home, port, manager = app.net, app.mcp, app.home, app.port, app.manager
+    net, mcp, home, manager = app.net, app.mcp, app.home, app.manager
     jobs, settings, guard, body, call = app.jobs, app.settings, app.guard, app.body, app.call
     fail = app.fail
 

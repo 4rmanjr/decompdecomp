@@ -534,7 +534,7 @@ class Network:
                 raise NetworkError(f"`{old}` does not occur in any header")
             matched = self.store.all("SELECT * FROM functions WHERE project_id=? AND status='matched'", proj["id"])
             rewritten = {r["id"]: word.sub(new, r["matched_source"]) for r in matched}
-            header_for = lambda fn: changed.get(self._effective_unit(fn, units), current[self._effective_unit(fn, units)]["header"])
+            header_for = lambda fn: changed.get(self._effective_unit(fn, units), current[self._effective_unit(fn, units)]["header"])  # noqa: B023  called within this pass of the loop
             broken = self.regression_test(proj, None, sources=rewritten, only=matched, header_for=header_for)
             if broken:
                 listing = "\n".join(f"- {name}: {why}" for name, why in broken[:10])

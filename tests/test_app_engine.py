@@ -1,7 +1,7 @@
 """The local engine on Demo Quest 64: import, claim, split, match, rename, read data, export."""
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import pytest
 

@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import json
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 import time
 import tomllib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import scoring, seeds, toolchains, wsl
 from .compiler import CompilerConfig, compile_source
 from .elfobj import extract_function, list_functions
 from .store import Store
-
 
 # A project may only be imported with a declared lawful basis for sharing its code.
 LEGAL_BASES = {

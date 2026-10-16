@@ -10,10 +10,13 @@ from pathlib import Path
 
 import pytest
 
+from decompnet import toolchains
+
 ROOT = Path(__file__).resolve().parent.parent
 ROM = ROOT / "projects" / "demo-rom" / "build" / "demo-quest-64.z64"
 
-pytestmark = pytest.mark.skipif(not ROM.exists(), reason="needs the demo ROM (projects/demo-rom)")
+pytestmark = pytest.mark.skipif(not ROM.exists() or toolchains.installed("gcc-2.7.2-kmc") is None,
+                                reason="needs the demo ROM (projects/demo-rom) and gcc-2.7.2-kmc")
 
 
 def test_bridge_imports_and_works(tmp_path):

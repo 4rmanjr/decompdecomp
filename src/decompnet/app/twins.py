@@ -231,7 +231,7 @@ class Twins:
             "SELECT id, target, relocs FROM functions WHERE project_id=? AND status!='asm'", proj["id"])}
 
     def _fork_prints(self, proj) -> dict[int, Print]:
-        from ..forks.project import ForkError, ForkProject, STATE
+        from ..forks.project import STATE, ForkError, ForkProject
 
         fp = ForkProject(Path(proj["root"]))
         cache_path = fp.root / STATE / "twins.json"
@@ -636,7 +636,7 @@ class Twins:
                     job.matched += outcome == "match"
                     job.asm += outcome == "asm"
                     if outcome == "match":
-                        fresh.add(pair[1])
+                        fresh.add(pair[1])  # noqa: B023  called within this pass of the loop
 
                 by_target: dict[int, tuple[int, int]] = {}
                 for p in pairs:  # one try per unmatched function, unless its twin's code already failed on it

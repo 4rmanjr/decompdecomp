@@ -20,7 +20,6 @@ same suggestion as an agent's, so it's checked against every matched function be
 
 from __future__ import annotations
 
-import math
 import struct
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field

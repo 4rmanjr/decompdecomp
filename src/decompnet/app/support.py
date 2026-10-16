@@ -92,7 +92,7 @@ class Jobs:
                 job["result"] = fn(log)
                 job["state"] = "done"
                 logger.info("job %s %s done in %.0fs", kind, jid, time.time() - job["t"])
-            except BaseException as e:  # noqa: BLE001: a job must end, whatever went wrong
+            except BaseException as e:  # noqa: BLE001  a job must end, whatever went wrong
                 if getattr(e, "details", None):  # what the tool said, in full
                     job["trace"] = str(e.details)[-6000:]
                 elif not isinstance(e, (NetworkError, RomError, ValueError)):

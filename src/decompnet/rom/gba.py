@@ -9,11 +9,11 @@ turns up.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 import re
 import struct
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from .. import toolchains

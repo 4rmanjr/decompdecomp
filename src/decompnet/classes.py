@@ -255,7 +255,7 @@ def describe(cls: Class, classes: Classes, label: Callable[[int], str], focus: i
         base = f" (also in {label(parent.vtable)})" if off in inherited else ""
         lines.append(f"  +0x{off:02X}: {fl.ctype()}, {len(users)} function{'s' * (len(users) != 1)} "
                      f"({', '.join(label(u) for u in users[:4])}{', ...' if len(users) > 4 else ''}){base}{here}")
-    lines += ["", f"virtual functions (slot: offset in the vtable, function; a virtual call loads vtable+offset):"]
+    lines += ["", "virtual functions (slot: offset in the vtable, function; a virtual call loads vtable+offset):"]
     pslots = parent.slots if parent else []
     for i, f in enumerate(cls.slots):
         how = ("inherited" if i < len(pslots) and pslots[i] == f else "overrides" if i < len(pslots) else "new")

@@ -1,5 +1,5 @@
 """The demo game rebuilt with real period compilers. Skipped when a toolchain isn't installed
-(`decompnet toolchain install gcc-2.7.2-kmc ee-gcc-2.96 m2c`)."""
+(Compilers & tools in the app)."""
 
 from pathlib import Path
 

@@ -1,0 +1,21 @@
+# Every push to main and every pull request: ruff, then the tests. Compilers and tools aren't installed here, so the
+# tests that need them skip (with the reason); the rest run.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check src tests projects
+      - run: uv run pytest -q
+        env:
+          BROWSER: "true"
+          DECOMP_TRAY: "0"

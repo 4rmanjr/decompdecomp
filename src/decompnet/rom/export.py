@@ -23,8 +23,8 @@ from pathlib import Path
 import yaml
 
 from .. import toolchains
-from ..project import compiler_for
 from ..limits import capped
+from ..project import compiler_for
 from . import match
 from .symbols import AUTO_NAME
 

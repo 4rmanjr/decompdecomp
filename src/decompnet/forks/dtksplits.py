@@ -223,7 +223,7 @@ def add_objects(text: str, module: str, sources: list[str]) -> str:
         def shared(lib: Lib) -> int:
             best = 0
             for path, _, _ in lib.objects:
-                a, b = Path(path).parent.parts, Path(folder).parts
+                a, b = Path(path).parent.parts, Path(folder).parts  # noqa: B023  called within this pass of the loop
                 n = 0
                 while n < min(len(a), len(b)) and a[n] == b[n]:
                     n += 1

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import struct
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import chd, gba, n64, overlays, ps2, psx

@@ -20,7 +20,7 @@ def psx():
     if not ok:
         pytest.skip(why)
     if not toolchains.installed("gcc-2.7.2-psx"):
-        pytest.skip("needs gcc-2.7.2-psx (decompnet toolchain install gcc-2.7.2-psx)")
+        pytest.skip("needs gcc-2.7.2-psx (Compilers & tools in the app)")
     return project.compiler_config(Path("."), {"compiler": {"toolchain": "gcc-2.7.2-psx"}})
 
 

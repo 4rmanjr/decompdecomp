@@ -112,7 +112,7 @@ class CompilerMixin:
             try:
                 state.update(self.survey_compilers(slug, limit=limit, state=state))
                 state["state"] = "done"
-            except Exception as e:  # noqa: BLE001: a background job says why it stopped
+            except Exception as e:  # noqa: BLE001  a background job says why it stopped
                 logging.getLogger("decompdecomp").exception("compiler survey failed")
                 state.update(state="error", error=str(e))
         threading.Thread(target=run, daemon=True, name=f"survey-{slug}").start()

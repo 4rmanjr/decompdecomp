@@ -7,7 +7,6 @@ from __future__ import annotations
 import random
 import re
 
-
 TYPES_32 = ["int", "unsigned", "unsigned int", "long", "unsigned long", "s32", "u32", "uInt", "uLong"]
 CASTS = ["(int)", "(unsigned)", "(s32)", "(u32)", "(uInt)", "(uLong)", "(short)", "(unsigned short)"]
 _DECL = re.compile(r"^(\s+)(register\s+)?((?:unsigned\s+|signed\s+)?\w+)(\s*\**\s*)(\w+)(\s*(?:=[^;]*)?;)\s*$")

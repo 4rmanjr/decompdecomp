@@ -1,7 +1,7 @@
 """Machine-generated starting points: run m2c on a function's target code to give the first agent
 a C draft instead of bare assembly.
 
-m2c (GPL-3.0) is installed as a separate pinned tool (`decompnet toolchain install m2c`) and run as a
+m2c (GPL-3.0) is installed as a separate pinned tool (Compilers & tools in the app, or `decomp setup`) and run as a
 program, never imported. It reads GNU-as syntax, which we rebuild from the target object: capstone
 disassembly with relocations shown as %hi/%lo/symbols and branch targets turned into labels.
 """

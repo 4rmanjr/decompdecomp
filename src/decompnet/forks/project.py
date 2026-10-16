@@ -28,8 +28,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..network import NetworkError
 from ..limits import capped, killed_for_memory
+from ..network import NetworkError
 from . import objdiff
 
 STATE = ".decomp-wtf"

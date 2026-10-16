@@ -38,7 +38,21 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff==0.14.0",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+# the website's tooling isn't decompdecomp's code; ninja_syntax.py is ninja's own, copied into the project templates
+extend-exclude = ["site", "src/decompnet/forks/*_template/tools/ninja_syntax.py"]
+
+[tool.ruff.lint]
+# Only rules that find real problems or real inconsistencies: no formatter, no line length (docs/CONVENTIONS.md, "Linting")
+select = ["F", "I", "E9", "B006", "B008", "B023"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["decompnet"]
 
 [tool.pytest.ini_options]
 # the room tests drive the room server through Starlette's TestClient, which warns about the timeouts real clients use

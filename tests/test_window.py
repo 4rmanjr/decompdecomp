@@ -1,7 +1,6 @@
 """The app's own window (app/window.py): a Chromium-family browser with a profile of its own, so the window is a
 process of its own and the app knows when it's closed."""
 
-import os
 import stat
 import subprocess as sp
 import time

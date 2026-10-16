@@ -290,8 +290,8 @@ def analyse(pe: PE, found: list[dict]) -> list[Function]:
         fn = Function(start, end - start, names[start])
 
         def symbol(addr: int) -> tuple[str | None, int]:
-            if start <= addr < end:
-                return None, addr - start
+            if start <= addr < end:  # noqa: B023  called within this pass of the loop
+                return None, addr - start  # noqa: B023  called within this pass of the loop
             if addr in names:
                 return names[addr], 0
             if addr in pe.imports:

@@ -82,6 +82,7 @@ def test_compiles_when_the_app_runs_from_root(monkeypatch):
 def test_the_secret_outlives_a_restart(tmp_path):
     """A browser tab stays signed in when the app restarts or updates (a new secret each launch logged it out)."""
     import json
+
     from decompnet.app import cli
     state = tmp_path / "server.json"
     assert cli._saved_secret(state) is None

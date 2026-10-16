@@ -74,7 +74,6 @@ def test_every_function_is_found_with_its_extent(pc):
     syms = {a: s for s, a in _map().items() if not s.startswith("??") and a < 0x402000}
     rows = net.store.all("SELECT name, size FROM functions WHERE project_id=?", net.project_row(slug)["id"])
     assert len(rows) == len(syms) == 19  # clamp_s32, which nothing calls, too: Ghidra misses it, the gap doesn't
-    starts = sorted(syms)
     for name, size in ((r["name"], r["size"]) for r in rows):
         addr = int(re.search(r"func_([0-9A-F]{8})", name).group(1), 16)
         assert addr in syms

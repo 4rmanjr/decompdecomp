@@ -1467,7 +1467,7 @@ class RomNetwork(Network):
                 state["twins"] = job.matched
                 state["matched"] += job.matched
         except Exception as e:
-            logging.getLogger("decomp.wtf").info("autopilot twins: %s", e)
+            logging.getLogger("decompdecomp").info("autopilot twins: %s", e)
         state["phase"] = "drafts"
         ids = [fid for fid in ids if (r := self.store.one("SELECT status FROM functions WHERE id=?", fid)) and r["status"] == "open"]
         state["total"] = len(ids)

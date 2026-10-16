@@ -30,7 +30,7 @@ from ..elfobj import _MASKS, Reloc, mask_relocs
 from ..handwritten import mips_reason, ppc_reason
 from ..network import NetworkError
 
-log = logging.getLogger("decomp.wtf")
+log = logging.getLogger("decompdecomp")
 IDENT = re.compile(r"^[A-Za-z_]\w*$")
 _MACHINE = {"EM_PPC": ("ppc", "big"), "EM_MIPS": ("mips", None), "EM_ARM": ("arm", "little")}
 _CACHE_VERSION = 2  # of twins.json: 2 added why code is hand-written assembly
@@ -562,7 +562,7 @@ class Twins:
         return (res.get("text") or "").splitlines()[0][:300] if res.get("text") else f"score {res.get('score')}"
 
     def _attempt_twin(self, agent, proj, a, b, source: str) -> tuple[str, str]:
-        note = f"/* identical to {a['name']} (matched), with its names changed by decomp.wtf */\n"
+        note = f"/* identical to {a['name']} (matched), with its names changed by decompdecomp */\n"
         try:
             if self.net.fork_slug(proj["slug"]):
                 forks, slug, src, prelude = self.net.forks, proj["slug"], source, ""

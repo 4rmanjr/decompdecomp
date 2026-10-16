@@ -219,7 +219,7 @@ class Chd:
             for i in range(frames):
                 out += data[i * CD_DATA:(i + 1) * CD_DATA] + sub[i * CD_SUB:(i + 1) * CD_SUB]
             return bytes(out)
-        raise RomError(f"this CHD uses the {codec.decode('ascii', 'replace')} codec, which decomp.wtf can't read "
+        raise RomError(f"this CHD uses the {codec.decode('ascii', 'replace')} codec, which decompdecomp can't read "
                        "yet: convert it with `chdman extractcd` to .bin/.cue")
 
     # ------------------------------------------------------------------ file-like

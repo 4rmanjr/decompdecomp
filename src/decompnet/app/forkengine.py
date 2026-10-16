@@ -454,7 +454,7 @@ class ForkEngine:
 
     def create_scratch(self, game: Path, *, compiler: str | None = None, log=print) -> str:
         """A GameCube, Wii, DS or PC game, from scratch: generate the community's project layout for it (dtk-template,
-        ds-decomp; for PC, decomp.wtf's own from Ghidra's analysis) and open it like a fork."""
+        ds-decomp; for PC, decompdecomp's own from Ghidra's analysis) and open it like a fork."""
         with open(game, "rb") as f:
             head = f.read(0x1000)
         maker = scratch_dsd if scratch_dsd.is_nds(head) else scratch_pe if scratch_pe.is_pe(head) else scratch_dtk
@@ -672,7 +672,7 @@ class ForkEngine:
 
     # ------------------------------------------------------------------ linking
     # The end of a decomp is not a matching function but a linked file: configure.py marks it Matching, the game is
-    # built from its C and checked against its checksums. decomp.wtf does that for every file the moment its code and
+    # built from its C and checked against its checksums. decompdecomp does that for every file the moment its code and
     # data match, and keeps it only when the whole game still builds byte for byte.
 
     @staticmethod
@@ -696,7 +696,7 @@ class ForkEngine:
         """Link every finished file into the game, keeping only what the project's checksum check accepts."""
         proj, fp, cfg = self.get(slug)
         if not fp.linkable():
-            return {"linked": [], "failed": {}, "note": "this project has no link step decomp.wtf knows (dtk-template)"}
+            return {"linked": [], "failed": {}, "note": "this project has no link step decompdecomp knows (dtk-template)"}
         with self._tree(proj).exclusive(), self._build_locks[proj["id"]]:
             fp.build_all()
             rep = fp.report()
@@ -736,7 +736,7 @@ class ForkEngine:
                 fp.verify()
                 return {"linked": [], "failed": failed}
             names = ", ".join(Path(s).name for s in linked[:6]) + (f" and {len(linked) - 6} more" if len(linked) > 6 else "")
-            who = f"\n\nLinked by decomp.wtf after {agent.name}'s match." if agent else "\n\nLinked by decomp.wtf."
+            who = f"\n\nLinked by decompdecomp after {agent.name}'s match." if agent else "\n\nLinked by decompdecomp."
             self._commit(proj, fp, "configure.py", f"Link {names}\n\nEvery function and all data match, and the game "
                                                    f"still builds byte for byte from the C.{who}")
             with self.net.store.tx() as db:
@@ -759,7 +759,7 @@ class ForkEngine:
         data = self._data_status(unit)
         self.link_soon(slug, agent)  # the checksum decides; the comparison below is what to fix if it fails
         if not data:
-            return (f"\n🔗 Every function and all data in {unit.source} match: decomp.wtf is linking the file into the "
+            return (f"\n🔗 Every function and all data in {unit.source} match: decompdecomp is linking the file into the "
                     "game now (it stays linked if the game still builds byte for byte).")
         return (f"\n🔗 Every function in {unit.source} matches. To link the file into the game (the goal: the game "
                 f"built from this C), its data must match too. Fix it with edit_file, then file_status to check:\n{data}")
@@ -789,7 +789,7 @@ class ForkEngine:
         lines = [f"## {rel}"]
         lines.append("🔗 LINKED: the game is built from this file's C and checked byte for byte." if state == "Matching"
                      else f"not linked yet ({state or 'not in configure.py'})" if fp.linkable()
-                     else "this project has no link step decomp.wtf knows")
+                     else "this project has no link step decompdecomp knows")
         for u in units:
             rows = self.net.store.all("SELECT name, status, n_insns FROM functions WHERE project_id=? AND unit=? "
                                       "ORDER BY vram, name", proj["id"], u.name)
@@ -851,7 +851,7 @@ class ForkEngine:
 
     # ------------------------------------------------------------------ source files for all the code
     # Code no source file covers (dtk's auto_..._text units) can't be decompiled: there's nowhere to write it. Real
-    # projects split it into files by hand. decomp.wtf gives each such stretch of code a file of its own, the way
+    # projects split it into files by hand. decompdecomp gives each such stretch of code a file of its own, the way
     # contributors start (split_file divides one further), and keeps the change only if the game still builds byte
     # for byte. A file listed in configure.py that doesn't exist yet gets created too.
 
@@ -960,7 +960,7 @@ class ForkEngine:
                         p = fp.root / src / name
                         p.parent.mkdir(parents=True, exist_ok=True)
                         common = '#include "common.h"\n' if (fp.root / "include" / "common.h").is_file() else ""
-                        p.write_text(f"// Code of {module} that had no source file yet: decomp.wtf gave it this one.\n"
+                        p.write_text(f"// Code of {module} that had no source file yet: decompdecomp gave it this one.\n"
                                      "// split_file divides it into the game's real files (file_status shows its range).\n"
                                      + common, encoding="utf-8")
                         made.append(p)
@@ -984,7 +984,7 @@ class ForkEngine:
             n = sum(item[4] for item in plan["split"])
             self._commit_paths(proj, fp, paths, f"Give code without a source file one ({len(made)} files, {n} functions)\n\n"
                                "Each stretch of code no file covered gets a file of its own, so it can be decompiled; "
-                               "the game still builds byte for byte.\n\nSplit by decomp.wtf.")
+                               "the game still builds byte for byte.\n\nSplit by decompdecomp.")
             self._scores = {k: v for k, v in self._scores.items() if k[0] != proj["id"]}
             self.sync(slug, log=lambda *_: None, rep=rep)
             with self.net.store.tx() as db:
@@ -1131,7 +1131,7 @@ class ForkEngine:
             rep = fp.report()
             self._commit_paths(proj, fp, [str(p_.relative_to(fp.root)) for p_ in saved] + [str(new_path.relative_to(fp.root))],
                                f"Split {Path(name).name} at 0x{addr:X}: {Path(new).name}\n\n"
-                               f"Divided by {agent.name if agent else 'decomp.wtf'} with decomp.wtf; the game still builds "
+                               f"Divided by {agent.name if agent else 'decompdecomp'} with decompdecomp; the game still builds "
                                "byte for byte.")
             self._scores = {k: v for k, v in self._scores.items() if k[0] != proj["id"]}
             self.sync(slug, log=lambda *_: None, rep=rep)
@@ -1155,7 +1155,7 @@ class ForkEngine:
 
     def uncovered(self, slug: str) -> dict | None:
         """{"stretches", "functions"} without a source file, from the last measurement (a project measured by an
-        older decomp.wtf: from its saved report)."""
+        older decompdecomp: from its saved report)."""
         proj, fp, cfg = self.get(slug)
         if "uncovered" in cfg:
             return cfg["uncovered"]
@@ -1508,7 +1508,7 @@ class ForkEngine:
 
     def _held(self, proj, unit: str, text: str | None = None) -> set[str]:
         """Functions of a unit whose source is still the very text judged to load the wrong constants: objdiff's
-        progress rules count them, decomp.wtf doesn't (see forks/literals.py)."""
+        progress rules count them, decompdecomp doesn't (see forks/literals.py)."""
         rows = self.net.store.all("SELECT name, meta FROM functions WHERE project_id=? AND unit=? AND meta LIKE ?",
                                   proj["id"], unit, '%"held"%')
         if not rows:
@@ -1667,7 +1667,7 @@ class ForkEngine:
         if source and len(source) < 6000:
             why = self.net.twins.miss_why(fn["id"])
             out += ["Its code with this function's names: start from it. "
-                    + (f"decomp.wtf tried it as is: {why}. Fix that (this file lacks something the other one has: a "
+                    + (f"decompdecomp tried it as is: {why}. Fix that (this file lacks something the other one has: a "
                        "type, a declaration, an include, or declares a callee differently)." if why else
                        "If it doesn't build or match as is, this file lacks something that one has (a type, a "
                        "declaration, an include)."), "```c", source.strip(), "```"]
@@ -1709,7 +1709,7 @@ class ForkEngine:
             left = (self.get(slug)[2].get("uncovered") or {}).get("functions")
             return ("Nothing left to claim: every function with a source file matches or someone is on it. 🎉"
                     + (f"\n{left} more functions are in code no source file covers yet. The user can give them files "
-                       "(the project's overview in decomp.wtf: Give them source files); then there's more to claim."
+                       "(the project's overview in decompdecomp: Give them source files); then there's more to claim."
                        if left else ""))
         return self.brief(fn, agent, "CLAIMED")
 
@@ -1743,7 +1743,7 @@ class ForkEngine:
     def attempt(self, agent: Agent, slug: str, function: str, source: str, keep: bool = True, prelude: str = "",
                 quiet: int | None = None) -> dict:
         """`keep`: whether a version that doesn't match stays in the source file (an agent's work in progress) or
-        is undone and kept only as the function's best attempt (autopilot's drafts). `prelude`: (decomp.wtf's own
+        is undone and kept only as the function's best attempt (autopilot's drafts). `prelude`: (decompdecomp's own
         tries) type definitions the code needs, placed after the file's includes. `quiet`: (the permuter's
         variants) recorded only when better than this score. A try that isn't kept holds the function only while
         it builds (twins' tries come unclaimed: a 30-minute claim each kept agents off them, then counted as given up)."""
@@ -1839,7 +1839,7 @@ class ForkEngine:
         with self._tree(proj).exclusive() if linked else self._tree(proj).shared(), self._unit_lock(proj, unit.name):
             before = path.read_text(errors="replace", encoding="utf-8") if path.exists() else ""
             # What matches in the file as it is now is what this change must keep (not the database's idea of it,
-            # which a change outside decomp.wtf or a different measurement can leave behind)
+            # which a change outside decompdecomp or a different measurement can leave behind)
             scores, builds = self._baseline(proj, fp, unit, before)
             held = self._held(proj, unit.name, before)
             if scores is not None:
@@ -1916,7 +1916,7 @@ class ForkEngine:
                                     "kept. Call claim_function for a function that still needs work.",
                             "score": score, "matched": False}
                 self._commit(proj, fp, unit.source, f"Tidy {meta.get('demangled') or symbol} (still matches)\n\n"
-                                                    f"Edited by {agent.name} with decomp.wtf.")
+                                                    f"Edited by {agent.name} with decompdecomp.")
                 return {"text": f"✅ {fn['name']} still matches; your tidier version is committed.{_renamed_note(d)}",
                         "score": 0, "matched": True}
             self.net._record(fn, agent, score, code, 0, matched=matched)
@@ -1924,7 +1924,7 @@ class ForkEngine:
             self._remember(proj, fp, unit, d)
             if matched:
                 self._commit(proj, fp, unit.source, f"Match {meta.get('demangled') or symbol}\n\n"
-                                                    f"Decompiled by {agent.name} with decomp.wtf.")
+                                                    f"Decompiled by {agent.name} with decompdecomp.")
                 return {"text": f"✅ MATCH! {fn['name']} is 100% identical to the original. Committed to git in the "
                                 f"project. Call claim_function for the next one.{_renamed_note(d)}"
                                 f"{self._file_done(slug, proj, fp, unit, d.unit_scores, agent)}", "score": 0,
@@ -1949,7 +1949,7 @@ class ForkEngine:
         if not drafts.supported(cfg.get("platform") or "") or toolchains.installed("m2c") is None:
             raise NetworkError("autopilot needs m2c, the draft decompiler: install it in Setup")
         if drafts.add_m2c_macros(fp.root / "include" / "common.h"):  # projects made before autopilot ran on them
-            self._commit(proj, fp, "include/common.h", "Add the macros machine drafts use\n\nWritten by decomp.wtf's autopilot.")
+            self._commit(proj, fp, "include/common.h", "Add the macros machine drafts use\n\nWritten by decompdecomp's autopilot.")
         rows = self.net.store.all("SELECT id FROM functions WHERE project_id=? AND status='open' ORDER BY n_insns, id",
                                   proj["id"])
         return [r["id"] for r in rows]
@@ -1985,11 +1985,11 @@ class ForkEngine:
                 return "match"
             if res["score"] is None:
                 why = [ln for ln in res["text"].splitlines() if re.search(r"error|Error", ln) and "ninja" not in ln]
-                logging.getLogger("decomp.wtf").info("autopilot: %s's draft didn't build: %s", fn["name"],
+                logging.getLogger("decompdecomp").info("autopilot: %s's draft didn't build: %s", fn["name"],
                                                      " | ".join(why[:4])[:600] or res["text"][-300:])
             return "fail" if res["score"] is None else "near" if (res.get("percent") or 0) >= 90 else "far"
         except (NetworkError, OSError, subprocess.SubprocessError) as e:
-            logging.getLogger("decomp.wtf").info("autopilot: %s not tried: %s", fn["name"], str(e)[:500])
+            logging.getLogger("decompdecomp").info("autopilot: %s not tried: %s", fn["name"], str(e)[:500])
             return "fail"
         finally:
             with self.net.store.tx() as db:
@@ -2261,7 +2261,7 @@ class ForkEngine:
                 if after[u.name] is not None:
                     self._keep_scores(proj, u, updated, after[u.name])
                     self._apply_scores(proj, u.name, after[u.name], agent=agent, text=updated)
-            self._commit(proj, fp, rel, f"{message.strip()}\n\nEdited by {agent.name} with decomp.wtf.")
+            self._commit(proj, fp, rel, f"{message.strip()}\n\nEdited by {agent.name} with decompdecomp.")
             with self.net.store.tx() as db:
                 self.net._event(db, proj["id"], agent.id, "context", f"{rel}: {message.strip()[:120]}")
         if any(v is None for v in after.values()):
@@ -2322,7 +2322,7 @@ class ForkEngine:
                 p.write_text(updated, encoding="utf-8")
                 self._build_all(proj, fp)
             self._scores = {k: v for k, v in self._scores.items() if k[0] != proj["id"]}
-            self._commit(proj, fp, rel, f"{message.strip()}\n\nEdited by {agent.name} with decomp.wtf.")
+            self._commit(proj, fp, rel, f"{message.strip()}\n\nEdited by {agent.name} with decompdecomp.")
             with self.net.store.tx() as db:
                 self.net._event(db, proj["id"], agent.id, "context", f"{rel}: {message.strip()[:120]}")
             self.sync(slug, log=lambda *_: None, rep=rep, broken=broken_after, agent=agent)

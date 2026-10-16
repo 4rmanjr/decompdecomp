@@ -37,7 +37,7 @@ def test_an_arm_computer_is_told_why_nothing_compiles(tc_root, monkeypatch):
     monkeypatch.setattr(toolchains._platform, "machine", lambda: "aarch64")
     monkeypatch.setattr(toolchains.sys, "platform", "linux")
     assert toolchains.current_platform() == "linux-aarch64" and not toolchains.get("ee-gcc-2.96").supported
-    with pytest.raises(toolchains.ToolchainError, match=r"linux-aarch64\): decomp.wtf needs a 64-bit Intel or AMD PC"):
+    with pytest.raises(toolchains.ToolchainError, match=r"linux-aarch64\): decompdecomp needs a 64-bit Intel or AMD PC"):
         toolchains.install("ee-gcc-2.96", log=lambda *_: None)
     monkeypatch.setattr(toolchains._platform, "machine", lambda: "x86_64")
     assert toolchains.unsupported_cpu() is None

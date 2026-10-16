@@ -1,5 +1,5 @@
-# decomp.wtf in Docker, for servers (docker-compose.yml in the repository does this for you).
-# The same Linux as decomp.wtf's WSL system on Windows (linux-base.sh). decomp.wtf itself installs into the
+# decompdecomp in Docker, for servers (docker-compose.yml in the repository does this for you).
+# The same Linux as decompdecomp's WSL system on Windows (linux-base.sh). decompdecomp itself installs into the
 # decomp user's home on the first start: keep /home/decomp on a volume, and updates it installs itself stay.
 #
 #   docker build -t decomp-wtf .         (in this folder: Dockerfile, linux-base.sh, install.sh)

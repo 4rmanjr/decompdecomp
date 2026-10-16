@@ -2,11 +2,11 @@
 
 The tree is a normal decomp project. splat's assembly for every function and all data (with the project's names),
 the matched functions as C, a linker script and a build script that rebuilds the game's image and checks it against
-the original byte for byte. Each function is its own object: a matched one is compiled exactly the way decomp.wtf
+the original byte for byte. Each function is its own object: a matched one is compiled exactly the way decompdecomp
 verified it, the rest are assembled. Data stays labeled assembly; a matched function's own constants (strings,
 jump tables) are mapped onto the game's copy at the addresses the matcher verified, so nothing is duplicated.
 
-Anyone can keep working on it outside decomp.wtf: edit src/, run build.py, and the build says whether it still
+Anyone can keep working on it outside decompdecomp: edit src/, run build.py, and the build says whether it still
 matches.
 """
 
@@ -299,14 +299,14 @@ def _write_docs(out: Path, title: str, platform: str, base: str, matched: int, t
     notes = "".join(f"\n- `{n}`: kept as assembly, {why}" for n, why in fallback)
     (out / "README.md").write_text(f"""# {title} (decompilation)
 
-A matching decompilation of {title} for the {names[platform]}, started with [decomp.wtf](https://decomp.wtf).
+A matching decompilation of {title} for the {names[platform]}, started with [decompdecomp](https://github.com/n-delic/decomp.wtf).
 {matched} of {total} functions are C that compiles to exactly the original code; the rest are still assembly.
 `build.py` rebuilds the game from this tree and checks it against your original, byte for byte.
 
 ## Build
 
 1. Put your own copy of the game here as `{base}` (it is in `.gitignore`; never commit it).
-2. `python build.py` (needs decomp.wtf installed for the period compiler and assembler).
+2. `python build.py` (needs decompdecomp installed for the period compiler and assembler).
 
 ## Layout
 

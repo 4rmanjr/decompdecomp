@@ -22,7 +22,7 @@ from .. import scoring
 from ..network import NetworkError
 from ..permuter import mutate
 
-log = logging.getLogger("decomp.wtf")
+log = logging.getLogger("decompdecomp")
 NEAR = 0.06  # a near miss: at most this much of the function differs (best_score <= 6% of n_insns * 100)
 SECONDS = 60  # per function per turn
 MAX_TURNS = 4  # turns per function before it's left to agents

@@ -17,13 +17,13 @@ from ..network import NetworkError
 from . import agents, tools
 
 CHAT_INSTRUCTIONS = """\
-You are connected to decomp.wtf on the user's computer: matching decompilation of games they own, with the game's
+You are connected to decompdecomp on the user's computer: matching decompilation of games they own, with the game's
 original compiler, a byte-for-byte judge, free matches from machine drafts, helper agents and a live view.
 
 When the user wants a game decompiled:
 1. list_projects(). If it's there, open_project(it). Otherwise import_game(path) with the path to the user's file
    (ROM, disc image or program). Ask the user to confirm it is their own legally obtained copy first, and never
-   download games: decomp.wtf only works with the user's own copy.
+   download games: decompdecomp only works with the user's own copy.
 2. open_gui() so the user can watch: the map lights up as functions match.
 3. Work: claim_function -> compile_and_diff, repeat (guide("workflow") has the loop). For a big game, also
    start_agents(count) to add helper agents working in parallel; progress() shows everyone's work.
@@ -75,7 +75,7 @@ def register(mcp, net, manager, jobs, settings, port: int, secret: str) -> None:
 
     @mcp.tool(meta=tools.ALWAYS_LOAD)
     async def list_projects(ctx: Context) -> str:
-        """The games in decomp.wtf on this computer, with progress. Open one with open_project."""
+        """The games in decompdecomp on this computer, with progress. Open one with open_project."""
         agent = chat_agent(ctx)
         rows = net.store.all("SELECT slug FROM projects ORDER BY id DESC")
         out = []
@@ -107,7 +107,7 @@ def register(mcp, net, manager, jobs, settings, port: int, secret: str) -> None:
         Args:
             path: the game file on this computer
             own_copy: true only after the user confirmed it's their own legally obtained copy
-            compiler: optional compiler id; leave empty to let decomp.wtf pick
+            compiler: optional compiler id; leave empty to let decompdecomp pick
         """
         agent = chat_agent(ctx)
         if not own_copy:
@@ -115,8 +115,8 @@ def register(mcp, net, manager, jobs, settings, port: int, secret: str) -> None:
                             "import_game again with own_copy=true")
         game = hostenv.local_path(path)
         if not game.is_file():
-            hint = {"wsl": " (decomp.wtf runs in WSL: Windows drives are under /mnt, e.g. C:\\ is /mnt/c)",
-                    "docker": " (decomp.wtf runs in Docker and sees your home folder only)"}.get(hostenv.runtime(), "")
+            hint = {"wsl": " (decompdecomp runs in WSL: Windows drives are under /mnt, e.g. C:\\ is /mnt/c)",
+                    "docker": " (decompdecomp runs in Docker and sees your home folder only)"}.get(hostenv.runtime(), "")
             raise ToolError(f"no file at {game}{hint}")
 
         def work(log):
@@ -158,7 +158,7 @@ def register(mcp, net, manager, jobs, settings, port: int, secret: str) -> None:
 
     @mcp.tool(meta=tools.ALWAYS_LOAD)
     async def open_gui(ctx: Context) -> str:
-        """Open decomp.wtf's live view of the current project in the user's browser: the function map, what every
+        """Open decompdecomp's live view of the current project in the user's browser: the function map, what every
         agent is doing, diffs, progress. Do this once when you start, so the user can watch."""
         agent = chat_agent(ctx)
         slug = manager.project_of(agent.id) or settings.data.get("last_project")

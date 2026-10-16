@@ -1,8 +1,8 @@
-"""Updates: decomp.wtf finds out when there's a newer version of itself and, once the user says yes, installs it
+"""Updates: decompdecomp finds out when there's a newer version of itself and, once the user says yes, installs it
 and restarts in place (same port, same browser session; helper agents carry on afterwards).
 
-Where updates come from depends on how decomp.wtf was installed (install.json, written by the installer):
-- "release": the version on decomp.wtf (its install.sh says which one), installed from the wheel there
+Where updates come from depends on how decompdecomp was installed (install.json, written by the installer):
+- "release": the newest release on GitHub (main's install.sh says which one), installed from its tag's archive
 - "branch":  the newest commit of a branch on GitHub (for testing a branch before it's released), installed from
              GitHub's archive of that commit
 Installing is `uv tool install --force` of the new version, then its `decomp setup` (new pinned tools), then the
@@ -26,8 +26,7 @@ from pathlib import Path
 
 from .. import __version__, hostenv, toolchains
 
-REPO = "i12bp8/decomp.wtf"
-SITE = "https://decomp.wtf"
+REPO = "n-delic/decomp.wtf"
 RECHECK = {"release": 3 * 3600, "branch": 15 * 60}  # GitHub allows 60 unauthenticated API calls an hour
 
 
@@ -63,7 +62,7 @@ def version_key(v: str) -> tuple[int, ...]:
 
 
 def _get(url: str, timeout: float = 15) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": f"decomp.wtf/{__version__} (update check)",
+    req = urllib.request.Request(url, headers={"User-Agent": f"decompdecomp/{__version__} (update check)",
                                                "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -78,18 +77,13 @@ def _first_line(message: str) -> str:
 
 
 def _check_release(cur: dict) -> dict:
-    try:
-        text, site = _get(f"{SITE}/install.sh").decode("utf-8", "replace"), True
-    except OSError:  # decomp.wtf can't be reached from here (a filter, an outage): the release on GitHub
-        text, site = _get(f"https://raw.githubusercontent.com/{cur['repo']}/main/site/public/install.sh").decode(
-            "utf-8", "replace"), False
+    text = _get(f"https://raw.githubusercontent.com/{cur['repo']}/main/site/public/install.sh").decode("utf-8", "replace")
     m = re.search(r'^VERSION="([^"]+)"', text, re.M)
     if not m:
-        raise ValueError("decomp.wtf didn't say which version is current")
+        raise ValueError("decompdecomp didn't say which version is current")
     latest = m.group(1)
     newer = version_key(latest) > version_key(cur["version"])
-    spec = (f"decompnet @ {SITE}/dl/decompnet-{latest}-py3-none-any.whl" if site else
-            f"decompnet @ https://github.com/{cur['repo']}/archive/refs/tags/v{latest}.tar.gz")
+    spec = f"decompnet @ https://github.com/{cur['repo']}/archive/refs/tags/v{latest}.tar.gz"
     return {"available": newer, "latest": {"version": latest, "commit": "", "date": None},
             "notes": [], "link": f"https://github.com/{cur['repo']}/commits/main", "spec": spec}
 
@@ -127,7 +121,7 @@ def _check_branch(cur: dict) -> dict:
 
 
 def check() -> dict:
-    """What's installed, what's newest, and whether that's an update (network: GitHub or decomp.wtf)."""
+    """What's installed, what's newest, and whether that's an update (network: GitHub or decompdecomp)."""
     cur = installed()
     out = {"current": cur, "available": False, "latest": None, "notes": [], "link": None, "error": None,
            "checked": time.time(), "can_apply": can_apply()[0], "why_not": can_apply()[1]}
@@ -150,10 +144,10 @@ def uv() -> str | None:
 
 def can_apply() -> tuple[bool, str]:
     if sys.platform == "win32":
-        return False, ("decomp.wtf now runs in WSL 2 on Windows: run the installer again in PowerShell "
-                       "(irm https://decomp.wtf/install.ps1 | iex) to switch to it")
+        return False, ("decompdecomp now runs in WSL 2 on Windows: run the installer again in PowerShell "
+                       "(irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex) to switch to it")
     if not uv():
-        return False, "uv isn't installed here, so decomp.wtf can't update itself: run the installer again"
+        return False, "uv isn't installed here, so decompdecomp can't update itself: run the installer again"
     return True, ""
 
 
@@ -163,7 +157,7 @@ def install(found: dict, log=print) -> dict:
     if not ok:
         raise RuntimeError(why)
     cur = found["current"]
-    log(f"installing decomp.wtf {found['latest'].get('version') or ''}".rstrip()
+    log(f"installing decompdecomp {found['latest'].get('version') or ''}".rstrip()
         + (f" ({cur.get('branch')} @ {found['latest']['commit'][:7]})" if cur["channel"] == "branch" else ""))
     cmd = [uv(), "tool", "install", "--force", "--python", "3.12", found["spec"]]
     _stream(cmd, log, "installing the update failed")
@@ -233,7 +227,7 @@ class Updater:
                 return
             found = self.last if self.last and self.last.get("available") else check()
             if not found.get("available"):
-                raise ValueError(found.get("error") or "decomp.wtf is up to date")
+                raise ValueError(found.get("error") or "decompdecomp is up to date")
             ok, why = can_apply()
             if not ok:
                 raise ValueError(why)
@@ -249,13 +243,13 @@ class Updater:
                 self.job.update(state="error", error=str(e))
                 return
             self.job["state"] = "restarting"
-            log("restarting decomp.wtf")
+            log("restarting decompdecomp")
             time.sleep(1)  # the page sees "restarting" before the server goes away
             try:
                 self.before_restart()
                 restart(self.port, self.secret)
             except OSError as e:  # still the old version: say so (`decomp` starts the new one)
                 self.job.update(state="error", error=f"the update is installed, but restarting failed ({e}): "
-                                                       "quit decomp.wtf and start it again")
+                                                       "quit decompdecomp and start it again")
 
         threading.Thread(target=run, daemon=True, name="update").start()

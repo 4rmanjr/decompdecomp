@@ -266,7 +266,7 @@ def _dtk_project(root: Path, version: str, config: str) -> None:
 
 def test_a_project_that_reads_an_extracted_disc_gets_its_files_from_the_disc_image(tmp_path, monkeypatch):
     """Older dtk projects read orig/<version>/sys/main.dol and files/... (the README says "extract the disc with
-    Dolphin"); decomp.wtf copies exactly those files out of the user's disc image, picking the disc of that version."""
+    Dolphin"); decompdecomp copies exactly those files out of the user's disc image, picking the disc of that version."""
     from decompnet.forks import scratch_dtk
     from decompnet.forks.project import ForkProject
 
@@ -415,12 +415,12 @@ def test_a_public_decomp_together(tmp_path):
 
 
 def test_the_retired_decomp_dev_directory_is_never_asked_for(tmp_path, monkeypatch):
-    """#21: decomp.dev retired its project directory (410 Gone). decomp.wtf doesn't ask for it: an install keeps
+    """#21: decomp.dev retired its project directory (410 Gone). decompdecomp doesn't ask for it: an install keeps
     showing the list it downloaded before, or none."""
     import json
     import urllib.request
 
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("decomp.wtf asked the network"))
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("decompdecomp asked the network"))
     cache = tmp_path / "catalog.json"
     assert catalog.catalog(cache) == [] and catalog.cached_at(cache) is None
     cache.write_text(json.dumps({"projects": [{"owner": "o", "repo": "r", "platform": "gc"}]}))
@@ -455,7 +455,7 @@ def test_a_projects_own_words_on_ai_come_before_forking(tmp_path):
 
 
 def test_c_code_going_into_a_cpp_file_gets_c_linkage(tmp_path, monkeypatch):
-    """A twin's code from a C file tried in one of decomp.wtf's C++ files built, but had no fn_1_BB34 in it (the
+    """A twin's code from a C file tried in one of decompdecomp's C++ files built, but had no fn_1_BB34 in it (the
     name was mangled): 471 of Mario Party 6's twin misses. With extern "C" on it and its prototypes, it matches."""
     from types import SimpleNamespace
 

@@ -8,7 +8,7 @@ Layouts set up automatically:
 - splat:     N64/PlayStation-style projects (splat yaml + Makefile); the game file goes where the yaml's
              target_path says and is checked against its sha1.
 Everything else (CMake, justfiles, custom scripts) is set up by the user following its README; once the build
-has produced objdiff.json, decomp.wtf takes over. Nearly every project on decomp.dev ends up with one, since
+has produced objdiff.json, decompdecomp takes over. Nearly every project on decomp.dev ends up with one, since
 that's how its progress is reported.
 """
 
@@ -67,12 +67,12 @@ class Unit:
 
 @functools.lru_cache(maxsize=64)
 def _git_env(root: Path) -> dict | None:
-    """Commits need an identity: when git has none set up on this computer, commits are by decomp.wtf."""
+    """Commits need an identity: when git has none set up on this computer, commits are by decompdecomp."""
     res = subprocess.run(["git", "config", "user.email"], cwd=root, capture_output=True, text=True,
                          encoding="utf-8", errors="replace")
     if res.returncode == 0 and res.stdout.strip():
         return None
-    who = {"GIT_AUTHOR_NAME": "decomp.wtf", "GIT_AUTHOR_EMAIL": "noreply@decomp.wtf"}
+    who = {"GIT_AUTHOR_NAME": "decompdecomp", "GIT_AUTHOR_EMAIL": "noreply@decompdecomp.invalid"}
     return {**os.environ, **who, "GIT_COMMITTER_NAME": who["GIT_AUTHOR_NAME"], "GIT_COMMITTER_EMAIL": who["GIT_AUTHOR_EMAIL"]}
 
 
@@ -88,7 +88,7 @@ _NOISE = re.compile(r"^#{1,3}\s*(mwldeppc\.exe Linker Warning:|FORCEACTIVE symbo
 
 
 def _tool(name: str) -> str | None:
-    """A build tool from PATH or from decomp.wtf's own environment (the ninja Python package)."""
+    """A build tool from PATH or from decompdecomp's own environment (the ninja Python package)."""
     found = shutil.which(name)
     if found:
         return found
@@ -211,7 +211,7 @@ class ForkProject:
         Works from a file on disk, so multi-gigabyte discs are never read into memory."""
         need = self.needs(version)
         if not need["path"]:
-            raise ForkError("decomp.wtf doesn't know where this project expects the game; follow its README")
+            raise ForkError("decompdecomp doesn't know where this project expects the game; follow its README")
         src = Path(src)
         if need.get("sha1") and _sha1(src) != need["sha1"]:
             inner = self._from_disc(src.read_bytes(), Path(need["path"]).name) if src.stat().st_size < 1 << 30 else None
@@ -276,15 +276,15 @@ class ForkProject:
         if kind == "objdiff":
             cfg = self.objdiff_config()
             return [[cfg.get("custom_make") or "make", *cfg.get("custom_args", [])]]
-        raise ForkError("decomp.wtf can't tell how to build this project; follow its README, then refresh")
+        raise ForkError("decompdecomp can't tell how to build this project; follow its README, then refresh")
 
     def run(self, cmd: list[str], log=print, timeout: float = 3600, failed: list[str] | None = None) -> tuple[bool, str]:
         """Run a build step in the project. Targets the build reports as failed (ninja's FAILED:, make's Error lines)
         are added to `failed`."""
         env = dict(os.environ)
         env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), env.get("PATH", "")])
-        # found on that PATH (decomp.wtf's own ninja): Linux looks a command up there itself, Windows only in this
-        # process's PATH, where decomp.wtf's environment isn't when it's installed
+        # found on that PATH (decompdecomp's own ninja): Linux looks a command up there itself, Windows only in this
+        # process's PATH, where decompdecomp's environment isn't when it's installed
         cmd = [shutil.which(cmd[0], path=env["PATH"]) or cmd[0], *cmd[1:]]
         log("$ " + " ".join(Path(c).name if i == 0 else c for i, c in enumerate(cmd)))
         try:
@@ -311,13 +311,13 @@ class ForkProject:
         if quiet:
             log(f"({quiet} repeated lines and linker warnings not shown)")
         if killed_for_memory(code):
-            out.append("stopped: it used more memory than decomp.wtf allows a single tool, so it was stopped "
+            out.append("stopped: it used more memory than decompdecomp allows a single tool, so it was stopped "
                        "before it could slow down or freeze your computer")
         return code == 0, "\n".join(out[-60:])
 
     def unpack_disc(self, version: str | None, log=print) -> int:
         """A dtk project that reads an extracted disc (orig/<version>/sys/main.dol, files/...) instead of the disc
-        image: copy the files its config names out of the user's disc image with decomp.wtf's own dtk, as the README's
+        image: copy the files its config names out of the user's disc image with decompdecomp's own dtk, as the README's
         "extract the disc with Dolphin" step would. Returns how many files were copied."""
         if self.kind() != "dtk" or not version:
             return 0
@@ -356,7 +356,7 @@ class ForkProject:
             log("compiling every source file, so objdiff can measure each one (some work in progress may not compile)")
             self.build_all(log=log)
         if not (self.root / "objdiff.json").exists():
-            raise ForkError("the project built, but has no objdiff.json, so decomp.wtf can't measure matches. "
+            raise ForkError("the project built, but has no objdiff.json, so decompdecomp can't measure matches. "
                             "Some projects generate it with an extra step; check the README.")
 
     # ------------------------------------------------------------------ objdiff project

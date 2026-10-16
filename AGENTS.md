@@ -1,12 +1,18 @@
 # AGENTS.md
 
-How to work in this repository. Read README.md for what decomp.wtf does from a user's point of view.
+How to work in this repository. Read README.md for what decompdecomp does from a user's point of view.
 
 ## What this is
 
-decomp.wtf: AI agents decompile games the user owns into C that compiles, with the game's original compiler, to
-the exact same bytes. Python 3.12+, managed with uv. Upstream (i12bp8/decomp.wtf) is discontinued; this checkout is a
-fork (`origin`), `upstream` is the archived original.
+decompdecomp: AI agents decompile games the user owns into C that compiles, with the game's original compiler, to
+the exact same bytes. Python 3.12+, managed with uv. A continuation of decomp.wtf (Sam Wolfs, i12bp8/decomp.wtf,
+archived at 0.10.6): `origin` is n-delic/decomp.wtf, `upstream` the archived original.
+
+Naming: the project is **decompdecomp** in everything users read. Internal names stay as decomp.wtf left them, so
+existing installs and projects keep working: the `decomp` command, the `decompnet` package and data folder,
+`~/Decomp`, `.decomp.wtf.json` manifests, `.decomp-wtf/` state, the `decomp-wtf` git branch, WSL distribution and
+services. Installs and updates come from GitHub (`REPO` in app/updates.py and the installers); the decomp.wtf domain
+isn't ours, so nothing may point at it. `site/` is the original website, kept as it was.
 
 ## Commands
 
@@ -31,7 +37,7 @@ compilers are only installed after the user accepts that in Setup; don't add cod
    project on disk with an `objdiff.json`; objdiff judges each unit. `forks/project.py` detects and builds projects,
    `app/forkengine.py` drives them. From-scratch importers generate such a project:
    `forks/scratch_dtk.py` (GameCube/Wii, dtk-template), `forks/scratch_dsd.py` (DS, ds-decomp, template in
-   `forks/ds_template/`) and `forks/scratch_pe.py` (Windows PC: Ghidra finds functions, decomp.wtf delinks them
+   `forks/ds_template/`) and `forks/scratch_pe.py` (Windows PC: Ghidra finds functions, decompdecomp delinks them
    into COFF objects itself, template in `forks/pc_template/`). A new from-scratch platform that has a
    delinker/objdiff story belongs here. Fork-mode helpers that read objects with pyelftools must tolerate COFF
    (PC, Xbox): treat an `ELFError` as "no verdict".
@@ -50,7 +56,7 @@ tools and the agent prompt), `app/guide/*.md` (know-how agents read through `gui
   isn't there; small homemade games/objects live in `projects/demo-*` and are built by their own scripts.
 - Releases bump the version in five places together: `pyproject.toml`, `src/decompnet/__init__.py`,
   `site/public/install.sh`, `site/public/install.ps1`, `uv.lock`. Commit subjects read
-  `decomp.wtf X.Y.Z: <what users get, in one sentence>`, with a body explaining why.
+  `decompdecomp X.Y.Z: <what users get, in one sentence>`, with a body explaining why.
 
 ## Never
 

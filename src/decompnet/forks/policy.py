@@ -1,7 +1,7 @@
 """What a public decomp says about AI and contributions, read before it's forked.
 
 Every project works differently: some don't want AI-made code at all, others don't want drive-by contributions
-from people who put no work into them. decomp.wtf shows what the project's own README, CONTRIBUTING and agent
+from people who put no work into them. decompdecomp shows what the project's own README, CONTRIBUTING and agent
 files say before anything is cloned: the lines about AI, word for word, and which way they lean. A partial clone
 (no file contents except the few read) makes it work for any git host and costs a second or two.
 """

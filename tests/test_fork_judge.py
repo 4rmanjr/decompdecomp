@@ -3,7 +3,7 @@
 The original object here is what a split of the game gives (dtk, splat): its literals carry the original's names
 and sit where the whole file put them (lbl_80012348 behind constants of functions nobody has decompiled yet),
 while the compiler names the decompiled function's literals itself and starts them at 0. objdiff's progress report
-counts such a function as matched; every judgement in decomp.wtf has to agree, or a function reads 99.9% forever
+counts such a function as matched; every judgement in decompdecomp has to agree, or a function reads 99.9% forever
 and the guards reject every change next to it.
 """
 
@@ -133,7 +133,7 @@ def test_a_wrong_constant_is_not_a_match(fork):
     out = net.compile_and_diff(agent, "scale", SCALE.replace("1.1", "1.2"), slug)
     assert not out.startswith("✅") and "constants" in out and "1.1" in out and "1.2" in out, out
     assert _status(net, slug, "scale") == "open"
-    net.forks.sync(slug, log=lambda *_: None)  # objdiff's report counts it; decomp.wtf still doesn't
+    net.forks.sync(slug, log=lambda *_: None)  # objdiff's report counts it; decompdecomp still doesn't
     assert _status(net, slug, "scale") == "open"
     out = net.compile_and_diff(agent, "scale", SCALE, slug)
     assert out.startswith("✅ MATCH"), out
@@ -150,7 +150,7 @@ def test_a_reference_by_another_name_matches_with_a_warning(fork):
 def test_a_stale_match_in_the_database_blocks_nothing(fork):
     net, slug, agent = fork
     pid = net.project_row(slug)["id"]
-    with net.store.tx() as db:  # e.g. measured matched by an older build, or before an edit outside decomp.wtf
+    with net.store.tx() as db:  # e.g. measured matched by an older build, or before an edit outside decompdecomp
         db.execute("UPDATE functions SET status='matched' WHERE project_id=? AND name='scale'", (pid,))
     out = net.compile_and_diff(agent, "read_gain", GAIN, slug)
     assert out.startswith("✅ MATCH"), out

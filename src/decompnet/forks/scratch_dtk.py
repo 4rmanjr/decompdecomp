@@ -10,8 +10,8 @@ The game's REL modules (code loaded at run time: Mario Party's boards and miniga
 with it, as the community's projects do: often most of a game's functions are in them.
 
 Each code region dtk finds gets a source file (src/auto/text_<address>.c; a module's in src/auto/<module>/) for
-agents to write into; decomp.wtf's
-fork engine then works on it like on any community project. Tools are decomp.wtf's pinned copies (dtk, binutils,
+agents to write into; decompdecomp's
+fork engine then works on it like on any community project. Tools are decompdecomp's pinned copies (dtk, binutils,
 CodeWarrior via wibo, objdiff, sjiswrap), so the build is offline and checksum-verified.
 """
 
@@ -171,7 +171,7 @@ def rel_imports(data: bytes) -> set[int]:
 
 def is_compressed_rel(data: bytes) -> bool:
     """A REL module packed with Sega's SaCompGC (Sonic Adventure DX keeps some of its modules so): the marker sits
-    near the start of the file. decomp.wtf can't unpack those yet."""
+    near the start of the file. decompdecomp can't unpack those yet."""
     return b"SaCompGC" in data[:0x40] or b"SACompGC" in data[:0x40]
 
 
@@ -179,7 +179,7 @@ def disc_modules(disc: Path, packed: list[str] | None = None) -> list[tuple[str,
     """The REL modules on a disc: (name, path in the disc, sha1, module id), in the disc's order. Modules can also
     be packed in an archive (Twilight Princess keeps 134 of its 250 in files/RELS.arc): dtk reads those by the
     path "files/RELS.arc:mmem/d_a_bg.rel". Archives are looked into when their name says they hold RELs.
-    `packed`: gets the paths of modules compressed in a way decomp.wtf can't read (see is_compressed_rel)."""
+    `packed`: gets the paths of modules compressed in a way decompdecomp can't read (see is_compressed_rel)."""
     files = vfs_list(disc)
     rels = [f for f in files if f.lower().endswith(".rel")]
     for arc in (f for f in files if re.search(r"rel", Path(f).name, re.I) and Path(f).suffix.lower() in (".arc", ".szs", ".carc")):
@@ -232,7 +232,7 @@ def game_info(path: Path) -> dict:
 
 
 def tool_args() -> list[str]:
-    """configure.py arguments pointing at decomp.wtf's pinned tools."""
+    """configure.py arguments pointing at decompdecomp's pinned tools."""
     for tid in ("dtk", "gc-wii-binutils", "objdiff-cli", "sjiswrap", "wibo"):
         if tid != "wibo" or toolchains.get("wibo").supported:
             toolchains.ensure(tid, log=lambda *_: None)
@@ -608,12 +608,12 @@ def create(root: Path, game: Path, *, compiler: str | None = None, log=print) ->
         log(f"{len(modules)} REL modules on the disc: analysed with the program")
     if packed:
         log(f"{len(packed)} more modules are compressed (Sega's SaCompGC: {', '.join(Path(p).name for p in packed[:4])}"
-            f"{', ...' if len(packed) > 4 else ''}): decomp.wtf can't read those yet, so they and the modules that need "
+            f"{', ...' if len(packed) > 4 else ''}): decompdecomp can't read those yet, so they and the modules that need "
             "them aren't decompiled")
     # Modules that are never loaded together may share an id (Mario Party's minigames all do): a reference to
     # "module 1" then can't be resolved, and each links against the program only, as the community's projects set it
     shared_ids = len({m[3] for m in modules}) < len(modules)
-    (config / "config.yml").write_text(f"""# Made by decomp.wtf. See config.example.yml for every option.
+    (config / "config.yml").write_text(f"""# Made by decompdecomp. See config.example.yml for every option.
 object_base: orig/{gid}
 object: sys/main.dol
 hash: {sha1}
@@ -660,7 +660,7 @@ write_asm: true
             what = (f"the module {dropped[0]}" if len(dropped) == 1 else
                     f"{len(dropped)} modules ({', '.join(dropped[:4])}{', ...' if len(dropped) > 4 else ''})")
             log(f"left out {what}: decomp-toolkit can't analyse "
-                + (f"them without module {need.group(1)}, which isn't among the modules decomp.wtf could read"
+                + (f"them without module {need.group(1)}, which isn't among the modules decompdecomp could read"
                    + (" (the disc keeps some compressed)" if packed else "") if need else "it")
                 + " (the community's decomps of games like this leave such modules out too); the game keeps your copy's")
         elif (newer := _next_linker(compiler, tail)):
@@ -719,10 +719,10 @@ write_asm: true
     }, indent=2), encoding="utf-8")
     (root / "README.example.md").unlink(missing_ok=True)
     with open(root / ".gitignore", "a", encoding="utf-8") as f:
-        f.write("\n# decomp.wtf\n.decomp-wtf/\n")
+        f.write("\n# decompdecomp\n.decomp-wtf/\n")
     (root / "README.md").write_text(f"""# {info['title']} ({gid}) decompilation
 
-Started from scratch with [decomp.wtf](https://decomp.wtf) on [dtk-template](https://github.com/encounter/dtk-template),
+Started from scratch with [decompdecomp](https://github.com/n-delic/decomp.wtf) on [dtk-template](https://github.com/encounter/dtk-template),
 the layout GameCube and Wii decomps use. Every build rebuilds `main.dol` and checks it against your copy, byte for byte.
 
 1. Put your own copy of the game in `orig/{gid}/` (never commit it).
@@ -733,8 +733,8 @@ Compiler: CodeWarrior {compiler} (change `config.linker_version` in configure.py
 """, encoding="utf-8")
     if shutil.which("git"):
         for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                    ["git", "-c", "user.name=decomp.wtf", "-c", "user.email=noreply@decomp.wtf", "commit", "-q", "-m",
-                     f"Start the {gid} decompilation (decomp.wtf, dtk-template)"]):
+                    ["git", "-c", "user.name=decompdecomp", "-c", "user.email=noreply@decompdecomp.invalid", "commit", "-q", "-m",
+                     f"Start the {gid} decompilation (decompdecomp, dtk-template)"]):
             subprocess.run(cmd, cwd=root, capture_output=True)
     return {"platform": platform, "id": gid, "title": info["title"], "compiler": compiler, "sources": len(sources),
             "rebuild": rebuild}

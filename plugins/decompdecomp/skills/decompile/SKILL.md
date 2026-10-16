@@ -1,17 +1,17 @@
 ---
 name: decompile
-description: Decompile a game the user owns (ROM, disc image, ISO, executable) into matching C with decomp.wtf. Use when the user asks to decompile, decomp, reverse engineer, port or mod a game, or to match a game's functions byte for byte (N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance, DS, or a public decomp of any platform).
+description: Decompile a game the user owns (ROM, disc image, ISO, executable) into matching C with decompdecomp. Use when the user asks to decompile, decomp, reverse engineer, port or mod a game, or to match a game's functions byte for byte (N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance, DS, or a public decomp of any platform).
 ---
 
-# Decompiling a game with decomp.wtf
+# Decompiling a game with decompdecomp
 
-decomp.wtf runs on the user's computer and gives you everything matching decompilation needs: the game's original
+decompdecomp runs on the user's computer and gives you everything matching decompilation needs: the game's original
 compiler, a judge that compiles your C and compares it with the game byte for byte, free matches from machine
 drafts, helper agents working in parallel, and a live view for the user. Its tools come from the `decomp` MCP server.
 
-1. **decomp.wtf installed?** If the `decomp` tools are unavailable, ask the user whether to install decomp.wtf
-   (free, open source, local): `curl -fsSL https://decomp.wtf/install.sh | bash` on Linux, or
-   `irm https://decomp.wtf/install.ps1 | iex` in PowerShell. Then restart this session so the tools load.
+1. **decompdecomp installed?** If the `decomp` tools are unavailable, ask the user whether to install decompdecomp
+   (free, open source, local): `curl -fsSL https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.sh | bash` on Linux, or
+   `irm https://raw.githubusercontent.com/n-delic/decomp.wtf/main/site/public/install.ps1 | iex` in PowerShell. Then restart this session so the tools load.
 2. **The game.** Work only with the user's own copy. Never download games or point to download sites. Ask the user
    to confirm the file is their own legally obtained copy, then `import_game(path, own_copy=true)`. If the game is
    already there, `list_projects()` and `open_project()`.

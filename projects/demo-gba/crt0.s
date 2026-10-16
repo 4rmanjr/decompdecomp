@@ -1,5 +1,5 @@
 @ Demo Quest GBA start-up: ROM header, then copy .data to RAM, clear .bss and call main in Thumb mode.
-@ The header's logo area is left blank (it only matters to the console's boot check). Written for decomp.wtf (CC0).
+@ The header's logo area is left blank (it only matters to the console's boot check). Written for decompdecomp (CC0).
         .section .text.crt0, "ax"
         .arm
         .global _start

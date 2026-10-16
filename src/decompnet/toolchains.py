@@ -94,7 +94,7 @@ def unsupported_cpu() -> str | None:
     machine = current_platform().split("-", 1)[1]
     if machine == "x86_64":
         return None
-    return (f"decomp.wtf needs a 64-bit Intel or AMD PC for now (the games' compilers are x86 programs; this "
+    return (f"decompdecomp needs a 64-bit Intel or AMD PC for now (the games' compilers are x86 programs; this "
             f"computer's processor is {machine})")
 
 

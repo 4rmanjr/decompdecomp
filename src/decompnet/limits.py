@@ -1,6 +1,6 @@
 """Keep heavy tools from taking the user's computer down.
 
-decomp.wtf runs other people's tools on big inputs: project builds, decomp-toolkit's analysis, Ghidra. A runaway
+decompdecomp runs other people's tools on big inputs: project builds, decomp-toolkit's analysis, Ghidra. A runaway
 one can eat all memory and swap until the system's out-of-memory killer takes the whole desktop session with it.
 On Linux each heavy command runs in its own systemd scope with a memory cap and no swap, so only that command
 is stopped.

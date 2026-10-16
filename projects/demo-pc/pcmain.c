@@ -1,5 +1,5 @@
 /* Demo Quest PC start-up and a few functions in the shapes PC games have: Win32-style __stdcall and __fastcall
- * functions, a dense switch (a jump table after the function's code) and string constants. Written for decomp.wtf
+ * functions, a dense switch (a jump table after the function's code) and string constants. Written for decompdecomp
  * (CC0). */
 #include "game.h"
 

@@ -1,4 +1,4 @@
-/* Demo Quest DS, linked by CodeWarrior's linker like DS games. Written for decomp.wtf (CC0). */
+/* Demo Quest DS, linked by CodeWarrior's linker like DS games. Written for decompdecomp (CC0). */
 /* The ARM9 program: secure area, start-up code and build info, code, constants, static initializers, data. */
 /* .bss starts where the autoload blocks are (they're copied away first); then the ITCM and DTCM parts. */
 MEMORY {

@@ -1,7 +1,7 @@
 """Start a PC (Windows) decompilation from scratch: a project made for the user's own copy of a 32-bit x86 program
 (.exe), built with the game's Visual C++ and judged by objdiff, worked on like any community project.
 
-There's no community toolkit for this as there is for GameCube (decomp-toolkit) or DS (ds-decomp), so decomp.wtf
+There's no community toolkit for this as there is for GameCube (decomp-toolkit) or DS (ds-decomp), so decompdecomp
 does the delinking itself:
 
 - Ghidra's analysis finds the functions (and reads the program's imports and exports);
@@ -339,7 +339,7 @@ def units(functions: list[Function]) -> dict[str, list[Function]]:
 
 
 def tool_args() -> list[str]:
-    """configure.py arguments pointing at decomp.wtf's pinned tools."""
+    """configure.py arguments pointing at decompdecomp's pinned tools."""
     if toolchains.installed("msvc") is None:
         raise ForkError("PC games are built with Microsoft Visual C++, which is proprietary: install it in Setup "
                         "(Visual C++) if you accept that, then try again")
@@ -487,7 +487,7 @@ def create(root: Path, game: Path, *, compiler: str | None = None, log=print) ->
                                      ".ninja_*\nobjdiff.json\n__pycache__/\n.decomp-wtf/\n", encoding="utf-8")
     (root / "README.md").write_text(f"""# {info['title']} decompilation
 
-Started from scratch with [decomp.wtf](https://decomp.wtf): the game's functions, found by Ghidra, are cut out of your
+Started from scratch with [decompdecomp](https://github.com/n-delic/decomp.wtf): the game's functions, found by Ghidra, are cut out of your
 copy of its program and compared with what `src/` compiles to, function by function, with objdiff.
 
 1. Put your own copy of the game's program here as `orig/{version}.exe` (never commit it).
@@ -500,8 +500,8 @@ function's address, size, symbol and relocations.
 """, encoding="utf-8")
     if shutil.which("git"):
         for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                    ["git", "-c", "user.name=decomp.wtf", "-c", "user.email=noreply@decomp.wtf", "commit", "-q", "-m",
-                     f"Start the {info['title']} decompilation (decomp.wtf, Ghidra)"]):
+                    ["git", "-c", "user.name=decompdecomp", "-c", "user.email=noreply@decompdecomp.invalid", "commit", "-q", "-m",
+                     f"Start the {info['title']} decompilation (decompdecomp, Ghidra)"]):
             subprocess.run(cmd, cwd=root, capture_output=True)
     return {"platform": "win32", "id": version, "title": info["title"], "compiler": f"MSVC/{compiler}",
             "sources": len(groups), "sha1": info["sha1"]}

@@ -113,7 +113,7 @@ def test_code_without_a_file_gets_one(gc):
     pid = proj["id"]
     assert net.store.one("SELECT COUNT(*) n FROM functions WHERE project_id=? AND status='nosource'", pid)["n"] > asm_only
     total = net.store.one("SELECT COUNT(*) n FROM functions WHERE project_id=?", pid)["n"]
-    net._update_cfg(slug, lambda c: c.pop("uncovered", None))  # measured by a decomp.wtf before 0.9.0
+    net._update_cfg(slug, lambda c: c.pop("uncovered", None))  # measured by a decompdecomp before 0.9.0
     assert net.forks.overview(slug)["uncovered"]["functions"] > 0  # the overview still offers the files
     plan = net.forks.code_without_files(slug, fp.report())
     assert [x[1] for x in plan["split"]] == [gone.name], plan

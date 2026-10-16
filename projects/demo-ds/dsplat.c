@@ -1,5 +1,5 @@
 /* Demo Quest DS platform part: what only a DS game has. A BIOS call from the secure area, a routine that runs from
- * the ITCM and data in the DTCM, used once per frame. Written for decomp.wtf (CC0). */
+ * the ITCM and data in the DTCM, used once per frame. Written for decompdecomp (CC0). */
 typedef unsigned int u32;
 typedef signed int s32;
 

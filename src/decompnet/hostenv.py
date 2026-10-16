@@ -1,6 +1,6 @@
-"""Where decomp.wtf runs, and how it reaches the computer around it.
+"""Where decompdecomp runs, and how it reaches the computer around it.
 
-decomp.wtf is a Linux program everywhere: on Linux it runs on the computer itself ("native"); on Windows inside
+decompdecomp is a Linux program everywhere: on Linux it runs on the computer itself ("native"); on Windows inside
 its own WSL 2 distribution ("wsl", made by install.ps1); on servers, if wanted, in a Docker container ("docker",
 site/public/Dockerfile). Everything inside is the same Linux; only a few things cross to the computer the
 user sits at: opening the browser or a folder, and file paths the user types (C:\\Users\\..., ~/Downloads/...).
@@ -99,7 +99,7 @@ def _from_windows(text: str) -> Path | None:
 # ---------------------------------------------------------------------------------- crossing over
 
 def local_path(text: str) -> Path:
-    """A file path the user (or their agent, on their own computer) gave, as decomp.wtf sees it.
+    """A file path the user (or their agent, on their own computer) gave, as decompdecomp sees it.
 
     WSL: Windows paths become /mnt/c/...; Docker: the host's home is mounted at the same path inside, and ~ means
     the user's home there, not the container's."""
@@ -113,7 +113,7 @@ def local_path(text: str) -> Path:
 
 
 def shown_path(path: Path | str) -> str:
-    """A path of decomp.wtf's, as the user can open it on their own computer."""
+    """A path of decompdecomp's, as the user can open it on their own computer."""
     if runtime() == "wsl":
         return windows_path(path)
     return str(path)
@@ -144,7 +144,7 @@ def open_folder(path: Path) -> str | None:
     """Show a folder in the user's file manager. Returns why it couldn't, or None."""
     rt = runtime()
     if rt == "docker":
-        return (f"Your projects are inside decomp.wtf's Docker volume ({path}). Open a terminal there with "
+        return (f"Your projects are inside decompdecomp's Docker volume ({path}). Open a terminal there with "
                 f"`decomp shell`, or copy this one out with: docker cp decomp-wtf:{path} ~/Desktop/")
     if rt == "wsl":
         exe = _windows_tool("explorer.exe")
@@ -163,8 +163,8 @@ def open_folder(path: Path) -> str | None:
 
 
 def host_bridge() -> list[str] | None:
-    """How an agent on the user's own computer starts `decomp mcp` when decomp.wtf runs in WSL or Docker (None:
-    decomp.wtf runs on that computer itself)."""
+    """How an agent on the user's own computer starts `decomp mcp` when decompdecomp runs in WSL or Docker (None:
+    decompdecomp runs on that computer itself)."""
     rt = runtime()
     if rt == "wsl":  # WSL doesn't pass Windows' environment through: the agent's name goes in as --name
         return ["wsl.exe", "-d", distro(), "--cd", "~", "--exec", "/usr/local/bin/decomp", "mcp"]
@@ -175,12 +175,12 @@ def host_bridge() -> list[str] | None:
 
 
 def terminal_hint() -> str:
-    """How the user opens a terminal where decomp.wtf's helper agents live (to sign them in)."""
+    """How the user opens a terminal where decompdecomp's helper agents live (to sign them in)."""
     rt = runtime()
     if rt == "wsl":
-        return "Open decomp.wtf's terminal (run `decomp shell` in PowerShell, or `wsl -d decomp-wtf`)"
+        return "Open decompdecomp's terminal (run `decomp shell` in PowerShell, or `wsl -d decomp-wtf`)"
     if rt == "docker":
-        return "Open decomp.wtf's terminal (run `decomp shell` in your terminal)"
+        return "Open decompdecomp's terminal (run `decomp shell` in your terminal)"
     return "Open a terminal"
 
 

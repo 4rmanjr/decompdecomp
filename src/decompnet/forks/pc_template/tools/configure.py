@@ -5,8 +5,8 @@
 
 The build cuts every function out of your copy of the game (orig/, see config/VERSION/functions.json) into objects,
 one per source file (tools/delink.py), and compiles src/ with the game's Visual C++ (run through wibo on Linux and
-macOS). objdiff.json (for objdiff and decomp.wtf) compares every source file's functions with the original's.
-Made by decomp.wtf.
+macOS). objdiff.json (for objdiff and decompdecomp) compares every source file's functions with the original's.
+Made by decompdecomp.
 """
 
 import argparse
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import ninja_syntax
 
-# Settings (decomp.wtf wrote these for this game; change them if the game was built differently)
+# Settings (decompdecomp wrote these for this game; change them if the game was built differently)
 MSVC_VERSION = "6.0"
 CL_FLAGS = ["/nologo", "/c", "/O2", "/W3"]
 

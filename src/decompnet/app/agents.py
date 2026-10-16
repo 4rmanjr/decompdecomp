@@ -79,9 +79,9 @@ API_PRESETS = {
 # by older versions as "gemini" carry on as Antigravity.
 ALIASES = {"gemini": "antigravity", "agy": "antigravity"}
 
-# decomp.wtf's tools are loaded up front in Antigravity (tools.ALWAYS_LOAD) and need no permission. Should a helper
+# decompdecomp's tools are loaded up front in Antigravity (tools.ALWAYS_LOAD) and need no permission. Should a helper
 # reach one through agy's generic MCP dispatcher instead, a headless run can't ask, and agy quietly refuses it:
-# this rule in the user's agy settings allows decomp.wtf's tools (and nothing else).
+# this rule in the user's agy settings allows decompdecomp's tools (and nothing else).
 AGY_ALLOW = "mcp(decomp/*)"
 
 # Functions per helper session: a fresh session starts with a small, clean context (each function's assembly,
@@ -293,7 +293,7 @@ def argv(cmd: list[str]) -> list[str]:
 
 
 def signin(k: Kind) -> str:
-    """How to sign in to an agent, said for where decomp.wtf runs (WSL/Docker: in decomp.wtf's own terminal)."""
+    """How to sign in to an agent, said for where decompdecomp runs (WSL/Docker: in decompdecomp's own terminal)."""
     from .. import hostenv
 
     if not k.signin or hostenv.runtime() == "native":
@@ -392,9 +392,9 @@ def _parse_agy(obj: dict, state: dict) -> list[tuple[str, str]]:
             out.append(("usage", json.dumps({"tokens": usage["total_tokens"]})))
         denied = [d for d in res.get("denied_actions") or [] if isinstance(d, dict)]
         if any(d.get("action") == "mcp" for d in denied):
-            out.append(("error", f"Antigravity refused decomp.wtf's tools: a background run can't ask you for permission. "
+            out.append(("error", f"Antigravity refused decompdecomp's tools: a background run can't ask you for permission. "
                                  f"Allow them once: add \"{AGY_ALLOW}\" to \"permissions\": {{\"allow\": [...]}} in "
-                                 f"{agy_settings()} (only decomp.wtf's tools; shell, files and the web keep asking)."))
+                                 f"{agy_settings()} (only decompdecomp's tools; shell, files and the web keep asking)."))
         if res.get("status") not in (None, "SUCCESS"):
             out.append(("error", str(res.get("error") or f"session ended: {res.get('status')}")[:400]))
         else:
@@ -790,7 +790,7 @@ class Manager:
         if WIN:
             env["PATH"] = search_path()  # the agent finds node (and what it needs) even when installed after the app
         # An agent that only loads the MCP servers in the user's own settings (Antigravity CLI since 1.1.3 ignores a
-        # workspace's .agents/mcp_config.json) reaches decomp.wtf through the `decomp mcp` the user connected it
+        # workspace's .agents/mcp_config.json) reaches decompdecomp through the `decomp mcp` the user connected it
         # with: that bridge works as this session's agent when it finds this, not as a new agent of the user's
         env["DECOMP_SESSION_TOKEN"] = token
         prompt = self.prompt(s)
@@ -854,8 +854,8 @@ class Manager:
         if s.kind == "antigravity" and s.runs == 1:
             from . import connect  # (connect imports this module)
 
-            if not connect.status("antigravity"):  # decomp.wtf's tools only reach it through the user's settings
-                raise Fatal("Antigravity CLI only loads the MCP servers in your own settings: connect it to decomp.wtf "
+            if not connect.status("antigravity"):  # decompdecomp's tools only reach it through the user's settings
+                raise Fatal("Antigravity CLI only loads the MCP servers in your own settings: connect it to decompdecomp "
                             "once (Connect your agent, or `decomp connect antigravity`), then start the helpers again")
         cmd, env, prompt = self._command(s, token, workdir)
         s.push("info", f"session {s.runs}: {KINDS[s.kind].name} started")

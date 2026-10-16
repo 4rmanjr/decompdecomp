@@ -2,7 +2,7 @@
 @ the secure area, the entry point that runs the autoloads, clears .bss, runs the static initializers and jumps to
 @ main, the build info that describes the autoloads, a static initializer, and code and data that autoload to the
 @ ITCM and DTCM. Calls go to local labels (.L...), which the assembler resolves itself: CodeWarrior's linker
-@ doesn't take the newer relocations GNU as would write for them. Written for decomp.wtf (CC0); nothing here comes
+@ doesn't take the newer relocations GNU as would write for them. Written for decompdecomp (CC0); nothing here comes
 @ from the SDK.
         .syntax unified
         .arm

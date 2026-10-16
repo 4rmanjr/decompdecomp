@@ -40,7 +40,7 @@ def test_bridge_imports_and_works(tmp_path):
                                         source="s32 func_800007F4(s32 v) { return v < 0 ? -v : v; }")
             out["progress"] = await call("progress")
 
-        # a helper session decomp.wtf started, whose agent only loads the user's own MCP servers (Antigravity CLI):
+        # a helper session decompdecomp started, whose agent only loads the user's own MCP servers (Antigravity CLI):
         # the same bridge works as the session's agent, with a helper's tools and no new identity
         from decompnet.app.engine import RomNetwork
 

@@ -4,10 +4,10 @@ writes them), for objdiff to compare with what src/ compiles to.
 
     python tools/delink.py config/<version>/functions.json OUT_DIR
 
-functions.json (written by decomp.wtf from Ghidra's analysis) says where each function is in the .exe and where its
+functions.json (written by decompdecomp from Ghidra's analysis) says where each function is in the .exe and where its
 code refers to addresses: calls, jumps and data addresses become relocations, as in a compiled object, so a function
 matches whatever names your C uses for them. Each function gets a section of its own, as MSVC's /Gy makes them.
-Standard library only. Made by decomp.wtf.
+Standard library only. Made by decompdecomp.
 """
 
 import hashlib

@@ -60,7 +60,7 @@ def main() -> None:
     header[0:8] = b"PS-X EXE"
     struct.pack_into("<IIIIIIIIIIII", header, 0x10, syms["_start"], syms["_gp"], LOAD, len(body), 0, 0,
                      syms["_bss_start"], syms["_bss_end"] - syms["_bss_start"], 0x801FFF00, 0, 0, 0)
-    header[0x4C:0x4C + 40] = b"Demo Quest PS1 - made for decomp.wtf".ljust(40, b"\0")
+    header[0x4C:0x4C + 40] = b"Demo Quest PS1 - made for decompdecomp".ljust(40, b"\0")
     out = BUILD / "DEMOQ_PS1.EXE"
     out.write_bytes(bytes(header) + body)
     text.unlink()

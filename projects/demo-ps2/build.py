@@ -35,7 +35,7 @@ def main() -> None:
     if BUILD.exists():
         shutil.rmtree(BUILD)
     (BUILD / "src").mkdir(parents=True)
-    # EE-GCC is a 32-bit Linux program: run it in decomp.wtf's compiler sandbox, on copies of the sources
+    # EE-GCC is a 32-bit Linux program: run it in decompdecomp's compiler sandbox, on copies of the sources
     for name, src in (("demo", DEMO), ("game", GAME), ("zlib", ZLIB / "original"), ("sysinclude", ZLIB / "sysinclude")):
         shutil.copytree(src, BUILD / "src" / name)
     shutil.copy(HERE / "crt0.s", BUILD / "src" / "crt0.s")

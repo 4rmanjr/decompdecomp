@@ -1,6 +1,6 @@
 /* Demo Quest GBA runtime: the helpers agbcc calls on a CPU with no divide instruction and no FPU. This
  * executable exists to be decompiled, not played, so the float ones are integer stand-ins (like the PS1 demo).
- * Written for decomp.wtf (CC0). */
+ * Written for decompdecomp (CC0). */
 typedef union { float f; int i; } bits;
 
 static unsigned int udivmod(unsigned int n, unsigned int d, unsigned int *rem) {

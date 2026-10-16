@@ -1082,65 +1082,13 @@ async function installToolchain(id, proprietary) {
 }
 
 /* ------------------------------------------------------------------ public decomps */
-const PLAT_ORDER = ["gc", "wii", "ps", "ps2", "n64", "gba", "nds", "switch", "win32", "xbox360", "3ds", "xbox", "psp"];
 const PLAT_SHORT = { gc: "GameCube", wii: "Wii", ps: "PS1", psx: "PS1", ps2: "PS2", n64: "N64", gba: "GBA", nds: "DS", switch: "Switch", win32: "PC", xbox360: "Xbox 360", "3ds": "3DS", xbox: "Xbox", psp: "PSP" };
-const cat = { list: null, downloaded: null, plat: "", q: "", done: false };
 
-/* The list decomp.dev had, as this install downloaded it before the directory was retired (none on a new one). */
-async function loadCatalog() {
-  if (!cat.list) ({ projects: cat.list, downloaded: cat.downloaded } = await api("/api/catalog"));
-  return cat.list;
-}
-
-function ago(iso) {
-  if (!iso) return "";
-  const d = (Date.now() - Date.parse(iso)) / 86400000;
-  return d < 1 ? "today" : d < 2 ? "yesterday" : d < 60 ? `${Math.round(d)} days ago` : d < 730 ? `${Math.round(d / 30)} months ago` : `${Math.round(d / 365)} years ago`;
-}
-
-async function showCatalog() {
+/* A community decomp, forked by its repository address (decomp.dev, which listed them, is gone). */
+function showCatalog() {
   show("catalog");
-  try { await loadCatalog(); } catch { cat.list = []; }
-  const any = cat.list.length > 0;
-  $("catTools").hidden = $("catChips").hidden = !any;
-  if (!any) { $("catGrid").innerHTML = ""; $("catNote").textContent = ""; return; }
-  if (!S.st) await loadState().catch(() => {});
-  renderCatalog();
 }
 
-function renderCatalog() {
-  const all = cat.list || [];
-  const counts = {};
-  const shown = all.filter((p) => cat.done || p.matched < 99.99);
-  for (const p of shown) counts[p.platform] = (counts[p.platform] || 0) + 1;
-  const plats = PLAT_ORDER.filter((k) => counts[k]).concat(Object.keys(counts).filter((k) => !PLAT_ORDER.includes(k)));
-  $("catChips").innerHTML = [`<button class="chip ${cat.plat ? "" : "on"}" data-plat="" type="button">All <span>${shown.length}</span></button>`]
-    .concat(plats.map((k) => `<button class="chip ${cat.plat === k ? "on" : ""}" data-plat="${esc(k)}" type="button">${esc(PLAT_SHORT[k] || k.toUpperCase())} <span>${counts[k]}</span></button>`)).join("");
-  $("catChips").querySelectorAll(".chip").forEach((b) => { b.onclick = () => { cat.plat = b.dataset.plat; renderCatalog(); }; });
-  const q = cat.q.toLowerCase();
-  const forked = new Map((S.st?.projects || []).filter((p) => p.kind === "fork").map((p) => [p.repo_url, p.slug]));
-  const rows = all.filter((p) => (!cat.plat || p.platform === cat.plat) && (cat.done || p.matched < 99.99)
-    && (!q || `${p.name} ${p.id}`.toLowerCase().includes(q)));
-  const when = cat.downloaded ? new Date(cat.downloaded * 1000).toLocaleDateString() : "earlier";
-  $("catNote").textContent = `${rows.length} of ${all.length} projects${cat.done ? "" : " (finished ones hidden)"}: the list decompdecomp downloaded from decomp.dev ${cat.downloaded ? "on " + when : when}, before its directory was retired, with the progress of then. decompdecomp isn't affiliated with these projects.`;
-  $("catGrid").innerHTML = rows.slice(0, 240).map((p) => `<button class="cat-card" type="button" data-id="${esc(p.id)}">
-      <div class="cc-top"><span class="plat">${esc(PLAT_SHORT[p.platform] || p.platform_name)}</span>${forked.has(p.repo_url) ? `<span class="badge matched">forked</span>` : p.matched >= 99.99 ? `<span class="badge">done</span>` : ""}</div>
-      <h4>${esc(p.name)}</h4>
-      <p class="meta">${esc(p.id)}${p.version ? " · " + esc(p.version) : ""}</p>
-      <div class="meter"><i data-w="${p.matched}"></i></div>
-      <p class="meta"><b>${p.matched.toFixed(1)}%</b> of code · ${p.functions ? `${p.matched_functions.toLocaleString()} / ${p.functions.toLocaleString()} functions` : "functions unknown"}${p.updated ? " · " + ago(p.updated) : ""}</p>
-    </button>`).join("") || `<p class="muted">Nothing matches.</p>`;
-  requestAnimationFrame(() => $("catGrid").querySelectorAll(".meter i").forEach((i) => { i.style.width = i.dataset.w + "%"; }));
-  $("catGrid").querySelectorAll(".cat-card").forEach((b) => {
-    b.onclick = () => {
-      const p = all.find((x) => x.id === b.dataset.id);
-      if (forked.has(p.repo_url)) location.hash = `#/p/${forked.get(p.repo_url)}`;
-      else openForkDialog(p);
-    };
-  });
-}
-$("catSearch").addEventListener("input", () => { cat.q = $("catSearch").value; renderCatalog(); });
-$("catDone").addEventListener("change", () => { cat.done = $("catDone").checked; renderCatalog(); });
 $("repoUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") $("repoFork").click(); });
 $("repoFork").onclick = () => {
   const url = $("repoUrl").value.trim();
@@ -1161,9 +1109,6 @@ function policyHtml(pol) {
 
 function openForkDialog(p) {
   const body = dialog(`Fork ${p.name}`, `<p>decompdecomp clones <a class="link" href="${esc(p.repo_url)}" target="_blank" rel="noopener">${esc(p.id)}</a> to this computer and sets it up for your agents.</p>
-    ${p.functions ? `<dl class="facts">${[["Platform", p.platform_name || "?"], ["Version", p.version || "the project's default"], ["Progress", `${p.matched.toFixed(1)}% of code`]]
-      .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
-      <p class="muted small">Progress as decomp.dev last listed it; <a class="link" href="https://decomp.dev/${esc(p.id)}" target="_blank" rel="noopener">its page there</a> has the project's history, files and contributors.</p>` : ""}
     <div id="forkPolicy"><p class="muted small">Reading what the project says about AI and contributions…</p></div>
     <p class="muted small">Next you add <b>your own copy of the game</b>. Its code stays on your computer; your agent's provider sees the functions it works on. Setting up runs the project's own build scripts, as building it yourself would, so fork projects you trust. Matches are committed to a local <code>decomp-wtf</code> branch, and decompdecomp never pushes it anywhere: anything you send upstream is up to you and the project's rules.</p>
     <div class="row"><button class="primary" id="forkGo" type="button" disabled>Fork it</button><button class="ghost" data-close type="button">Cancel</button></div>

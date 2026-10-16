@@ -390,11 +390,6 @@ class ForkEngine:
     def _meta(fn) -> dict:
         return json.loads(fn["meta"]) if fn["meta"] else {}
 
-    def catalog(self) -> tuple[list[dict], float | None]:
-        """decomp.dev's list as this install downloaded it before the directory was retired, and when."""
-        path = self.net.workspace / ".decomp" / "catalog.json"
-        return catalog.catalog(path), catalog.cached_at(path)
-
     # ------------------------------------------------------------------ creating a fork
 
     def policy(self, repo: str) -> dict:

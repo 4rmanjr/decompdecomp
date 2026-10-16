@@ -14,7 +14,7 @@ import pytest
 
 from decompnet import toolchains
 from decompnet.app.engine import RomNetwork
-from decompnet.forks import catalog, csource
+from decompnet.forks import csource
 from decompnet.network import NetworkError
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -178,15 +178,6 @@ def test_csource_finds_definitions_and_stubs():
     assert csource.get(src, "C::m").startswith("void C::m")
     assert csource.get(src, "missing") is None
     assert "return 1" in csource.replace(src, "g", "int g(void) { return 1; }")
-
-
-def test_catalog_normalizes_decomp_dev():
-    raw = {"projects": [{"owner": "o", "repo": "r", "name": "Game", "platform": "gc", "default_version": "GALE01",
-                         "commit": {"timestamp": "2026-10-01T00:00:00Z"},
-                         "measures": {"matched_code_percent": 42.123, "total_functions": 10, "matched_functions": 4}}]}
-    p = catalog.normalize(raw)[0]
-    assert p["id"] == "o/r" and p["platform_name"] == "GameCube" and p["matched"] == 42.12
-    assert p["repo_url"] == "https://github.com/o/r"
 
 
 def test_clone_rejects_odd_sources(tmp_path):
@@ -412,19 +403,6 @@ def test_a_public_decomp_together(tmp_path):
     assert host._function("lerp", slug)["status"] == "matched"
     guest.links[gslug].sync()
     assert head(groot) == head(hroot)
-
-
-def test_the_retired_decomp_dev_directory_is_never_asked_for(tmp_path, monkeypatch):
-    """#21: decomp.dev retired its project directory (410 Gone). decompdecomp doesn't ask for it: an install keeps
-    showing the list it downloaded before, or none."""
-    import json
-    import urllib.request
-
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("decompdecomp asked the network"))
-    cache = tmp_path / "catalog.json"
-    assert catalog.catalog(cache) == [] and catalog.cached_at(cache) is None
-    cache.write_text(json.dumps({"projects": [{"owner": "o", "repo": "r", "platform": "gc"}]}))
-    assert [p["id"] for p in catalog.catalog(cache)] == ["o/r"] and catalog.cached_at(cache)
 
 
 def test_a_projects_own_words_on_ai_come_before_forking(tmp_path):

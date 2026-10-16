@@ -683,14 +683,6 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
 
     # ------------------------------------------------------------------ forks of public decomps
 
-    @mcp.custom_route("/api/catalog", methods=["GET"])
-    async def api_catalog(request: Request) -> Response:
-        """The public decomps decomp.dev listed, as this install downloaded them before it retired its directory."""
-        if (bad := guard(request)):
-            return bad
-        projects, at = await call(net.forks.catalog)
-        return JSONResponse({"projects": projects, "downloaded": at})
-
     @mcp.custom_route("/api/fork/policy", methods=["POST"])
     async def api_fork_policy(request: Request) -> Response:
         """What a public decomp says about AI and contributions, read from its own files before it's forked."""

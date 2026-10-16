@@ -12,7 +12,7 @@ Naming: the project is **decompdecomp** in everything users read. Internal names
 existing installs and projects keep working: the `decomp` command, the `decompnet` package and data folder,
 `~/Decomp`, `.decomp.wtf.json` manifests, `.decomp-wtf/` state, the `decomp-wtf` git branch, WSL distribution and
 services. Installs and updates come from GitHub (`REPO` in app/updates.py and the installers); the decomp.wtf domain
-isn't ours, so nothing may point at it. `site/` is the original website, kept as it was.
+isn't ours, so nothing may point at it. `site/` is the website (decomp.ndelic.com); `site/public/` also holds the installers, which updates read from GitHub.
 
 ## Commands
 
@@ -33,7 +33,7 @@ compilers are only installed after the user accepts that in Setup; don't add cod
 1. **ROM mode** (N64, PS1, PS2, GBA): `src/decompnet/rom/` splits the game (splat/spimdisasm, luvdis), and
    `rom/match.py` (MIPS) / `rom/match_arm.py` (ARM) *link* each compiled candidate at the function's real address
    and compare bytes. Driven by `app/engine.py`. Exported as a rebuildable tree by `rom/export*.py`.
-2. **Fork mode** (public decomps from decomp.dev, and GameCube/Wii/DS/PC started from scratch): a community-shaped
+2. **Fork mode** (public decomps forked by repository address, and GameCube/Wii/DS/PC started from scratch): a community-shaped
    project on disk with an `objdiff.json`; objdiff judges each unit. `forks/project.py` detects and builds projects,
    `app/forkengine.py` drives them. From-scratch importers generate such a project:
    `forks/scratch_dtk.py` (GameCube/Wii, dtk-template), `forks/scratch_dsd.py` (DS, ds-decomp, template in

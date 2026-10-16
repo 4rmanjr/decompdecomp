@@ -113,7 +113,7 @@ async function poll(first) {
     let mapDirty = false;
     for (const ev of live.events) {
       S.e = Math.max(S.e, ev.id);
-      if (["match", "split", "rename", "compiler"].includes(ev.kind)) mapDirty = true;
+      if (["match", "split", "rename", "compiler", "reopen"].includes(ev.kind)) mapDirty = true;
       if (ev.kind === "match" && !first) {
         S.flash.set(ev.detail, performance.now());
         if (ev.agent !== AUTO && ev.agent !== "@" + AUTO) toast(`<code>${esc(ev.detail)}</code>&nbsp;matched by ${esc(ev.agent || "an agent")}`, "match");

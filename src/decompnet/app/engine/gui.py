@@ -56,7 +56,7 @@ class GuiMixin:
                                              "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"
                                                              and not re.search(r"does not match|doesn't compile", s["check"] or "")],
                                              "boundaries": [r for r in cfg.get("boundaries", []) if r["status"] == "open"],
-                                             "compiler_ranges": self._range_rows(cfg)}
+                                             "compiler_ranges": self._range_rows(cfg), "auto_compiler": self.auto_adjusts(proj)}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):

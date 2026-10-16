@@ -264,7 +264,7 @@ class RangeChecks:
         elif status == "confirmed":
             text = f"confirmed by {confirmed} functions: 0x{start:X}-0x{end:X} is built by {short}"
             applied = ""
-            if self.net.auto_compiler:
+            if self.net.auto_adjusts(proj):
                 try:
                     self.net.set_compiler_ranges(proj["slug"], [[start, end]], c["toolchain"], c["flags"])
                     applied = " (applied)"

@@ -110,12 +110,12 @@ function renderSteering(ov) {
   const tcName = (id) => (S.st?.toolchains || []).find((t) => t.id === id)?.name || id;
   const bd = ov.boundaries || [];
   $("suggestPanel").hidden = !sg.length && !bd.length;
-  $("suggestList").innerHTML = bd.map((r) => `<div class="note"><small>${esc(r.agent)} · ${clock(r.t)} · where a function ends</small>
+  setHtml($("suggestList"), bd.map((r) => `<div class="note"><small>${esc(r.agent)} · ${clock(r.t)} · where a function ends</small>
     <b class="mono">${esc(r.function)}</b> ends at <span class="mono">${hex8(r.end)}</span>: the ${r.cut} bytes after it aren't code. ${esc(r.reason)}
     <p class="small muted mono">after ${hex8(r.end)}: ${esc(r.rest)}</p>
     <div class="row"><button class="primary small-btn" type="button" data-bapply="${r.id}">Cut it there</button><button class="ghost small-btn" type="button" data-bdismiss="${r.id}">Dismiss</button></div></div>`).join("") + sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
     ${s.check ? `<p class="small ${s.check.includes("matches the game") ? "" : "muted"}">${s.check.includes("matches the game") ? "✓ " : ""}${esc(s.check)}</p>` : ""}
-    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}${(s.ranges || []).length ? ` for ${s.ranges.length} range${s.ranges.length > 1 ? "s" : ""}` : ""}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
+    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}${(s.ranges || []).length ? ` for ${s.ranges.length} range${s.ranges.length > 1 ? "s" : ""}` : ""}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join(""));
 }
 $("suggestList").onclick = async (e) => {
   const cut = e.target.closest("button[data-bapply], button[data-bdismiss]");
@@ -175,9 +175,9 @@ async function togglePrio(name, on) {
 function renderPrio() {
   const list = (S.ov && S.ov.priority) || [];
   const box = $("prioList");
-  if (S.ov && S.ov.kind === "fork") { box.innerHTML = `<li class="muted small">Agents pick the easiest open functions first.</li>`; return; }
-  box.innerHTML = list.length ? list.map((n) => `<li><span class="star">★</span>${fnLink(n)}<span class="grow"></span><button class="link-btn" data-unpin="${esc(n)}" type="button">remove</button></li>`).join("")
-    : `<li class="muted small">Nothing pinned: agents take the easiest open functions first. Open a function and click ★ Next to put it first.</li>`;
+  if (S.ov && S.ov.kind === "fork") { setHtml(box, `<li class="muted small">Agents pick the easiest open functions first.</li>`); return; }
+  setHtml(box, list.length ? list.map((n) => `<li><span class="star">★</span>${fnLink(n)}<span class="grow"></span><button class="link-btn" data-unpin="${esc(n)}" type="button">remove</button></li>`).join("")
+    : `<li class="muted small">Nothing pinned: agents take the easiest open functions first. Open a function and click ★ Next to put it first.</li>`);
   box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
   box.querySelectorAll("[data-unpin]").forEach((b) => { b.onclick = () => togglePrio(b.dataset.unpin, false); });
 }
@@ -305,6 +305,7 @@ async function renderProjectSettings() {
     if (!S.st) await loadState();
     fillCompilers($("setTc"), ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[ov.platform]);
     $("setFlags").value = ov.compiler.flags.join(" ");
+    $("autoAdjust").checked = !!ov.auto_compiler;
     $("setRanges").value = "";
     const hex = (n) => "0x" + n.toString(16).toUpperCase();
     $("rangeList").innerHTML = (ov.compiler_ranges || []).length ? `<p class="col-title">Built with another compiler</p>` + ov.compiler_ranges.map((r) =>
@@ -317,11 +318,24 @@ async function renderProjectSettings() {
   $("projFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("");
 }
 $("setTcReset").onclick = () => { $("setFlags").value = ""; };
+$("autoAdjust").onchange = async () => {
+  const on = $("autoAdjust").checked;
+  try {
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, auto: on } });
+    toast(on ? "This game's proven compiler suggestions now apply by themselves." : "This game's compiler suggestions wait for you.");
+  } catch (err) { $("autoAdjust").checked = !on; toast(esc(err.message), "err"); }
+};
 $("rangeList").onclick = async (e) => {
   const b = e.target.closest("button[data-unrange]");
   if (!b) return;
+  const remove = (reopen) => api("/api/compiler", { method: "POST", body: { slug: S.slug, ranges: b.dataset.unrange, remove: true, reopen } });
   try {
-    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, ranges: b.dataset.unrange, remove: true } });
+    try {
+      S.ov = await remove(false);
+    } catch (err) {  // matched functions need the range: the user may judge it a quirk and redo them
+      if (!/wouldn't match/.test(err.message) || !confirm(`${err.message.split(":")[0]}.\n\nRemove the range anyway and reopen them? Their C stays as their best attempt, and agents redo them with the game's compiler.`)) throw err;
+      S.ov = await remove(true);
+    }
     renderStats(S.ov);
     renderProjectSettings();
     toast("That range is built with the project's compiler again.");

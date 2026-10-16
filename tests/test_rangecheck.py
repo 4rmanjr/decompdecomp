@@ -102,6 +102,9 @@ class FakeNet:
     def add_note(self, agent, slug, text, function=None):
         self.notes.append((function, text))
 
+    def auto_adjusts(self, proj):
+        return self.auto_compiler
+
     def _short(self, label):
         return label[0]
 
@@ -164,3 +167,19 @@ def test_without_evidence_the_nearest_neighbour_goes_to_an_agent_and_giving_up_m
     net.rangechecks.tried(net.proj, net._function("f5", "game"), CW[0], CW[1], "f5", True)
     check = net.cfg(net.proj)["range_checks"][-1]
     assert check["status"] == "confirmed" and net.priority == []
+
+
+def test_auto_adjust_is_a_setting_of_each_project(tmp_path):
+    """Ridge Racer V's agents kept finding quirks while GTA San Andreas's ranges were real: one game wants proven
+    suggestions to apply by themselves, another not. A project without its own setting keeps the app's older one."""
+    from decompnet.app.engine import RomNetwork
+
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    with net.store.tx() as db:
+        for slug in ("rr5", "gta"):
+            db.execute("INSERT INTO projects(slug, name, root, config) VALUES(?,?,?,?)",
+                       (slug, slug, str(tmp_path), json.dumps({"kind": "rom", "compiler": {"toolchain": GCC[0], "flags": GCC[1]}})))
+    net.auto_compiler = True  # the app's older, global setting
+    assert net.auto_adjusts(net._project("rr5")) and net.auto_adjusts(net._project("gta"))
+    net.set_auto_adjust("rr5", False)
+    assert not net.auto_adjusts(net._project("rr5")) and net.auto_adjusts(net._project("gta"))

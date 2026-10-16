@@ -10,6 +10,9 @@
    one defines. Not ES modules: they would need an import for every name used across files. */
 
 const $ = (id) => document.getElementById(id);
+/* A list the live feed redraws every second or two: replaced only when it changed. Replacing it while someone
+   presses one of its buttons swallows the click (Dismiss on a suggestion did nothing while 8 agents worked). */
+const setHtml = (el, html) => { if (el._html !== html) { el.innerHTML = html; el._html = html; } };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const hex8 = (n) => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(8, "0");
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });

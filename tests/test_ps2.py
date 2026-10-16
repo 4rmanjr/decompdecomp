@@ -304,6 +304,16 @@ def test_a_game_built_with_two_compilers(tmp_path):
         net.set_compiler_ranges(slug, [[start, end]], "ee-gcc-3.2")
     assert net.overview(slug)["compiler_ranges"][0]["toolchain"] == "mwcps2-3.0.1"
 
+    # removing the range would leave its matched functions unmatched: refused, unless the user reopens them (a range
+    # judged a quirk): then they're open again, with their C as their best attempt for the next agent
+    with pytest.raises(NetworkError, match="reopen those functions"):
+        net.set_compiler_ranges(slug, [[start, end]], None)
+    net.set_compiler_ranges(slug, [[start, end]], None, reopen=True)
+    ov = net.overview(slug)
+    assert ov["compiler_ranges"] == []
+    row = net.store.one("SELECT status, best_source, best_score FROM functions WHERE name='entity_default_hp'")
+    assert row["status"] == "open" and "entity_default_hp" in row["best_source"] and row["best_score"]
+
 
 @pytest.mark.parametrize("toolchain", ["ee-gcc-2.96", "ee-gcc-3.2"])
 def test_a_function_written_as_a_cpp_method_matches(toolchain, tmp_path):

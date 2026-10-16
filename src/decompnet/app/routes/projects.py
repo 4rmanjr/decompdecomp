@@ -51,9 +51,12 @@ def register(app: App) -> None:
         return out
 
     def p_compiler(slug, request, data):
-        if str(data.get("ranges") or "").strip():  # these address ranges only (or back to the project's: remove)
+        if "auto" in data:  # this project's suggestions apply by themselves once proven, or wait for the user
+            net.set_auto_adjust(slug, bool(data["auto"]))
+        elif str(data.get("ranges") or "").strip():  # these address ranges only (or back to the project's: remove)
             net.set_compiler_ranges(slug, parse_ranges(str(data["ranges"])),
-                                    None if data.get("remove") else str(data.get("toolchain", "")), data.get("flags") or None)
+                                    None if data.get("remove") else str(data.get("toolchain", "")), data.get("flags") or None,
+                                    reopen=bool(data.get("reopen")))
         else:
             net.set_compiler(slug, str(data.get("toolchain", "")), data.get("flags") or None)
         return net.overview(slug)

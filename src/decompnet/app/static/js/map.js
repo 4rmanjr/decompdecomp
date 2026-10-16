@@ -45,11 +45,11 @@ function renderMapView() {
   $("mapLegend").querySelectorAll("[data-cc]").forEach((sw) => { sw.style.background = `var(${CC_COLORS[sw.dataset.cc]})`; });
   const odd = S.map.filter((f) => f.ccx).length;
   const sv = S.survey || {}, run = sv.survey && sv.survey.state === "running";
-  note.innerHTML = `${odd ? `${odd.toLocaleString()} ringed functions look built by another compiler than today's.` : "The code agrees with the compilers the game builds it with today."} `
+  setHtml(note, `${odd ? `${odd.toLocaleString()} ringed functions look built by another compiler than today's.` : "The code agrees with the compilers the game builds it with today."} `
     + (run ? `The judge's survey is running: ${sv.survey.tried} tried, ${sv.survey.confirmed} confirmed.`
        : `${sv.tried ? `The judge's survey: ${sv.confirmed} confirmed in ${sv.tried} functions tried.` : "The judge's survey builds agents' C with each compiler the project uses: what matches becomes a suggestion."}`
           + ` <button class="ghost small-btn" type="button" id="surveyBtn">${sv.tried ? "Survey again" : "Run the survey"}</button>`)
-    + rangeChecksLine(sv.checks || []);
+    + rangeChecksLine(sv.checks || []));
   note.hidden = false;
   const btn = $("surveyBtn");
   if (btn) btn.onclick = async () => {

@@ -25,7 +25,7 @@ game compiles it. If the result is identical to the game, byte for byte, the fun
 **Linux**, with the installer (it also gets the compilers and keeps decompdecomp up to date):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
+curl -fsSL https://decomp.ndelic.com/install.sh | bash
 ```
 
 Or as a package, from the [releases](https://github.com/n-delic/decompdecomp/releases) (x86_64; each has its own
@@ -39,7 +39,7 @@ chmod +x decompdecomp-*-x86_64.AppImage && ./decompdecomp-*-x86_64.AppImage   # 
 **Windows** (experimental: decompdecomp runs in WSL 2, which the installer turns on), in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
+irm https://decomp.ndelic.com/install.ps1 | iex
 ```
 
 **macOS** is coming.

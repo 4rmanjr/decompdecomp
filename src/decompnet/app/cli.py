@@ -107,6 +107,16 @@ def _open_when_ready(url: str, port: int) -> None:
     threading.Thread(target=wait, daemon=True).start()
 
 
+def _saved_secret(state_file: Path) -> str | None:
+    """The secret the last run used, so the browser's cookie outlives a restart: a new one each launch sent every open
+    tab to "Open decompdecomp again" after each update. The file is the user's alone (0600), as before."""
+    try:
+        secret = json.loads(state_file.read_text(encoding="utf-8")).get("secret")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return secret if isinstance(secret, str) and len(secret) >= 24 else None
+
+
 def _restart_state() -> dict | None:
     """Set by updates.restart: this process just became the new version and keeps the old one's port and secret."""
     raw = os.environ.pop("DECOMP_RESTART", "")
@@ -140,7 +150,7 @@ def run(args) -> int:
 
     sock = _listen(restarted["port"] if restarted else args.port, exact=bool(restarted) or _fixed_port())
     port = sock.getsockname()[1]
-    secret = restarted["secret"] if restarted else secrets.token_urlsafe(24)
+    secret = restarted["secret"] if restarted else (_saved_secret(state_file) or secrets.token_urlsafe(24))
     state_file.write_text(json.dumps({"port": port, "secret": secret, "pid": os.getpid()}), encoding="utf-8")
     try:
         os.chmod(state_file, 0o600)

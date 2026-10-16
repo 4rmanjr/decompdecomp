@@ -1604,6 +1604,11 @@ class RomNetwork(Network):
         self._update_cfg(slug, change)
         s = found[0]
         note = f" ({check})" if check else ""
+        if spans and not self._range_proof(proj, spans):
+            return (f"Suggested, not applied by itself: ranges this small ({sum(b - a for a, b in spans)} bytes, "
+                    f"{self._functions_in(proj, spans)} function(s)) prove nothing about the compiler, since a few "
+                    f"instructions come out the same from several compilers. More likely the C isn't the original's "
+                    f"yet. It waits for the user.{note}")
         if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
             try:
                 self.resolve_suggestion(slug, s["id"], apply=True, guard=True)
@@ -1655,6 +1660,19 @@ class RomNetwork(Network):
         if d is None:
             return f"checked: {fn['name']}'s C doesn't compile with it"
         return f"checked: {fn['name']}'s C {'matches the game byte for byte' if ok else 'does not match'} with it"
+
+    RANGE_PROOF_BYTES, RANGE_PROOF_FUNCTIONS = 256, 3
+
+    def _functions_in(self, proj, spans: list[list[int]]) -> int:
+        return sum(self.store.one("SELECT COUNT(*) AS n FROM functions WHERE project_id=? AND vram>=? AND vram<?",
+                                  proj["id"], a, b)["n"] for a, b in spans)
+
+    def _range_proof(self, proj, spans: list[list[int]]) -> bool:
+        """Whether address ranges are big enough to say another compiler built them: GTA San Andreas gathered 43
+        ranges of one tiny function each, matched by trying compilers until one fit, which is overfitting, not
+        evidence. A block of code (a library) or several functions is."""
+        return (sum(b - a for a, b in spans) >= self.RANGE_PROOF_BYTES
+                or self._functions_in(proj, spans) >= self.RANGE_PROOF_FUNCTIONS)
 
     def try_compiler(self, agent: Agent, slug: str, function: str, compiler: str, flags: str = "",
                      source: str = "") -> str:

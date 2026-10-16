@@ -6,6 +6,11 @@
    The app speaks the brand's "Marked listing" system (site/design/DESIGN.md): every value below comes from
    tokens.css, compiled from site/tokens, which carries light and dark (and the app's own [data-theme] switch).
    The highlighter (--hl) marks what an agent is working on, as on the website; green is only "matched". */
+/* the browser draws its own scrollbars, checkboxes and inputs light or dark by this; the theme button reads it too */
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+
 :root {
   --bg: var(--color-surface-base); --bg-alt: var(--color-surface-sunken); --panel: var(--color-surface-raised);
   --raise: var(--color-surface-raised); --nav: var(--color-surface-sunken);

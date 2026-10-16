@@ -101,6 +101,40 @@
       "text": {
         "$value": "{color.neutral-dark.1}"
       }
+    },
+    "status": {
+      "success": {
+        "surface": {
+          "$value": "{color.success-dark.3}"
+        },
+        "text": {
+          "$value": "{color.success-dark.11}"
+        }
+      },
+      "warning": {
+        "surface": {
+          "$value": "{color.warning-dark.3}"
+        },
+        "text": {
+          "$value": "{color.warning-dark.11}"
+        }
+      },
+      "danger": {
+        "surface": {
+          "$value": "{color.danger-dark.3}"
+        },
+        "text": {
+          "$value": "{color.danger-dark.11}"
+        }
+      },
+      "info": {
+        "surface": {
+          "$value": "{color.info-dark.3}"
+        },
+        "text": {
+          "$value": "{color.info-dark.11}"
+        }
+      }
     }
   },
   "shadow": {

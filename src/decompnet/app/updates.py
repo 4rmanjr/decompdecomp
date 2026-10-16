@@ -152,6 +152,9 @@ def uv() -> str | None:
 
 
 def can_apply() -> tuple[bool, str]:
+    if (package := os.environ.get("DECOMP_PACKAGE")):  # set by the .deb's and the AppImage's launchers
+        return False, (f"this decompdecomp was installed as {'an AppImage' if package == 'appimage' else 'a .deb'}: "
+                       f"download the new one from https://github.com/{REPO}/releases")
     if sys.platform == "win32":
         return False, ("decompdecomp now runs in WSL 2 on Windows: run the installer again in PowerShell "
                        "(irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex) to switch to it")

@@ -20,6 +20,8 @@ LABEL = {"claude": "claude-code", "codex": "codex", "antigravity": "antigravity"
 
 def bridge_command() -> list[str]:
     """How an agent starts the bridge: the `decomp` command when it's on PATH, else this Python with the module."""
+    if os.environ.get("APPIMAGE"):  # an AppImage runs from a mount that moves each launch: the file itself stays
+        return [os.environ["APPIMAGE"], "mcp"]
     exe = shutil.which("decomp")
     return [exe, "mcp"] if exe else [sys.executable, "-m", "decompnet.app.cli", "mcp"]
 

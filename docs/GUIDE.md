@@ -255,6 +255,11 @@ projects are ds-decomp projects. They build the game again on each build.
 The installer installs [uv](https://docs.astral.sh/uv/), the app, the compilers and the m2c draft decompiler. All
 compilers are pinned and have checksums. To start the app, use your apps menu or type `decomp` in a terminal.
 
+**The .deb and the AppImage.** Each [release](https://github.com/n-delic/decompdecomp/releases) also has a `.deb`
+(`sudo apt install ./decompdecomp_*.deb`) and an AppImage for x86_64 Linux. Both contain their own Python and uv, so
+nothing else is necessary. The app's Setup gets the compilers. These copies do not update themselves: the app tells
+you when a new version is available, and you download it from the releases.
+
 **Windows (WSL 2, experimental).** Some compilers are Linux programs. Thus the installer makes a small Linux (a WSL 2 distribution with
 the name `decomp-wtf`) from the official Debian image. Windows can ask for permission and a restart one time. Your
 projects are in `\\wsl.localhost\decomp-wtf\home\decomp\Decomp`. The results are identical to Linux.
@@ -292,6 +297,7 @@ uv run pytest              # the tests
 | `src/decompnet/forks/` | Fork mode: forks by repository address, project setup, objdiff, drafts, linked files, and the from-scratch importers. |
 | `src/decompnet/network.py` | Claims, attempts, notes and the shared header. |
 | `src/decompnet/toolchains.py` | The pinned compilers and tools. |
+| `packaging/linux/` | `build.sh` makes the `.deb` and the AppImage; `.github/workflows/release.yml` runs it for each `v*` tag. |
 | `projects/demo-*/` | Homemade demo games for the tests. Each has its own `build.py`. |
 | `site/` | The website. `public/` holds the installers. |
 

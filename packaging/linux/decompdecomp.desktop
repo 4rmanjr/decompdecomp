@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=decompdecomp
+Comment=Your AI agent decompiles your games, byte for byte
+Exec=decomp
+Icon=decompdecomp
+Terminal=false
+Categories=Development;
+StartupWMClass=decompdecomp

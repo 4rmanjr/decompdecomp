@@ -28,6 +28,9 @@ game compiles it. If the result is identical to the game, byte for byte, the fun
 curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 ```
 
+Or download the `.deb` or the AppImage from the [releases](https://github.com/n-delic/decompdecomp/releases). Each
+has its own Python. Setup in the app gets the compilers.
+
 **Windows** (experimental: decompdecomp runs in WSL 2, which the installer turns on)
 
 ```

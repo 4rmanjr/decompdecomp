@@ -21,7 +21,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # Windows PowerShell downloads many times slower while drawing a progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-$Version = "0.11.5"
+$Version = "1.0.0-alpha"
 $Repo = "n-delic/decompdecomp"
 $Distro = "decomp-wtf"
 $Wsl = Join-Path $env:SystemRoot "System32\wsl.exe"

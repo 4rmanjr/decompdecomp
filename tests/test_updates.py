@@ -182,3 +182,16 @@ def test_a_pre_release_comes_before_its_release():
     keys = [updates.version_key(v) for v in order]
     assert keys == sorted(keys) and len(set(keys)) == len(keys)
     assert updates.version_key("v1.0.0-alpha") == updates.version_key("1.0.0a0")  # a tag and Python's spelling
+
+
+def test_a_packaged_install_points_at_the_releases(monkeypatch):
+    """A .deb or an AppImage isn't a uv tool: installing over it with uv would leave the package behind."""
+    monkeypatch.setenv("DECOMP_PACKAGE", "appimage")
+    ok, why = updates.can_apply()
+    assert not ok and "AppImage" in why and f"github.com/{updates.REPO}/releases" in why
+
+
+def test_an_appimage_bridge_is_the_appimage_itself(monkeypatch):
+    from decompnet.app import connect
+    monkeypatch.setenv("APPIMAGE", "/home/me/decompdecomp.AppImage")
+    assert connect.bridge_command() == ["/home/me/decompdecomp.AppImage", "mcp"]

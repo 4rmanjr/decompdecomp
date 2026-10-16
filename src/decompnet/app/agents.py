@@ -78,6 +78,8 @@ API_PRESETS = {
 # Google retired Gemini CLI on 2026-06-18; Antigravity CLI (`agy`) replaced it. Helpers and launcher choices saved
 # by older versions as "gemini" carry on as Antigravity.
 ALIASES = {"gemini": "antigravity", "agy": "antigravity"}
+# An agent's error that's about signing in or keys: then the stop message says how to sign in
+_SIGNIN = re.compile(r"auth|log ?in|sign(ed)? ?in|credential|api.?key|unauthori[sz]ed|\b401\b|\b403\b", re.I)
 
 # decompdecomp's tools are loaded up front in Antigravity (tools.ALWAYS_LOAD) and need no permission. Should a helper
 # reach one through agy's generic MCP dispatcher instead, a headless run can't ask, and agy quietly refuses it:
@@ -152,8 +154,9 @@ def is_local(base: str, resolve: bool = True) -> bool:
 _SIGNED_OUT = re.compile(r"not logged in|run /login|invalid api key|not authenticated|please (?:log|sign) ?in|"
                          r"auth(?:entication)? method", re.I)
 # what a model's provider says when the account has no credit left (DeepSeek: "Insufficient Balance", OpenAI:
-# "insufficient_quota", Anthropic: "credit balance is too low"): trying again can't help until it's topped up
-_NO_CREDIT = re.compile(r"insufficient[ _](?:balance|credits?|funds|quota)|exceeded your current quota|"
+# "insufficient_quota", Anthropic: "credit balance is too low", OpenCode: "quota exceeded"): trying again can't help
+# until it's topped up
+_NO_CREDIT = re.compile(r"insufficient[ _](?:balance|credits?|funds|quota)|exceeded your current quota|quota[ _]exceeded|"
                         r"credit balance is too low|payment required|out of credits?", re.I)
 # and when it's asked too much at once (HTTP 429): it works again in a while
 _THROTTLED = re.compile(r"too many requests|rate[ _-]?limit|concurrency limit|\b429\b|overloaded", re.I)
@@ -410,7 +413,7 @@ def clean_stderr(kind: str, line: str) -> str:
     line = line.strip()
     if kind == "opencode" and "level=" in line:  # opencode --print-logs: keep the error itself, drop stack noise
         m = re.search(r'\berror="((?:[^"\\]|\\.)*)"', line)
-        return m.group(1).replace('\\"', '"') if m and "level=ERROR" in line else ""
+        return m.group(1).replace('\\"', '"') if m and re.search(r"level=error\b", line, re.I) else ""
     if line.startswith("AGY_ERROR:"):  # agy: a structured error line
         try:
             return _error_text(json.loads(line.split(":", 1)[1]))[:300]
@@ -730,7 +733,8 @@ class Manager:
             if failures >= 3:
                 s.state = "error"
                 s.error = s.error or "the agent failed three times in a row"
-                s.push("error", f"stopping: {s.error}. {signin(KINDS[s.kind])}".strip())
+                hint = signin(KINDS[s.kind]) if _SIGNIN.search(s.error) else ""  # not after every failure: it misleads
+                s.push("error", f"stopping: {s.error}. {hint}".strip())
                 break
             s.state = "waiting"
             s.stop.wait(3 if ok else min(60, 5 * failures + max(0, 10 - (time.time() - t0))))
@@ -842,8 +846,9 @@ class Manager:
                 "permission": {"edit": never, "bash": never, "webfetch": never},
             }), encoding="utf-8")
             # --print-logs: opencode's JSON error only says "Unexpected server error"; the log line says what failed.
-            # (No --dir: it runs in workdir, and OpenCode before 1.4 stops at the flag.)
-            cmd = [exe, "run", "--format", "json", "--print-logs", "--log-level", "ERROR"]
+            # (No --dir: it runs in workdir, and OpenCode before 1.4 stops at the flag. No --log-level either: before
+            # 2.0 it took only ERROR, from 2.0 only error, and either stops the other at once.)
+            cmd = [exe, "run", "--format", "json", "--print-logs"]
             if model:
                 cmd += ["-m", model]
         else:

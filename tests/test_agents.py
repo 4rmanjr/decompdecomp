@@ -57,6 +57,18 @@ def test_opencode_errors_say_what_failed():
     assert agents.clean_stderr("antigravity", agy) == "quota exhausted"
 
 
+def test_opencode_2_starts_and_its_quota_error_says_so(tmp_path, monkeypatch):
+    """opencode 2.0 takes `--log-level error` only, earlier versions `ERROR` only, and either stops the other at once
+    (an `InvalidValue` stack trace, shown with "run opencode auth login" though the user was signed in). The command
+    passes no level; opencode 2's error lines are lowercase; its quota error stops the helpers with what it is."""
+    m = _manager(tmp_path, monkeypatch, "opencode")
+    cmd, _, _ = m._command(agents.Session("opencode-1", "opencode", "o", "demo", "opencode-1", {}), "t", tmp_path)
+    assert "--log-level" not in cmd and "--print-logs" in cmd
+    assert agents.clean_stderr("opencode", 'level=error message=failed error="quota exceeded"') == "quota exceeded"
+    assert "out of credit" in agents.no_credit("provider.quota: quota exceeded")
+    assert not agents._SIGNIN.search("quota exceeded") and agents._SIGNIN.search("ProviderAuthError: no key")
+
+
 def _manager(tmp_path, monkeypatch, kind):
     (tmp_path / "bin").mkdir(exist_ok=True)
     exe = tmp_path / "bin" / {"claude": "claude", "codex": "codex", "antigravity": "agy", "opencode": "opencode"}[kind]

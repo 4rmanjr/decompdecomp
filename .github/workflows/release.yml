@@ -27,6 +27,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: the version in the tag is the version in the code
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)" = "$TAG"
+      - name: appimagetool checks the apps-menu entry with desktop-file-validate
+        run: sudo apt-get install -y --no-install-recommends desktop-file-utils
       - name: build the .deb and the AppImage
         run: packaging/linux/build.sh
       - name: attach them to the release

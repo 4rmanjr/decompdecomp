@@ -33,6 +33,7 @@ uv sync
 uv run decomp                 # the app, in your browser (projects in ~/Decomp, or $DECOMP_HOME)
 uv run pytest -q              # the tests
 uv run pytest tests/test_ps2.py -q   # one file
+uv run ruff check src tests projects   # the linter
 ```
 
 If you use decompdecomp yourself, keep your own copy out of your tests: run the checkout with
@@ -44,14 +45,15 @@ Compilers and tools (splat, objdiff, dtk, wibo, Ghidra and the period compilers)
 and that's fine. The homemade demo games in `projects/demo-*` are built by their own scripts. The N64 and PS1 demos
 also need `ld.lld`, `llvm-objcopy` and `llvm-nm` on your PATH (Debian and Ubuntu: `apt install lld llvm`).
 
-**[AGENTS.md](AGENTS.md) explains how the code is laid out and the conventions it follows. Read it first.** In
-short:
+**[docs/CONVENTIONS.md](docs/CONVENTIONS.md) has the house rules, and [AGENTS.md](AGENTS.md) how the code is laid
+out. Read them first.** In short:
 
 - Match the code around you: plain-English docstrings and comments that say *why*.
 - Every change in behaviour comes with a test in `tests/`. A test that needs a real game or a proprietary compiler
   skips when it isn't there; use or extend a demo game instead.
 - Don't add a dependency for a few lines. capstone, pyelftools and httpx are already there.
 - Errors shown to users or agents are sentences they can act on.
+- `uv run ruff check src tests projects` passes. There's no formatter: don't reformat code you didn't change.
 
 Some things we won't merge:
 

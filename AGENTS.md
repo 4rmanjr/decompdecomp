@@ -24,6 +24,7 @@ uv run decomp                 # the app (GUI in the browser); projects live in ~
 uv run decomp mcp             # the MCP server agents connect to
 uv run pytest -q              # the test suite; many tests skip when a compiler or tool isn't installed
 uv run pytest tests/test_forks.py -q   # one file
+uv run ruff check src tests projects   # the linter (CI runs it and the tests)
 ```
 
 ## Never disturb the user's own decompdecomp
@@ -69,12 +70,16 @@ tools and the agent prompt), `app/window.py` + `app/tray.py` (the app's own wind
 
 ## Conventions
 
+[docs/CONVENTIONS.md](docs/CONVENTIONS.md) has them in full (where code goes, names, comments, errors, tests,
+linting). In short:
+
 - Match the surrounding code: plain-English docstrings and comments that say *why*, often citing the game or issue
   that motivated a rule ("#22: ..."). No new dependencies for a few lines; capstone, pyelftools, httpx are there.
 - Heavy external tools run through `limits.capped(...)` (memory cap) with a timeout.
 - Errors shown to the user or agent are `ForkError` / `NetworkError` with a sentence they can act on.
-- Every behavior change gets a test in `tests/`. Tests that need a real game or a proprietary compiler skip when it
-  isn't there; small homemade games/objects live in `projects/demo-*` and are built by their own scripts.
+- Every behavior change gets a test in `tests/`. Tests that need a real game or a compiler skip when it isn't there
+  (CI has none of them); small homemade games/objects live in `projects/demo-*` and are built by their own scripts.
+- `uv run ruff check src tests projects` passes (CI runs it). No formatter: don't run `ruff format`.
 - Releases bump the version in five places together: `pyproject.toml`, `src/decompnet/__init__.py`,
   `site/public/install.sh`, `site/public/install.ps1`, `uv.lock`. Commit subjects read
   `decompdecomp X.Y.Z: <what users get, in one sentence>`, with a body explaining why. Pre-releases are

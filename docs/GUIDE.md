@@ -286,7 +286,7 @@ Read [CONTRIBUTING.md](../CONTRIBUTING.md) before you attach a log.
 
 ## Development
 
-Read [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md) before you make changes.
+Read [CONTRIBUTING.md](../CONTRIBUTING.md), [CONVENTIONS.md](CONVENTIONS.md) and [AGENTS.md](../AGENTS.md) before you make changes.
 
 ```bash
 uv sync

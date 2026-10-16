@@ -5,7 +5,8 @@ license), compiled with EE-GCC 2.96 at -O2 -G8 and linked at 0x00100000 like PS2
     uv run python projects/demo-ps2/build.py    ->  build/SLUS_999.99 (stripped, like a game) + build/demoq_ps2.elf
 
 With a toolchain id (ee-gcc-2.95.2, mwcps2-3.0.1, ...), the same game built with that compiler instead, as games
-of its time were, into build/<toolchain>/. The start-up code and the 64-bit arithmetic helpers (ps2rt.c, what libgcc
+of its time were, into build/<toolchain>/. "mixed": the game's own code (game.c) with CodeWarrior 3.0.1 -O3 and the
+rest with EE-GCC 2.96, as GTA San Andreas mixes them, into build/mixed/. The start-up code and the 64-bit arithmetic helpers (ps2rt.c, what libgcc
 is to a game: linked in prebuilt) are always EE-GCC 2.96's.
 """
 
@@ -36,6 +37,9 @@ def run(argv, cwd=None):
         sys.exit(f"failed: {' '.join(map(str, argv))}\n{res.stdout}{res.stderr}")
 
 
+MIXED = {"src/game/game.c": ("mwcps2-3.0.1", ["-O3"])}  # the "mixed" build's exceptions: file -> (compiler, flags)
+
+
 def out_dir(toolchain: str) -> Path:
     return BUILD if toolchain == "ee-gcc-2.96" else BUILD / toolchain
 
@@ -45,6 +49,8 @@ def main() -> None:
     ap.add_argument("toolchain", nargs="?", default="ee-gcc-2.96")
     toolchain = ap.parse_args().toolchain
     build = out_dir(toolchain)
+    mixed = toolchain == "mixed"
+    toolchain = "ee-gcc-2.96" if mixed else toolchain
     if build.exists():
         shutil.rmtree(build)
     (build / "src").mkdir(parents=True)
@@ -61,7 +67,13 @@ def main() -> None:
     objs = []
     for src, tc, extra in jobs:
         obj = f"{Path(src).stem}.o"
-        flags = ["-O2", *(small if tc == toolchain else []), *extra]
+        opt = ["-O2"]
+        if mixed and src in MIXED:
+            tc, opt = MIXED[src]
+            small = ["-sdatathreshold", "8"]
+        elif tc == toolchain:
+            small = ["-sdatathreshold", "8"] if tc.startswith("mwcps2") else ["-G8"]
+        flags = [*opt, *(small if tc == toolchain or (mixed and src in MIXED) else []), *extra]
         cfg = compiler_config(build, {"compiler": {"toolchain": tc, "flags": flags}})
         # the toolchain's own compile command, on the copies in build/ (src/sysinclude: the demo's tiny C library)
         argv = [a.replace("{src}", src).replace("{obj}", obj).replace("{include}", "src/sysinclude") for a in cfg.cmd]

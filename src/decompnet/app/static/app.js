@@ -2255,7 +2255,7 @@ function renderSteering(ov) {
   $("suggestPanel").hidden = !sg.length;
   $("suggestList").innerHTML = sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
     ${s.check ? `<p class="small ${s.check.includes("matches the game") ? "" : "muted"}">${s.check.includes("matches the game") ? "✓ " : ""}${esc(s.check)}</p>` : ""}
-    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
+    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}${(s.ranges || []).length ? ` for ${s.ranges.length} range${s.ranges.length > 1 ? "s" : ""}` : ""}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
 }
 $("suggestList").onclick = async (e) => {
   const b = e.target.closest("button[data-apply], button[data-dismiss]");
@@ -2416,6 +2416,10 @@ async function renderProjectSettings() {
     if (!S.st) await loadState();
     fillCompilers($("setTc"), ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[ov.platform]);
     $("setFlags").value = ov.compiler.flags.join(" ");
+    $("setRanges").value = "";
+    const hex = (n) => "0x" + n.toString(16).toUpperCase();
+    $("rangeList").innerHTML = (ov.compiler_ranges || []).length ? `<p class="col-title">Built with another compiler</p>` + ov.compiler_ranges.map((r) =>
+      `<div class="row"><code class="grow">${hex(r.start)}-${hex(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex(r.end)}">Remove</button></div>`).join("") : "";
   }
   const facts = [["Platform", ov.platform_name], ["Game", ov.rom?.title || ov.title], [fork ? "Version" : "Game code", ov.rom?.game_code || ov.version],
     !fork && ov.rom?.region ? ["Region", ov.rom.region] : null, fork ? ["Layout", ov.origin === "scratch" ? (LAYOUT[ov.platform] || "decomp") + " (from scratch)" : ov.fork_kind] : ["Compiler", `${ov.compiler.name} ${ov.compiler.flags.join(" ")}`],
@@ -2424,11 +2428,21 @@ async function renderProjectSettings() {
   $("projFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("");
 }
 $("setTcReset").onclick = () => { $("setFlags").value = ""; };
+$("rangeList").onclick = async (e) => {
+  const b = e.target.closest("button[data-unrange]");
+  if (!b) return;
+  try {
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, ranges: b.dataset.unrange, remove: true } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast("That range is built with the project's compiler again.");
+  } catch (err) { toast(esc(err.message), "err"); }
+};
 $("setTc").onchange = () => { $("setFlags").value = ""; };  // one compiler's flags aren't another's (-G8 vs -sdatathreshold): its defaults
 $("setTcSave").onclick = async () => {
   try {
     const flags = $("setFlags").value.trim();
-    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, toolchain: $("setTc").value, flags: flags ? flags.split(/\s+/) : null } });
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, toolchain: $("setTc").value, flags: flags ? flags.split(/\s+/) : null, ranges: $("setRanges").value.trim() } });
     renderStats(S.ov);
     renderProjectSettings();
     toast("Compiler settings saved.");

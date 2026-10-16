@@ -66,7 +66,7 @@ def submit(net: Network, agent: Agent, project: str, function: str, source: str)
         return {"accepted": False, "reason": "an agent is working on it right now"}
     proj = net.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"])
     ctx = net._context(proj["id"], fn["unit"])
-    res = net._compile(proj, ctx["header"], source)
+    res = net._compile(proj, ctx["header"], source, fn)
     cand = extract_function(res.obj, fn["name"]) if res.ok else None
     if cand is None:
         net._record(fn, agent, None, source, ctx["version"], via="permuter")

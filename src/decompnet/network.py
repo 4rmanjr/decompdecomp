@@ -19,7 +19,7 @@ from pathlib import Path
 from . import policy, scoring
 from .compiler import compile_source
 from .elfobj import FunctionObj, Reloc, extract_function
-from .project import compiler_config
+from .project import compiler_config, compiler_for
 from .store import Store
 
 CLAIM_TTL = 30 * 60
@@ -191,9 +191,12 @@ class Network:
         row = self.store.one("SELECT name FROM agents WHERE id=?", agent_id) if agent_id else None
         return row["name"] if row else "?"
 
-    def _compile(self, proj, header: str, source: str):
-        root = Path(proj["root"])
-        return compile_source(compiler_config(root, json.loads(proj["config"])), header, source)
+    def _compile(self, proj, header: str, source: str, fn=None):
+        """Compiled with the project's compiler, or for `fn` the one its address range is built with."""
+        cfg = json.loads(proj["config"])
+        if fn is not None and cfg.get("compiler_ranges"):
+            cfg = {**cfg, "compiler": compiler_for(cfg, fn["vram"])}
+        return compile_source(compiler_config(Path(proj["root"]), cfg), header, source)
 
     def _evaluate(self, fn, proj, obj: bytes) -> tuple[FunctionObj | None, bool | None, list[str]]:
         """(candidate, verdict, problems) for a compiled object. verdict None means: decide by comparing
@@ -318,6 +321,11 @@ class Network:
         lines = [f"## {header}: {proj['slug']}/{fn['name']}",
                  f"size {fn['size']} bytes, {fn['n_insns']} instructions, arch {proj['arch']}, "
                  f"context.h v{ctx['version']} ({len(ctx['header'].splitlines())} lines)"]
+        cfg = json.loads(proj["config"])
+        own = compiler_for(cfg, fn["vram"])
+        if own is not cfg.get("compiler"):  # a range built by another compiler than the rest of the game
+            lines.append(f"compiled with {own['toolchain']} {' '.join(own['flags'])}: this address range's compiler, "
+                         f"not the project's")
         if claim:
             who = "you" if agent and claim["agent_id"] == agent.id else self._agent_name(claim["agent_id"])
             lines.append(f"claimed by {who}, lease expires in {int(claim['expires_at'] - time.time()) // 60} min "
@@ -390,7 +398,7 @@ class Network:
                     db.execute("UPDATE claims SET expires_at=? WHERE function_id=?", (now + self.claim_ttl, fn["id"]))
 
         ctx = self._context(proj["id"], fn["unit"])
-        result = self._compile(proj, ctx["header"], source)
+        result = self._compile(proj, ctx["header"], source, fn)
 
         if not result.ok:
             self._record(fn, agent, None, source, ctx["version"])
@@ -591,7 +599,7 @@ class Network:
 
         def check(fn) -> tuple[str, str] | None:
             res = self._compile(proj, header_for(fn) if header_for else header,
-                                (sources or {}).get(fn["id"], fn["matched_source"]))
+                                (sources or {}).get(fn["id"], fn["matched_source"]), fn)
             if not res.ok:
                 return fn["name"], "no longer compiles: " + res.log.strip().splitlines()[0][:200] if res.log.strip() else "compile failed"
             cand, verdict, _ = self._evaluate(fn, proj, res.obj)

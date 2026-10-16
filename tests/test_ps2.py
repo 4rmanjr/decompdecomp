@@ -75,6 +75,12 @@ def test_every_game_function_matches(psx):
 
 
 def _match_every_function(net, slug, elf):
+    agent = _name_the_game(net, slug, elf)
+    _attempt_every_function(net, slug, agent)
+
+
+def _name_the_game(net, slug, elf):
+    """What an agent does first: the game's types into the shared header, and the game's names on its addresses."""
     agent, _ = net.local_agent("psx-agent")
     syms = {s.name: s["st_value"] for s in ELFFile(open(elf, "rb")).get_section_by_name(".symtab").iter_symbols()}
     header = (GAME / "game.h").read_text()
@@ -92,6 +98,10 @@ def _match_every_function(net, slug, elf):
             if current != name:
                 net.rename_symbol(agent, slug, current, name)
                 table = net.symbols(net.project_row(slug)["id"])
+    return agent
+
+
+def _attempt_every_function(net, slug, agent):
     source = (GAME / "game.c").read_text()
     scores = {}
     for name in FUNCTIONS:
@@ -221,3 +231,45 @@ def test_auto_adjust_applies_a_proven_compiler(tmp_path):
     assert net.overview(slug)["compiler"]["toolchain"] == "ee-gcc-2.9-991111"
     with pytest.raises(NetworkError):
         net.suggest(agents_[0], slug, "again", "ee-gcc-2.9-991111")  # already the project's
+
+
+def test_a_game_built_with_two_compilers(tmp_path):
+    """GTA San Andreas: EE-GCC 2.95.3 for most of it, CodeWarrior 3.0.1 -O3 for some address ranges. The demo built the
+    same way (its game code with CodeWarrior): an agent suggests CodeWarrior for that range, naming a function whose C
+    proves it; with auto-adjust on, the range is built with it from then on, and both compilers' code matches."""
+    if any(toolchains.installed(t) is None for t in ("mwcps2-3.0.1", "ee-gcc-2.96", "wibo")):
+        pytest.skip("needs CodeWarrior for PS2 3.0.1 (proprietary), EE-GCC 2.96 and wibo")
+    build = DEMO / "build" / "mixed"
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), "mixed"], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    net.auto_compiler = True
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain="ee-gcc-2.96")
+    agent = _name_the_game(net, slug, build / "demoq_ps2.elf")
+    syms = {s.name: (s["st_value"], s["st_size"]) for s in ELFFile(open(build / "demoq_ps2.elf", "rb"))
+            .get_section_by_name(".symtab").iter_symbols() if s.name in FUNCTIONS}
+    start, end = min(a for a, _ in syms.values()), max(a + n for a, n in syms.values())
+    source = (GAME / "game.c").read_text()
+    assert not net.attempt(agent, "entity_default_hp", csource.get(source, "entity_default_hp"), slug)["matched"]
+    net.release(agent, "entity_default_hp", "", slug)
+
+    said = net.suggest(agent, slug, "game.c's code: frame like CodeWarrior's, delay slots filled", "mwcps2-3.0.1",
+                       "-O3 -sdatathreshold 8", "entity_default_hp", f"0x{start:X}-0x{end:X}")
+    assert said.startswith("Applied") and "matches the game" in said
+    ov = net.overview(slug)
+    assert ov["compiler"]["toolchain"] == "ee-gcc-2.96"  # the rest of the game keeps its compiler
+    assert [(r["start"], r["end"], r["toolchain"]) for r in ov["compiler_ranges"]] == [(start, end, "mwcps2-3.0.1")]
+    assert "this address range's compiler" in net.claim(agent, slug, "abs_s32")
+    net.release(agent, "abs_s32", "", slug)
+    _attempt_every_function(net, slug, agent)  # every game function, now built with CodeWarrior
+    zlib = net.store.one("SELECT name FROM functions WHERE project_id=? AND vram>=? ORDER BY vram LIMIT 1",
+                         net.project_row(slug)["id"], end)["name"]
+    assert "this address range" not in net.claim(agent, slug, zlib)  # past the range: EE-GCC as before
+
+    if toolchains.installed("binutils-mips") is not None and shutil.which("ld.lld"):
+        out = net.export_rom(slug, log=lambda *_: None)  # each file built by its own range's compiler
+        assert out["identical"] and out["matched"] == len(FUNCTIONS), out["log"]
+
+    with pytest.raises(NetworkError):  # matched code in a range never stops matching: that compiler is refused
+        net.set_compiler_ranges(slug, [[start, end]], "ee-gcc-3.2")
+    assert net.overview(slug)["compiler_ranges"][0]["toolchain"] == "mwcps2-3.0.1"

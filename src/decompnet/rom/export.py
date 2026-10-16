@@ -23,6 +23,7 @@ from pathlib import Path
 import yaml
 
 from .. import toolchains
+from ..project import compiler_for
 from ..limits import capped
 from . import match
 from .symbols import AUTO_NAME
@@ -101,7 +102,6 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
     if not configs:
         raise ExportError("this project has no splat configuration to export from")
     image_name = cfg["rom"]["file"]
-    prelude = toolchains.get(cfg["compiler"]["toolchain"]).prelude if cfg["compiler"].get("toolchain") else ""
     image = (work / image_name).read_bytes()
 
     if out.exists():
@@ -154,7 +154,7 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
             continue
         unit = net._effective_unit(row, units)
         hdr = net._context(proj["id"], unit)["header"]
-        compiled = net._compile(proj, hdr, row["matched_source"])
+        compiled = net._compile(proj, hdr, row["matched_source"], row)
         if not compiled.ok:
             as_fallback.append((f["name"], "doesn't compile any more"))
             f["kind"] = "asm"
@@ -178,6 +178,7 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
         src = out / "src" / f["seg"] / f"{f['name']}.c"
         src.parent.mkdir(parents=True, exist_ok=True)
         include = "common.h" if not unit else f"common_{unit}.h"
+        prelude = toolchains.get(compiler_for(cfg, row["vram"])["toolchain"]).prelude
         src.write_text(f'{prelude}#include "{include}"\n\n{row["matched_source"].strip()}\n', encoding="utf-8")
         f["kind"] = "c"
         f["src"] = src.relative_to(out).as_posix()
@@ -260,7 +261,8 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
                    encoding="utf-8")
     build = {
         "title": proj["name"], "platform": platform, "image": base, "output": f"build/game{ext}",
-        "sha1": hashlib.sha1(image).hexdigest(), "compiler": cfg["compiler"], "gp": cfg.get("gp") or 0,
+        "sha1": hashlib.sha1(image).hexdigest(), "compiler": cfg["compiler"],
+        "compiler_ranges": cfg.get("compiler_ranges") or [], "gp": cfg.get("gp") or 0,
         "big_endian": platform == "n64",
         "as_flags": [*AS_FLAGS[platform], "-G0", "-no-pad-sections", "-I", "include"],
         "ld_flags": [LD_ENDIAN[platform], "--no-check-sections"],

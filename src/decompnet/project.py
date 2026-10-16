@@ -50,6 +50,15 @@ def load_config(root: Path) -> dict:
         return tomllib.load(f)
 
 
+def compiler_for(cfg: dict, vram: int | None) -> dict:
+    """The compiler a function at `vram` is built with: its address range's, for a game built by more than one (GTA
+    San Andreas: EE-GCC 2.95.3, and CodeWarrior 3.0.1 -O3 for some of its code), else the project's."""
+    for r in cfg.get("compiler_ranges") or []:
+        if vram is not None and r["start"] <= vram < r["end"]:
+            return {**cfg["compiler"], "toolchain": r["toolchain"], "flags": r["flags"]}
+    return cfg["compiler"]
+
+
 def compiler_config(root: Path, cfg: dict) -> CompilerConfig:
     """Build the sandboxed compile command for a project.
 

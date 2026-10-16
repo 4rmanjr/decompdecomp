@@ -33,7 +33,7 @@ DISCARD = ("*(.reginfo) *(.MIPS.abiflags) *(.MIPS.options) *(.pdr) *(.comment) *
 try:
     from decompnet import toolchains
     from decompnet.compiler import run_in
-    from decompnet.project import compiler_config
+    from decompnet.project import compiler_config, compiler_for
 except ImportError:
     sys.exit("This build uses decompdecomp's pinned compilers: install decompdecomp first (https://github.com/n-delic/decompdecomp).")
 
@@ -130,7 +130,8 @@ def trim(path: Path) -> None:
 
 
 def build_objects(todo: list[tuple[str, str, str]]) -> None:
-    cfg = compiler_config(ROOT, {"compiler": B["compiler"]})
+    vram_of = {c_source(fn): fn["vram"] for fn in B["functions"] if c_source(fn)}  # a range's compiler builds its C
+    configs = {}
     as_ = binutils("as")
     for kind, src, obj in todo:
         target = ROOT / obj
@@ -140,6 +141,9 @@ def build_objects(todo: list[tuple[str, str, str]]) -> None:
         if kind == "asm":
             run([as_, *B["as_flags"], "-o", obj, src])
         else:
+            compiler = compiler_for(B, vram_of.get(src))
+            key = json.dumps(compiler, sort_keys=True)
+            cfg = configs.get(key) or configs.setdefault(key, compiler_config(ROOT, {"compiler": compiler}))
             argv = [a.replace("{src}", src).replace("{obj}", obj).replace("{include}", "include") for a in cfg.cmd]
             res = run_in(cfg, ROOT, argv, inputs=[src, "include"], outputs=[obj])
             if res.returncode != 0 or not target.exists():
@@ -296,7 +300,7 @@ def check(name: str) -> bool:
                     return image[at:at + n]
         return None
 
-    cfg = compiler_config(ROOT, {"compiler": B["compiler"]})
+    cfg = compiler_config(ROOT, {"compiler": compiler_for(B, fn["vram"])})
     text = (ROOT / src).read_text(encoding="utf-8")
     m = re.match(r'\s*#include "([^"]+)"\s*\n', text)
     header = (ROOT / "include" / m.group(1)).read_text(encoding="utf-8") if m else ""

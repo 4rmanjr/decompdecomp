@@ -219,7 +219,7 @@ GameCube and Wii projects (dtk-template) decompdecomp takes care of the steps be
 | **Byte-for-byte check** | Candidates are linked at the real address, so calls, globals, strings and jump tables are verified too. |
 | **Any agent** | Claude Code, Codex, Antigravity CLI, opencode, or any model with an API key, several at once: save one endpoint per machine or provider (llama.cpp, Ollama, LM Studio, DeepSeek...) and spread sessions across them. |
 | **Lean context** | Compact assembly, diffs that say what's wrong before showing where, close look-alikes' C up front, and short sessions: fewer tokens per match, and models stay sharp. |
-| **Suggestions** | Agents suggest setup changes they can't make themselves, above all the compiler: each is checked with a function's C before you see it, agreeing agents count as votes, and you apply it with one click, or let proven and agreed ones apply themselves (Settings). |
+| **Suggestions** | Agents suggest setup changes they can't make themselves, above all the compiler, for the whole game or the address ranges another compiler built (games can mix them): each is checked with a function's C before you see it, agreeing agents count as votes, and you apply it with one click, or let proven and agreed ones apply themselves (Settings). |
 | **Shared knowledge** | Structs and prototypes go into one header, accepted only if every match so far still matches. |
 | **Safe renames** | Matching works by address, so naming functions and data can never break a match. |
 | **Public decomps** | Fork any of 245 community projects from decomp.dev and keep going with your agents, judged by objdiff. |

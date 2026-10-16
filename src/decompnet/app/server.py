@@ -34,7 +34,7 @@ from .. import __version__, hostenv, toolchains
 from ..network import NetworkError
 from ..rom.n64 import RomError
 from . import agents, chat, collab, connect, tools, updates
-from .engine import COMPILERS, MW_VERSIONS, PLATFORM_STATUS, SHORT_NAMES, TOOLS, RomNetwork
+from .engine import COMPILERS, MW_VERSIONS, PLATFORM_STATUS, SHORT_NAMES, TOOLS, RomNetwork, parse_ranges
 
 COOKIE = "decomp_live"
 MAX_DISC = 16 * 1024 * 1024 * 1024  # dual-layer DVD and then some
@@ -573,7 +573,11 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
         return out
 
     def p_compiler(slug, request, data):
-        net.set_compiler(slug, str(data.get("toolchain", "")), data.get("flags") or None)
+        if str(data.get("ranges") or "").strip():  # these address ranges only (or back to the project's: remove)
+            net.set_compiler_ranges(slug, parse_ranges(str(data["ranges"])),
+                                    None if data.get("remove") else str(data.get("toolchain", "")), data.get("flags") or None)
+        else:
+            net.set_compiler(slug, str(data.get("toolchain", "")), data.get("flags") or None)
         return net.overview(slug)
 
     def p_export(slug, request, data):

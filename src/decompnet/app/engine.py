@@ -88,6 +88,14 @@ BATCH_INSNS = 48
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
                       "ps2": ["ee-gcc-2.96", "ee-gcc-2.9-991111", "ee-gcc-2.95.2", "ee-gcc-2.95.3", "ee-gcc-3.2",
                               "mwcps2-2.3.3", "mwcps2-3.0.1"], "gba": ["agbcc"]}
+def parse_ranges(text: str) -> list[list[int]]:
+    """Address ranges written "0x10BFD0-0x10CD40, 0x1106C0-0x1107C0" as [[start, end], ...] (end not included)."""
+    spans = [[int(a, 16), int(b, 16)] for a, b in re.findall(r"(?:0x)?([0-9A-Fa-f]{5,8})\s*-\s*(?:0x)?([0-9A-Fa-f]{5,8})", text)]
+    if text.strip() and (not spans or any(a >= b for a, b in spans)):
+        raise NetworkError('ranges are start-end addresses: "0x10BFD0-0x10CD40, 0x1106C0-0x1107C0"')
+    return spans
+
+
 def _default_flags(toolchain: str, platform: str, gp: int) -> list[str]:
     """A toolchain's flags for a game: PlayStation games keep globals up to 8 bytes $gp-relative when they use $gp
     (GCC's -G8; CodeWarrior's -sdatathreshold 8)."""
@@ -1373,7 +1381,9 @@ class RomNetwork(Network):
                                              "helper_matches": helpers,
                                              "spend": cfg.get("spend"), "instructions": cfg.get("instructions") or "",
                                              "priority": cfg.get("priority", []),
-                                             "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"]}
+                                             "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"],
+                                             "compiler_ranges": [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"])}
+                                                                 for r in cfg.get("compiler_ranges", [])]}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -1471,12 +1481,16 @@ class RomNetwork(Network):
         return self.cfg(self._project(slug)).get("instructions") or ""
 
     def suggest(self, agent: Agent, slug: str, text: str, compiler: str = "", flags: str = "",
-                function: str | None = None) -> str:
+                function: str | None = None, ranges: str = "") -> str:
         """A change to the project's setup an agent can't make itself (the compiler, its flags, anything), for the user
         to apply or dismiss. With a compiler and a function whose C is ready, it's checked first: that C, built with the
         suggested compiler, matches the game or doesn't (GTA San Andreas: agents said EE-GCC 2.96, then 2.95.3). The
-        same compiler and flags suggested again counts as another agent agreeing."""
+        same compiler and flags suggested again counts as another agent agreeing. `ranges` ("0x10BFD0-0x10CD40, ..."):
+        the compiler built those address ranges only (a game built by several compilers)."""
         text = " ".join(text.split())[:1000]
+        spans = parse_ranges(ranges)
+        if spans and not compiler:
+            raise NetworkError("say which compiler built those ranges (compiler=...)")
         if not text:
             raise NetworkError("say what should change, and what you saw that says so")
         proj = self._project(slug)
@@ -1490,7 +1504,7 @@ class RomNetwork(Network):
             if tc is None:
                 raise NetworkError(f"no compiler {compiler!r} for this game; its platform's: {', '.join(names)}")
             flag_list = flags.split() or _default_flags(tc, cfg.get("platform", ""), cfg.get("gp"))
-            if (tc, flag_list) == (cfg["compiler"]["toolchain"], cfg["compiler"]["flags"]):
+            if not spans and (tc, flag_list) == (cfg["compiler"]["toolchain"], cfg["compiler"]["flags"]):
                 raise NetworkError("that's already the project's compiler and flags")
             if function:
                 check = self._check_compiler(proj, tc, flag_list, function)
@@ -1498,10 +1512,11 @@ class RomNetwork(Network):
         def change(cfg):
             items = cfg.setdefault("suggestions", [])
             same = next((s for s in items if tc and s["status"] == "open" and s["toolchain"] == tc
-                         and s["flags"] == flag_list), None)
+                         and s["flags"] == flag_list and s.get("ranges", []) == spans), None)
             if same is None:
                 same = {"id": max((s["id"] for s in items), default=0) + 1, "text": text, "toolchain": tc,
-                        "flags": flag_list, "agents": [], "check": None, "status": "open", "t": time.time()}
+                        "flags": flag_list, "ranges": spans, "agents": [], "check": None, "status": "open",
+                        "t": time.time()}
                 items.append(same)
             same["agents"] = sorted({*same["agents"], agent.name})
             if check and (not same["check"] or "matches the game" in check):
@@ -1512,7 +1527,10 @@ class RomNetwork(Network):
         s = found[0]
         note = f" ({check})" if check else ""
         if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
-            self.resolve_suggestion(slug, s["id"], apply=True)
+            try:
+                self.resolve_suggestion(slug, s["id"], apply=True)
+            except NetworkError as e:  # it would break matched code: it waits for the user
+                return f"Suggested, not applied by itself: {e}.{note}"
             return (f"Applied (the user lets agreed compiler changes apply themselves): the project builds with "
                     f"{SHORT_NAMES.get(tc, tc)} {' '.join(flag_list)} from now on.{note}")
         return f"Suggested: the user sees it on the project page and can apply it.{note}"
@@ -1543,10 +1561,47 @@ class RomNetwork(Network):
         hit = next((s for s in self.cfg(self._project(slug)).get("suggestions", []) if s["id"] == sid), None)
         if hit is None:
             raise NetworkError(f"no suggestion {sid}")
-        if apply and hit["toolchain"]:
+        if apply and hit["toolchain"] and hit.get("ranges"):
+            self.set_compiler_ranges(slug, hit["ranges"], hit["toolchain"], hit["flags"])
+        elif apply and hit["toolchain"]:
             self.set_compiler(slug, hit["toolchain"], hit["flags"])
         self._update_cfg(slug, lambda cfg: next(s for s in cfg["suggestions"] if s["id"] == sid).__setitem__(
             "status", "applied" if apply else "dismissed"))
+
+    def set_compiler_ranges(self, slug: str, ranges: list[list[int]], toolchain: str | None,
+                            flags: list[str] | None = None) -> None:
+        """Address ranges built by another compiler than the rest of the game (replacing ranges they overlap), or
+        with toolchain None: those ranges back to the project's compiler."""
+        if self.fork_slug(slug):
+            raise NetworkError("a fork builds with the project's own compilers and flags")
+        if toolchain:
+            cfg = self.cfg(self._project(slug))
+            toolchain = toolchains.get(toolchain).id
+            flags = flags or _default_flags(toolchain, cfg.get("platform", ""), cfg.get("gp"))
+        flags = flags or []
+
+        before = self.cfg(self._project(slug)).get("compiler_ranges", [])
+
+        def change(cfg):
+            keep = [r for r in cfg.get("compiler_ranges", []) if all(r["end"] <= a or r["start"] >= b for a, b in ranges)]
+            if toolchain:
+                keep += [{"start": a, "end": b, "toolchain": toolchain, "flags": flags} for a, b in ranges]
+            cfg["compiler_ranges"] = sorted(keep, key=lambda r: r["start"])
+        self._update_cfg(slug, change)
+        proj = self._project(slug)
+        # functions already matched in those ranges must still match with it (auto-adjust runs unattended)
+        inside = [f for f in self.store.all("SELECT * FROM functions WHERE project_id=? AND status='matched'", proj["id"])
+                  if any(a <= (f["vram"] or -1) < b for a, b in ranges)]
+        broken = self.regression_test(proj, None, only=inside,
+                                      header_for=lambda f: self._context(proj["id"], f["unit"])["header"]) if inside else []
+        if broken:
+            self._update_cfg(slug, lambda cfg: cfg.__setitem__("compiler_ranges", before))
+            raise NetworkError(f"{len(broken)} matched function(s) in those ranges wouldn't match with it any more "
+                               f"({', '.join(n for n, _ in broken[:5])}): narrow the ranges")
+        with self.store.tx() as db:
+            where = ", ".join(f"0x{a:X}-0x{b:X}" for a, b in ranges)
+            self._event(db, proj["id"], None, "compiler", f"{SHORT_NAMES.get(toolchain, toolchain)} {' '.join(flags)} for {where}"
+                        if toolchain else f"the project's compiler again for {where}")
 
     def set_priority(self, slug: str, name: str, on: bool = True) -> list[str]:
         """Functions the user wants done next: automatic claims take these first."""
@@ -1682,7 +1737,7 @@ class RomNetwork(Network):
             db.execute("INSERT INTO claims VALUES(?,?,?,?)", (fn["id"], agent.id, now, now + 300))
         try:
             ctx = self._context(proj["id"], fn["unit"])
-            result = self._compile(proj, ctx["header"], source)
+            result = self._compile(proj, ctx["header"], source, fn)
             if not result.ok:
                 return {"matched": False, "score": None}
             cand, verdict, _ = self._evaluate(fn, proj, result.obj)
@@ -1715,7 +1770,7 @@ class RomNetwork(Network):
             if not draft:
                 return "fail"
             source = f"/* machine draft (m2c), tried by autopilot */\n{seeds.M2C_MACROS}\n{draft}\n"
-            result = self._compile(proj, ctx["header"], source)
+            result = self._compile(proj, ctx["header"], source, fn)
             if not result.ok:
                 return "fail"
             cand, verdict, _ = self._evaluate(fn, proj, result.obj)
@@ -1750,7 +1805,7 @@ class RomNetwork(Network):
         key = (fn["id"], hashlib.sha1(source.encode()).hexdigest(), ctx["version"], proj["config"])
         if key in self._diffs:
             return self._diffs[key] | {"kind": kind}
-        result = self._compile(proj, ctx["header"], source)
+        result = self._compile(proj, ctx["header"], source, fn)
         if not result.ok:
             out = {"rows": None, "error": result.log.strip()[-3000:] or "it didn't compile", "source": source}
         else:

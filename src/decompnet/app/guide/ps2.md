@@ -16,7 +16,11 @@ Compilers: Sony's ee-gcc 2.9x (most games), Metrowerks for PS2, or SN Systems' c
 decides per file. Games started from scratch get one picked from the code itself (CodeWarrior leaves `nop` in
 the delay slot of nearly every `jr $ra`, GCC fills it; CodeWarrior 2.x moves registers without `daddu`), then
 among the GCCs by compiling drafts with each. Notes in the program (".comment") can come from one library only.
-If nothing matches although the C is right, the compiler may be another one: say so in a note, the user can switch it.
+If nothing matches although the C is right, the compiler may be another one: suggest(compiler=..., function=...)
+with a function whose C you trust: it's checked right away. Games can mix compilers (GTA San Andreas: EE-GCC
+2.95.3, and CodeWarrior 3.0.1 -O3 for some ranges: CodeWarrior's frame keeps $ra at 0($sp) with locals above it,
+GCC's at the top; at -O3 CodeWarrior fills delay slots too). Then pass ranges="0x...-0x..." to suggest it for those
+address ranges only; the brief says when a function is in such a range.
 - CodeWarrior: small data is `-sdatathreshold 8`, not `-G8`; it gives each function its own section and
   loves `lui`/`addiu` pairs over `$gp` when the threshold is 0.
 - EE-GCC 3.2 loads a switch's jump table with `addiu %lo(jtbl)` then `lw 0(reg)`; 2.9x/2.96 use

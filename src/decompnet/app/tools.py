@@ -137,7 +137,8 @@ def project_info(net: RomNetwork, slug: str) -> str:
     open_ = net.overview(slug).get("suggestions") or []
     if open_:  # so agents agree with one (suggest the same) rather than repeat it in other words
         text += "\nOpen suggestions to the user (suggest the same compiler and flags to agree):\n" + "\n".join(
-            f"- {s['toolchain'] or '(setup)'} {' '.join(s['flags'])}: {s['text'][:200]} [{len(s['agents'])} agree"
+            f"- {s['toolchain'] or '(setup)'} {' '.join(s['flags'])}"
+            + "".join(f" 0x{a:X}-0x{b:X}" for a, b in s.get("ranges", [])) + f": {s['text'][:200]} [{len(s['agents'])} agree"
             + (f"; {s['check']}" if s["check"] else "") + "]" for s in open_)
     return text + (f"\nThe user's instructions for this project (they come first):\n{wish}" if wish else "")
 
@@ -147,8 +148,10 @@ def _project_info(net: RomNetwork, slug: str) -> str:
         return net.forks.info(slug)
     ov = net.overview(slug)
     pct = 100 * ov["matched_bytes"] / (ov["bytes"] or 1)
+    ranges = "".join(f"\n  0x{r['start']:X}-0x{r['end']:X}: {r['name']} {' '.join(r['flags'])}" for r in ov["compiler_ranges"])
     return (f"{ov['title']} ({ov['rom']['game_code']}, {ov['rom']['region']})\n"
-            f"compiler: {ov['compiler']['name']} {' '.join(ov['compiler']['flags'])}\n"
+            f"compiler: {ov['compiler']['name']} {' '.join(ov['compiler']['flags'])}"
+            + (f"; these address ranges are built with another:{ranges}" if ranges else "") + "\n"
             f"progress: {ov['matched']}/{ov['functions']} functions matched ({pct:.1f}% of code), "
             f"{ov['attempts']} compiles so far, context.h v{ov['context_version']}\n"
             f"Next: claim_function(). Guides: guide().")
@@ -195,8 +198,8 @@ HANDLERS: dict[str, Callable[..., str]] = {
                                                             if net.fork_slug(slug) else net.read_data(slug, what, length)),
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
     "add_note": lambda net, agent, slug, text, function="": net.add_note(agent, slug, text, function or None),
-    "suggest": lambda net, agent, slug, text, compiler="", flags="", function="":
-        net.suggest(agent, slug, text, compiler, flags, function or None),
+    "suggest": lambda net, agent, slug, text, compiler="", flags="", function="", ranges="":
+        net.suggest(agent, slug, text, compiler, flags, function or None, ranges),
     "search_notes": lambda net, agent, slug, query: net.search_notes(slug, query),
     "find_similar": lambda net, agent, slug, function, limit=5: net.find_similar(slug, function, limit),
     "guide": lambda net, agent, slug, topic="": _guide(topic),
@@ -344,7 +347,8 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         return await run(ctx, "add_note", text=text, function=function)
 
     @mcp.tool(meta=ALWAYS_LOAD)
-    async def suggest(ctx: Context, text: str, compiler: str = "", flags: str = "", function: str = "") -> str:
+    async def suggest(ctx: Context, text: str, compiler: str = "", flags: str = "", function: str = "",
+                      ranges: str = "") -> str:
         """Suggest a change to the project's setup you can't make yourself, for the user to apply: above all a
         different compiler or flags, when C that is right can't match (the code's style says another compiler built
         it). Say what you saw. project_info lists open suggestions: suggesting the same compiler and flags is a vote
@@ -355,8 +359,9 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
             compiler: the compiler you think built the game (a toolchain id like ee-gcc-2.95.3)
             flags: its flags, if not the defaults
             function: a function whose best attempt should match with that compiler: it's checked right away
+            ranges: when only parts of the game were built with it: "0x10BFD0-0x10CD40, 0x1106C0-0x1107C0"
         """
-        return await run(ctx, "suggest", text=text, compiler=compiler, flags=flags, function=function)
+        return await run(ctx, "suggest", text=text, compiler=compiler, flags=flags, function=function, ranges=ranges)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def search_notes(ctx: Context, query: str) -> str:

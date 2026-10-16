@@ -150,7 +150,7 @@ class Permuter:
             res = self.net.forks.attempt(agent, fork, fn["name"], source, keep=False, quiet=best)
             return res.get("score")
         ctx = self.net._context(proj["id"], fn["unit"])
-        result = self.net._compile(proj, ctx["header"], source)
+        result = self.net._compile(proj, ctx["header"], source, fn)
         if not result.ok:
             return None
         cand, verdict, _ = self.net._evaluate(fn, proj, result.obj)

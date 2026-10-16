@@ -88,7 +88,7 @@ def _check_c(net, proj, row, thumb: bool, units, f: dict) -> str | None:
     if row["vram"] % 4:
         return "it starts halfway a word, where agbcc never puts a function"
     hdr = net._context(proj["id"], net._effective_unit(row, units))["header"]
-    compiled = net._compile(proj, hdr, row["matched_source"])
+    compiled = net._compile(proj, hdr, row["matched_source"], row)
     if not compiled.ok:
         return "doesn't compile any more"
     linked = match_arm.link(compiled.obj, row["name"], match_arm.ArmTarget(row["name"], row["vram"], row["target"], thumb),

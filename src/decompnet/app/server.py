@@ -33,7 +33,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from .. import __version__, hostenv, toolchains
 from ..network import NetworkError
 from ..rom.n64 import RomError
-from . import agents, chat, collab, connect, tools, updates
+from . import agents, chat, collab, connect, tools, updates, window
 from .engine import COMPILERS, MW_VERSIONS, PLATFORM_STATUS, SHORT_NAMES, TOOLS, RomNetwork, parse_ranges
 
 COOKIE = "decomp_live"
@@ -270,6 +270,19 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
     build_id = (updates.installed().get("commit") or "")[:12]  # a branch install: the commit it came from
     manager = agents.Manager(net, home, mcp_url)
     jobs = Jobs(home / "logs" / "decomp.log")
+
+    def window_closed():
+        """The app window was closed: quit, unless helper agents or a job are still working (they carry on in the
+        background, and `decomp` opens the window again)."""
+        busy = manager.running() or any(j["state"] == "running" for j in jobs.jobs.values())
+        if busy:
+            jobs.logger.info("window closed; agents or a job keep working in the background")
+            return
+        jobs.logger.info("window closed; quitting")
+        manager.stop()
+        manager.on_stop()
+        os._exit(0)
+    window.WINDOW = window.Window(window.profile_dir(home), window_closed)
     settings = Settings(home / "settings.json")
     net.auto_compiler = bool(settings.data.get("auto_compiler"))
     manager.budget = lambda: float(settings.data.get("budget_usd") or 0)
@@ -1012,6 +1025,13 @@ def build(net: RomNetwork, home: Path, port: int, secret: str):
             except (ValueError, OSError):
                 pass
             time.sleep(300)
+
+    @mcp.custom_route("/api/window", methods=["POST"])
+    async def api_window(request: Request) -> Response:
+        """`decomp` run again while the app is running: show its window (one window; a tab when there's no app browser)."""
+        if (bad := guard(request, write=True)):
+            return bad
+        return JSONResponse({"window": window.open_app(f"http://127.0.0.1:{port}/?k={secret}")})
 
     @mcp.custom_route("/api/quit", methods=["POST"])
     async def api_quit(request: Request) -> Response:

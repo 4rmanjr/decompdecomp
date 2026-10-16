@@ -79,24 +79,6 @@ def test_compiles_when_the_app_runs_from_root(monkeypatch):
     assert res.ok, res.log
 
 
-def test_the_app_opens_in_a_window_of_its_own_when_the_browser_can(monkeypatch):
-    """Chromium's family opens a page as an app window (--app): decompdecomp looks like a desktop app, no tabs.
-    Firefox can't; it gets a tab, as before."""
-    import subprocess as sp
-    started = []
-    monkeypatch.setattr(hostenv.sys, "platform", "linux")
-    monkeypatch.delenv("BROWSER", raising=False)
-    monkeypatch.setattr(hostenv.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(hostenv.subprocess, "Popen", lambda argv, **kw: started.append(argv))
-    for desktop, window in (("brave-browser.desktop", True), ("google-chrome.desktop", True), ("firefox.desktop", False)):
-        started.clear()
-        monkeypatch.setattr(hostenv.subprocess, "run", lambda *a, **kw: sp.CompletedProcess(a, 0, desktop + "\n", ""))
-        assert hostenv._app_window("http://127.0.0.1:6464/?k=x") is window
-        assert started == ([[f"/usr/bin/{desktop.removesuffix('.desktop')}", "--app=http://127.0.0.1:6464/?k=x"]] if window else [])
-    monkeypatch.setenv("BROWSER", "true")  # the user (or a test) said how to open pages: that wins
-    assert hostenv._app_window("http://127.0.0.1:6464/") is False
-
-
 def test_the_secret_outlives_a_restart(tmp_path):
     """A browser tab stays signed in when the app restarts or updates (a new secret each launch logged it out)."""
     import json

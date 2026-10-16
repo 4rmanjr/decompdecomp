@@ -107,6 +107,18 @@ def _open_when_ready(url: str, port: int) -> None:
     threading.Thread(target=wait, daemon=True).start()
 
 
+def _show_window(prev: dict) -> bool:
+    """Ask the running app to show its window: it owns the window, and there is only ever one."""
+    req = urllib.request.Request(f"http://127.0.0.1:{prev['port']}/api/window", method="POST", data=b"{}",
+                                 headers={"Cookie": f"decomp_live={prev['secret']}", "X-Decomp": "1",
+                                          "Host": f"127.0.0.1:{prev['port']}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return bool(json.loads(res.read()).get("window"))
+    except (OSError, ValueError):
+        return False  # an older app without windows: a tab, as before
+
+
 def _saved_secret(state_file: Path) -> str | None:
     """The secret the last run used, so the browser's cookie outlives a restart: a new one each launch sent every open
     tab to "Open decompdecomp again" after each update. The file is the user's alone (0600), as before."""
@@ -144,7 +156,7 @@ def run(args) -> int:
     if prev:
         url = f"http://127.0.0.1:{prev['port']}/?k={prev['secret']}"
         print(f"decompdecomp is already running: {url}")
-        if not args.no_browser and not hostenv.open_url(url):
+        if not args.no_browser and not _show_window(prev) and not hostenv.open_url(url):
             print("open that address in your browser")
         return 0
 

@@ -124,6 +124,9 @@ def open_url(url: str) -> bool:
     rt = runtime()
     if rt == "docker":
         return False
+    from .app import window  # the app's own window (Edge on Windows), when this is the server: window.WINDOW is set
+    if window.open_app(url):
+        return True
     if rt == "wsl":
         exe = _windows_tool("rundll32.exe")
         if not exe:
@@ -134,37 +137,9 @@ def open_url(url: str) -> bool:
             return True
         except OSError:
             return False
-    if _app_window(url):
-        return True
     try:
         return webbrowser.open(url)
     except Exception:  # no browser at all (a server)
-        return False
-
-
-# browsers whose --app=URL opens a page as its own window (no tabs, no address bar), by their .desktop names
-_APP_BROWSERS = ("brave", "chrome", "chromium", "edge", "vivaldi", "opera")
-
-
-def _app_window(url: str) -> bool:
-    """decompdecomp in a window of its own, like a desktop app, when the default browser can do that (Chromium's
-    family: --app). Firefox has no such mode: it gets a normal tab."""
-    if sys.platform != "linux" or os.environ.get("BROWSER"):  # BROWSER names how to open pages (tests: "true")
-        return False
-    try:
-        desktop = subprocess.run(["xdg-settings", "get", "default-web-browser"], capture_output=True, text=True,
-                                 timeout=3).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return False
-    name = desktop.removesuffix(".desktop")
-    exe = shutil.which(name) if any(b in name.lower() for b in _APP_BROWSERS) else None
-    if not exe:  # snaps and flatpaks (com.brave.Browser) aren't on PATH by that name: a normal tab
-        return False
-    try:
-        subprocess.Popen([exe, f"--app={url}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
-        return True
-    except OSError:
         return False
 
 

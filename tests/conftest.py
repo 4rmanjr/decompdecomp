@@ -7,6 +7,8 @@ os.environ.setdefault("DECOMP_UPDATES", "off")
 # agent CLIs installed on this computer, and Antigravity's `decomp mcp` (the user's settings) started the user's real
 # app, with this test environment (updates off), while it was restarting into an update
 os.environ["DECOMP_HOME"] = tempfile.mkdtemp(prefix="decomp-tests-")
+# nothing a test runs opens a window or a tab on the user's screen (app/window.py, webbrowser both honour it)
+os.environ.setdefault("BROWSER", "true")
 
 
 def pytest_sessionfinish(session, exitstatus):

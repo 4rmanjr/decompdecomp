@@ -197,6 +197,19 @@ def _codex_config() -> dict:
         return {}
 
 
+def helper_name(kind: str, model: str | None, taken: set[str]) -> str:
+    """The agent identity of a helper: its kind and its model, numbered (opencode-deepseek-v4.1-flash-1). Matches,
+    compiles and statistics hang off this name, so a model never inherits another's: helpers used to be opencode-1,
+    opencode-2... whatever model they ran, and a re-added helper with another model took over the old one's record.
+    The same model again gets the same name back and carries on its record."""
+    m = re.sub(r"[^a-z0-9._-]+", "-", (model or "").lower().rsplit("/", 1)[-1]).strip("-._")[:24]
+    base = f"{kind}-{m}" if m else kind
+    k = 1
+    while f"{base}-{k}" in taken:
+        k += 1
+    return f"{base}-{k}"
+
+
 def _config_model(kind: str) -> str | None:
     """The model the user set as default in the agent's own settings, if any."""
     home = Path.home()
@@ -594,7 +607,9 @@ class Manager:
                     label = f"{name} #{k}"
                 else:
                     label = f"{KINDS[kind].name} #{n}"
-                s = Session(sid, kind, label, slug, sid, dict(options))
+                name = helper_name(kind, options.get("model") or _config_model(kind),
+                                   {s.agent_name for s in self.sessions.values()})
+                s = Session(sid, kind, label, slug, name, dict(options))
                 self.sessions[sid] = s
                 threading.Thread(target=self._run, args=(s,), daemon=True, name=f"agent-{sid}").start()
                 ids.append(sid)
@@ -651,6 +666,9 @@ class Manager:
                     _terminate(s.proc)
                 if s.state not in ("error",):
                     s.state = "stopped"
+                if sid is not None:  # its function is free now, not when its thread notices (an API helper waits on
+                    with self.net.store.tx() as db:  # its model meanwhile, and showed up as a "connected agent")
+                        db.execute("DELETE FROM claims WHERE agent_id=(SELECT id FROM agents WHERE name=?)", (s.agent_name,))
         if sid is not None:
             self.persist(self.running())
 

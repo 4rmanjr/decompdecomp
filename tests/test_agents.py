@@ -193,3 +193,30 @@ def test_antigravity_helpers_say_when_it_isnt_connected(tmp_path, monkeypatch):
     s.runs = 1
     with pytest.raises(agents.Fatal, match="decomp connect antigravity"):
         m._run_cli(s, "tok", tmp_path)
+
+
+def test_stopping_a_helper_frees_its_function_at_once(tmp_path):
+    """A stopped helper's claim used to wait for its thread to notice (an API helper waits on its model meanwhile):
+    removed from the list, it showed up as a "connected agent" without a Stop button."""
+    from decompnet.app.engine import RomNetwork
+
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    helper, _ = net.local_agent("api-1")
+    with net.store.tx() as db:
+        db.execute("INSERT INTO claims VALUES(?,?,?,?)", (1, helper.id, 0, 1e12))
+    m = agents.Manager(net, tmp_path, "http://127.0.0.1:1/mcp")
+    m.sessions["api-1"] = agents.Session("api-1", "api", "DeepSeek", "demo", "api-1", {})
+    m.stop("api-1")
+    assert net.store.one("SELECT COUNT(*) AS n FROM claims")["n"] == 0
+
+
+def test_a_helpers_identity_says_its_model_so_records_never_mix():
+    """Helpers were opencode-1, opencode-2... whatever model they ran: re-added with another model, a helper took over
+    the old one's matches. The model is part of the identity now; the same model gets its name (and record) back."""
+    name = agents.helper_name
+    assert name("opencode", "deepseek/deepseek-v4.1-flash", set()) == "opencode-deepseek-v4.1-flash-1"
+    assert name("opencode", "deepseek/deepseek-v4.1-flash", {"opencode-deepseek-v4.1-flash-1"}) == "opencode-deepseek-v4.1-flash-2"
+    assert name("opencode", "muse-spark-1.3", {"opencode-deepseek-v4.1-flash-1"}) == "opencode-muse-spark-1.3-1"
+    assert name("antigravity", None, set()) == "antigravity-1"
+    long = name("antigravity", "Some Provider/A Very Long Model Name: Preview Edition 2026", set())
+    assert len(long) <= 40 and all(c.isalnum() or c in "-_." for c in long)

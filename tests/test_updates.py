@@ -155,3 +155,23 @@ def test_update_api(tmp_path, monkeypatch):
     assert client.post("/api/settings", json={"check_updates": False}, headers={"X-Decomp": "1"}).json()["check_updates"] is False
     assert client.get("/api/update").json()["disabled"] is True
     assert "build" in client.get("/health").json()
+
+
+def test_apply_installs_what_a_fresh_check_finds(monkeypatch):
+    """The app's cached check can be minutes old: installing from it recorded an older commit than `decomp update`
+    had just found, so the same update was offered again."""
+    old, new = {"available": True, "latest": {"commit": "1" * 40}}, {"available": True, "latest": {"commit": "2" * 40}}
+    monkeypatch.setattr(updates, "check", lambda: new)
+    monkeypatch.setattr(updates, "can_apply", lambda: (True, ""))
+    installed = []
+    monkeypatch.setattr(updates, "install", lambda found, log=print: installed.append(found))
+    up = updates.Updater(lambda: None, 0, "")
+    monkeypatch.setattr(updates, "restart", lambda port, secret: None)
+    up.last = old
+    up.apply()
+    import time
+    for _ in range(50):
+        if installed:
+            break
+        time.sleep(0.05)
+    assert installed == [new]

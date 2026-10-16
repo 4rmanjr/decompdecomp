@@ -225,7 +225,8 @@ class Updater:
         with self._lock:
             if self.job["state"] in ("installing", "restarting"):
                 return
-            found = self.last if self.last and self.last.get("available") else check()
+            # never the cached check: on a branch that moved since, it names an older commit than the newest
+            found = self.last = check()
             if not found.get("available"):
                 raise ValueError(found.get("error") or "decompdecomp is up to date")
             ok, why = can_apply()

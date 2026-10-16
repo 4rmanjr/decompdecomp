@@ -29,7 +29,6 @@ Homepage = "https://github.com/n-delic/decompdecomp"
 Source = "https://github.com/n-delic/decompdecomp"
 
 [project.scripts]
-decompnet = "decompnet.cli:main"
 decomp = "decompnet.app.cli:main"
 
 [build-system]

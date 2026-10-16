@@ -54,7 +54,7 @@ MIGRATIONS = [
     ("agents", "trusted", "INTEGER NOT NULL DEFAULT 0"),      # operator-vetted (CLI) vs. self-registered
     ("agents", "origin", "TEXT"),                              # cli | web
     ("agents", "terms_accepted_at", "REAL"),                   # evidence of accepting the terms
-    ("functions", "fingerprint", "TEXT"),                      # one-way match fingerprint (hash-only projects)
+    ("functions", "fingerprint", "TEXT"),                      # one-way match fingerprint (twins, regression checks)
     ("attempts", "via", "TEXT"),                               # agent | permuter
     ("functions", "unit", "TEXT NOT NULL DEFAULT ''"),         # source file (translation unit) it came from
     ("context_versions", "unit", "TEXT NOT NULL DEFAULT ''"),  # '' = project-wide header, else per-unit header

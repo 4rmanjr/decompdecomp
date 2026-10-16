@@ -95,8 +95,6 @@ def test_release_hands_off_best_attempt_and_notes(net, agents):
     assert "Best attempt so far" in brief and "(u32)v" in brief
     assert "target checks lo first" in brief
     assert "MATCH" in net.compile_and_diff(bob, "clamp_s32", SOLUTIONS["clamp_s32"])
-    lb = net.status_json()["leaderboard"]
-    assert lb[0]["name"] == "bob-claude" and lb[0]["matches"] == 1
 
 
 @needs_host_gcc
@@ -146,13 +144,6 @@ def test_auth(net):
         net.register_agent("bad name!")
 
 
-def test_export(net, agents, tmp_path):
-    alice, _ = agents
-    net.compile_and_diff(alice, "rng_next", SOLUTIONS["rng_next"])
-    assert net.export("demo", tmp_path / "out") == 1
-    assert "matched by alice-claude" in (tmp_path / "out" / "src" / "rng_next.c").read_text()
-
-
 def test_projects_need_a_lawful_basis(tmp_path):
     import shutil
     from decompnet.project import ProjectRejected
@@ -173,32 +164,16 @@ def test_projects_need_a_lawful_basis(tmp_path):
     assert net.store.one("SELECT COUNT(*) AS n FROM projects")["n"] == 0
 
 
-def test_status_shows_legal_basis(net):
-    assert net.status_json()["projects"][0]["legal"] == {"basis": "own-code", "license": "CC0-1.0"}
+def test_projects_show_their_legal_basis(net):
     assert "legal basis: own-code" in net.list_projects()
 
 
-def test_moderation_tools(net, agents):
+def test_removing_a_project_removes_everything_in_it(net, agents):
     alice, bob = agents
     net.compile_and_diff(alice, "abs_s32", SOLUTIONS["abs_s32"])
     net.add_note(alice, "demo", "abs is a branchless cmov", "abs_s32")
-
-    net.reset_function("demo", "abs_s32")
-    row = net.store.one("SELECT status, matched_source, attempts FROM functions WHERE name='abs_s32'")
-    assert (row["status"], row["matched_source"], row["attempts"]) == ("open", None, 0)
-    assert net.list_notes("demo") == []
-
     net.add_note(bob, "demo", "project-wide tip")
-    net.delete_note(net.list_notes("demo")[0]["id"])
-    assert net.list_notes("demo") == []
-
     net.claim(bob)
-    net.revoke_agent("bob-claude", erase=True)
-    assert net.store.one("SELECT COUNT(*) AS n FROM claims")["n"] == 0
-    assert net.store.one("SELECT owner FROM agents WHERE name LIKE 'erased-%'")["owner"] is None
-    with pytest.raises(NetworkError):
-        net.revoke_agent("bob-claude")
-
     assert net.remove_project("demo") == 13
     for table in ("projects", "functions", "attempts", "notes", "events", "context_versions"):
         assert net.store.one(f"SELECT COUNT(*) AS n FROM {table}")["n"] == 0, table

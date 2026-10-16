@@ -143,7 +143,6 @@ def import_project(store: Store, root: Path, log=print) -> int:
     target = cfg["target"]
 
     objects = target_objects(root, cfg)
-    hash_only = target.get("verification", "full") == "hash"
     if "build_from" in target and not all(o.exists() for o in objects):
         build_target(root, cfg, log)
     elif "build" in target and not all(o.exists() for o in objects):
@@ -184,7 +183,7 @@ def import_project(store: Store, root: Path, log=print) -> int:
     # Functions without a hand-written seed get a machine-generated starting point (m2c), when available.
     tc_id = cfg["compiler"].get("toolchain")
     missing = [f for f in funcs if f[4] is None]
-    if missing and not hash_only and tc_id in seeds.M2C_TARGETS and seeds.available():
+    if missing and tc_id in seeds.M2C_TARGETS and seeds.available():
         with ThreadPoolExecutor(max_workers=4) as pool:
             drafts = list(pool.map(lambda f: seeds.generate(f[1], tc_id, header_of(f)), missing))
         for f, draft in zip(missing, drafts):
@@ -213,10 +212,7 @@ def import_project(store: Store, root: Path, log=print) -> int:
                 db.execute("INSERT INTO context_versions(project_id,version,header,agent_id,message,created_at,unit) "
                            "VALUES(?,?,?,?,?,?,?)", (pid, version, text, None, f"initial import ({unit})", now, unit))
         for name, fn, n_insns, asm, seed, unit in funcs:
-            if hash_only:  # keep only a one-way fingerprint and the size, never the code or its disassembly
-                target_bytes, relocs, asm, seed = None, "[]", "", None
-            else:
-                target_bytes, relocs = fn.code, json.dumps([r.to_json() for r in fn.relocs])
+            target_bytes, relocs = fn.code, json.dumps([r.to_json() for r in fn.relocs])
             db.execute(
                 """INSERT INTO functions(project_id,name,size,n_insns,target,relocs,asm,seed,fingerprint,unit)
                    VALUES(?,?,?,?,?,?,?,?,?,?)

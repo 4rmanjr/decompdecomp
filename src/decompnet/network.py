@@ -1,8 +1,8 @@
-"""The coordinator: who works on what, what counts as a match, and what everyone has learned.
+"""The coordination core under the app's engine (app/engine): who works on what, what counts as a match, and what
+everyone has learned.
 
-Every public method here is one agent-facing action. They return plain text because the
-consumer is an LLM reading a tool result; structured data lives in `status_json()` for
-the website.
+Every public method here is one agent-facing action. They return plain text because the consumer is an LLM reading
+a tool result.
 """
 
 from __future__ import annotations
@@ -161,10 +161,6 @@ class Network:
 
     def _effective_unit(self, fn, units: set[str]) -> str:
         return fn["unit"] if fn["unit"] in units else ""
-
-    @staticmethod
-    def _hash_only(fn) -> bool:
-        return fn["target"] is None
 
     def _target_obj(self, fn, proj) -> FunctionObj:
         return FunctionObj(
@@ -333,12 +329,7 @@ class Network:
         if fn["status"] == "matched":
             lines += [f"MATCHED by {self._agent_name(fn['matched_agent_id'])} {_ago(fn['matched_at'])}:",
                       "```c", fn["matched_source"].strip(), "```"]
-        if self._hash_only(fn):
-            lines += ["", "### Target assembly", "This is a hash-only project: the coordinator keeps a one-way fingerprint of "
-                      "each function, never its code. Disassemble your own lawful copy with "
-                      f"`decompnet local asm <your-object.o> {fn['name']}` and diff locally with `decompnet local diff`."]
-        else:
-            lines += ["", "### Target assembly", "```asm", scoring.compact_asm(self._asm_text(fn, proj)), "```"]
+        lines += ["", "### Target assembly", "```asm", scoring.compact_asm(self._asm_text(fn, proj)), "```"]
         lines += self._extra_brief(fn, proj)
         if fn["status"] != "matched":
             if fn["best_source"]:
@@ -409,15 +400,6 @@ class Network:
             self._record(fn, agent, None, source, ctx["version"])
             return {"text": f"❌ Compiled, but the object has no function named `{fn['name']}`. "
                             f"Define it with exactly that name (non-static).", "score": None, "matched": False}
-        if self._hash_only(fn):
-            matched_now = cand.fingerprint() == fn["fingerprint"] and not scratch
-            self._record(fn, agent, 0 if matched_now else None, source, ctx["version"], matched=matched_now, compiled=True)
-            if matched_now:
-                return {"text": f"✅ MATCH! {fn['name']} matches the target fingerprint. Credited to {agent.name}; "
-                                f"your claim is released.", "score": 0, "matched": True}
-            return {"text": "❌ No match. This is a hash-only project, so the coordinator can only say match / no match. "
-                            f"For a scored diff, run `decompnet local diff <your-object.o> {fn['name']} <your.c>` "
-                            "against your own lawful copy.", "score": None, "matched": False}
         d = scoring.diff(self._target_obj(fn, proj), cand)
         if verdict is not None:
             d = scoring.DiffResult(0 if verdict else max(1, d.score), d.max_score, d.rows, verdict)
@@ -604,7 +586,7 @@ class Network:
                 return fn["name"], "no longer compiles: " + res.log.strip().splitlines()[0][:200] if res.log.strip() else "compile failed"
             cand, verdict, _ = self._evaluate(fn, proj, res.obj)
             if verdict is None and cand is not None:
-                want = fn["fingerprint"] if self._hash_only(fn) else self._target_obj(fn, proj).fingerprint()
+                want = self._target_obj(fn, proj).fingerprint()
                 verdict = cand.fingerprint() == want
             if cand is None or not verdict:
                 return fn["name"], "compiles but no longer matches"
@@ -639,68 +621,7 @@ class Network:
             return f"No notes matching {query!r}."
         return "\n".join(f"- [{r['fn'] or 'project'}] ({r['agent']}, {_ago(r['created_at'])}) {r['text']}" for r in rows)
 
-    # ----------------------------------------------------------------- status
-
-    def status_json(self) -> dict:
-        with self.store.tx() as db:
-            self._expire_claims(db)
-        projects = []
-        for p in self.store.all("SELECT * FROM projects ORDER BY slug"):
-            agg = self.store.one(
-                "SELECT COUNT(*) AS total, SUM(status='matched') AS matched, SUM(size) AS bytes, "
-                "SUM(CASE WHEN status='matched' THEN size ELSE 0 END) AS matched_bytes, SUM(attempts) AS attempts "
-                "FROM functions WHERE project_id=?", p["id"])
-            claims = self.store.all(
-                "SELECT f.name, a.name AS agent, c.claimed_at, f.best_score, f.n_insns FROM claims c "
-                "JOIN functions f ON f.id=c.function_id JOIN agents a ON a.id=c.agent_id "
-                "WHERE f.project_id=? ORDER BY c.claimed_at", p["id"])
-            ctx = self._context(p["id"])
-            claimed = {c["name"] for c in claims}
-            funcs = [{"name": f["name"], "insns": f["n_insns"], "best": f["best_score"],
-                      "status": "matched" if f["status"] == "matched" else "claimed" if f["name"] in claimed else "open"}
-                     for f in self.store.all("SELECT name, n_insns, status, best_score FROM functions "
-                                             "WHERE project_id=? ORDER BY name", p["id"])]
-            legal = json.loads(p["config"]).get("legal", {})
-            projects.append({
-                "legal": {"basis": legal.get("basis"), "license": legal.get("license")},
-                "funcs": funcs,
-                "slug": p["slug"], "name": p["name"], "arch": p["arch"], "description": p["description"],
-                "functions": agg["total"], "matched": agg["matched"] or 0, "bytes": agg["bytes"] or 0,
-                "matched_bytes": agg["matched_bytes"] or 0, "attempts": agg["attempts"] or 0,
-                "context_version": ctx["version"] if ctx else 0,
-                "claims": [{"function": c["name"], "agent": c["agent"], "since": c["claimed_at"],
-                            "best_score": c["best_score"], "insns": c["n_insns"]} for c in claims],
-            })
-        leaders = self.store.all(
-            "SELECT a.name, a.owner, COUNT(f.id) AS matches, COALESCE(SUM(f.n_insns),0) AS insns, a.last_seen "
-            "FROM agents a LEFT JOIN functions f ON f.matched_agent_id=a.id "
-            "GROUP BY a.id ORDER BY insns DESC, matches DESC LIMIT 25")
-        events = self.store.all(
-            "SELECT e.kind, e.detail, e.created_at, a.name AS agent, p.slug FROM events e "
-            "LEFT JOIN agents a ON a.id=e.agent_id LEFT JOIN projects p ON p.id=e.project_id "
-            "ORDER BY e.id DESC LIMIT 30")
-        return {
-            "projects": projects,
-            "leaderboard": [dict(r) for r in leaders],
-            "events": [dict(r) for r in events],
-        }
-
-    def status(self, agent: Agent | None = None) -> str:
-        s = self.status_json()
-        out = []
-        for p in s["projects"]:
-            pct = 100 * p["matched_bytes"] / (p["bytes"] or 1)
-            out.append(f"{p['slug']}: {p['matched']}/{p['functions']} functions, {pct:.1f}% of code matched, "
-                       f"context.h v{p['context_version']}, {len(p['claims'])} agents working")
-            out += [f"  - {c['agent']} on {c['function']} ({c['insns']} insns, best {c['best_score']})"
-                    for c in p["claims"]]
-        out.append("Leaderboard (instructions matched):")
-        out += [f"  {i + 1}. {r['name']}{' (you)' if agent and r['name'] == agent.name else ''}: "
-                f"{r['matches']} functions / {r['insns']} insns" for i, r in enumerate(s["leaderboard"][:10])]
-        return "\n".join(out)
-
-    # ------------------------------------------------------------- moderation
-    # Operator-only actions (CLI), for takedown requests and GDPR erasure requests.
+    # ------------------------------------------------------------- the project as a whole
 
     def remove_project(self, slug: str) -> int:
         proj = self._project(slug)
@@ -712,35 +633,6 @@ class Network:
                 db.execute(f"DELETE FROM {table} WHERE project_id=?", (proj["id"],))
             db.execute("DELETE FROM projects WHERE id=?", (proj["id"],))
         return len(ids)
-
-    def reset_function(self, slug: str, name: str) -> None:
-        """Remove every submission for one function (matched source, attempts, notes) and reopen it."""
-        fn = self._function(name, slug)
-        with self.store.tx() as db:
-            for table in ("claims", "attempts", "notes"):
-                db.execute(f"DELETE FROM {table} WHERE function_id=?", (fn["id"],))
-            db.execute("UPDATE functions SET status='open', best_score=NULL, best_source=NULL, best_agent_id=NULL, "
-                       "matched_source=NULL, matched_agent_id=NULL, matched_at=NULL, attempts=0, abandons=0 "
-                       "WHERE id=?", (fn["id"],))
-
-    def revoke_agent(self, name: str, erase: bool = False) -> None:
-        """Disable an agent's token. With erase=True also strip its identity (GDPR erasure):
-        the agent is renamed to an anonymous id and the operator name is removed."""
-        row = self.store.one("SELECT id FROM agents WHERE name=?", name)
-        if row is None:
-            raise NetworkError(f"no agent named {name!r}")
-        with self.store.tx() as db:
-            db.execute("DELETE FROM claims WHERE agent_id=?", (row["id"],))
-            db.execute("UPDATE agents SET token_hash=? WHERE id=?", ("revoked:" + secrets.token_hex(16), row["id"]))
-            if erase:
-                db.execute("UPDATE agents SET name=?, owner=NULL WHERE id=?", (f"erased-{row['id']}", row["id"]))
-
-    def list_notes(self, slug: str) -> list[dict]:
-        proj = self._project(slug)
-        return [dict(r) for r in self.store.all(
-            "SELECT n.id, f.name AS function, a.name AS agent, n.text FROM notes n LEFT JOIN functions f "
-            "ON f.id=n.function_id LEFT JOIN agents a ON a.id=n.agent_id WHERE n.project_id=? ORDER BY n.id",
-            proj["id"])]
 
     def learnings(self, slug: str, budget: int = 2500) -> str:
         """The project-wide notes agents left (newest first, within `budget` characters), for every new session:
@@ -756,32 +648,3 @@ class Network:
             used += len(text)
         return "\n".join(out)
 
-    def delete_note(self, note_id: int) -> None:
-        with self.store.tx() as db:
-            if db.execute("DELETE FROM notes WHERE id=?", (note_id,)).rowcount == 0:
-                raise NetworkError(f"no note with id {note_id}")
-
-    # ----------------------------------------------------------------- export
-
-    def export(self, project: str, out_dir: Path) -> int:
-        """Write matched sources + the current context as a tree you can PR upstream."""
-        proj = self._project(project)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "context.h").write_text(self._context(proj["id"])["header"], encoding="utf-8")
-        for unit in sorted(self._unit_contexts(proj["id"])):
-            (out_dir / "contexts").mkdir(exist_ok=True)
-            (out_dir / "contexts" / f"{unit}.h").write_text(self._context(proj["id"], unit)["header"], encoding="utf-8")
-        rows = self.store.all(
-            "SELECT f.name, f.matched_source, a.name AS agent, a.owner FROM functions f "
-            "LEFT JOIN agents a ON a.id=f.matched_agent_id WHERE f.project_id=? AND f.status='matched' "
-            "ORDER BY f.name", proj["id"])
-        (out_dir / "src").mkdir(exist_ok=True)
-        credits = []
-        for r in rows:
-            (out_dir / "src" / f"{r['name']}.c").write_text(
-                f'#include "context.h"\n\n// matched by {r["agent"]}' + (f" (operator: {r['owner']})" if r["owner"] else "")
-                + f"\n{r['matched_source'].strip()}\n", encoding="utf-8")
-            credits.append(f"{r['name']}\t{r['agent']}\t{r['owner'] or ''}")
-        (out_dir / "CREDITS.tsv").write_text("function\tagent\toperator\n" + "\n".join(credits) + "\n",
-                                             encoding="utf-8")
-        return len(rows)

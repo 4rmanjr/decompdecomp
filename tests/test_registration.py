@@ -1,14 +1,11 @@
-"""Phase 2/3 features: reputation, open registration, hash-only projects, per-unit headers, function pages,
-donated compute and upstream export."""
+"""Reputation, open registration, per-unit headers and upstream export."""
 
 import json
-import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from decompnet import jobs, policy, public, toolchains
+from decompnet import policy, toolchains
 from decompnet.network import Network, NetworkError
 from decompnet.project import import_project
 from decompnet.registration import Registrar
@@ -72,53 +69,7 @@ def test_reputation_gates_header_edits_and_budget(net, monkeypatch):
         net.compile_and_diff(agent, "clamp_s32", WRONG_CLAMP)
 
 
-@needs_host_gcc
-def test_hash_only_project_stores_no_code(tmp_path):
-    proj = tmp_path / "hashdemo"
-    shutil.copytree(DEMO, proj)
-    toml = (proj / "project.toml").read_text().replace('slug = "demo"', 'slug = "hashdemo"')
-    (proj / "project.toml").write_text(toml.replace("[target]", '[target]\nverification = "hash"'))
-    net = Network(tmp_path / "h.db")
-    import_project(net.store, proj, log=lambda *_: None)
-    rows = net.store.all("SELECT target, asm, seed, fingerprint FROM functions")
-    assert all(r["target"] is None and not r["asm"] and r["seed"] is None and len(r["fingerprint"]) == 64 for r in rows)
-    agent = net.authenticate(net.register_agent("h"))
-    assert "hash-only" in net.claim(agent, function="clamp_s32")
-    assert "No match" in net.compile_and_diff(agent, "clamp_s32", WRONG_CLAMP)
-    assert "MATCH" in net.compile_and_diff(agent, "clamp_s32", SOLUTIONS["clamp_s32"])
-    page = public.function_page(net, "hashdemo", "clamp_s32")
-    assert page["function"]["asm"] is None and page["project"]["hash_only"]
-    assert jobs.next_job(net, agent) is None  # never handed to donated compute
-
-
-def test_function_page_has_full_history(net):
-    a = net.authenticate(net.register_agent("alice"))
-    net.compile_and_diff(a, "clamp_s32", WRONG_CLAMP)
-    net.add_note(a, "demo", "check lo first", "clamp_s32")
-    net.compile_and_diff(a, "clamp_s32", SOLUTIONS["clamp_s32"])
-    page = public.function_page(net, "demo", "clamp_s32")
-    assert [h["score"] for h in page["history"]][-1] == 0 and len(page["history"]) == 2
-    assert page["function"]["matched_by"] == "alice" and "return lo" in page["function"]["matched_source"]
-    assert page["notes"][0]["text"] == "check lo first" and page["project"]["legal"]["basis"] == "own-code"
-
-
 needs_n64 = pytest.mark.skipif(toolchains.installed("gcc-2.7.2-kmc") is None, reason="gcc-2.7.2-kmc not installed")
-
-
-@needs_n64
-def test_donated_compute_round_trip(tmp_path):
-    net = Network(tmp_path / "j.db")
-    import_project(net.store, PROJECTS / "demo-n64", log=lambda *_: None)
-    a = net.authenticate(net.register_agent("a"))
-    net.compile_and_diff(a, "clamp_s32", WRONG_CLAMP, project="demo-n64")
-    net.release(a, "clamp_s32", "", project="demo-n64")
-    worker = net.authenticate(net.register_agent("worker"))
-    job = jobs.next_job(net, worker)
-    assert job["function"] == "clamp_s32" and job["toolchain"] == "gcc-2.7.2-kmc" and job["target"]["code"]
-    from decompnet.permuter import LocalScorer
-    assert LocalScorer(job, log=lambda *_: None).score(SOLUTIONS["clamp_s32"]) == 0  # same verdict locally
-    out = jobs.submit(net, worker, "demo-n64", "clamp_s32", SOLUTIONS["clamp_s32"])
-    assert out["matched"] and net.store.one("SELECT status FROM functions WHERE name='clamp_s32'")["status"] == "matched"
 
 
 zlib_ready = (PROJECTS / "zlib-n64" / "original" / "zlib.h").exists()

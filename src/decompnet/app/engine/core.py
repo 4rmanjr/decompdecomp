@@ -40,6 +40,8 @@ class Core(Network):
         self.forks = ForkEngine(self)
         self.twins = Twins(self)
         self.permuter = Permuter(self)
+        from ..rangecheck import RangeChecks
+        self.rangechecks = RangeChecks(self)
 
     @staticmethod
     def cfg(proj) -> dict:

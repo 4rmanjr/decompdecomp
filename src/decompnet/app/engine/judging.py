@@ -186,7 +186,10 @@ class JudgeMixin:
         link = self._link(project)
         if link is not None:
             link.call("/collab/release", agent, function=self._function(function, project)["name"], notes=notes)
-        return super().release(agent, function, notes, project)
+        said = super().release(agent, function, notes, project)
+        fn = self._function(function, project)
+        self.rangechecks.gave_up(self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"]), fn)
+        return said
 
     def add_spend(self, slug: str, usd: float, tokens: int) -> None:
         if usd or tokens:

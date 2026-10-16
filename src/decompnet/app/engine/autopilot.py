@@ -112,6 +112,8 @@ class AutopilotMixin:
         if agent is not None and agent.name == "autopilot" and self.twins._full_running(proj["slug"]):
             return
         self.twins.after_match(proj, function_id)
+        if any(c["status"] in ("checking", "waiting") for c in self.cfg(proj).get("range_checks", [])):
+            self.rangechecks.recheck(proj["slug"])  # a neighbour of a suggested range may have spoken
 
     def try_quietly(self, agent, proj, fn, source: str) -> dict:
         """Judge one candidate for a function nobody holds (autopilot's tries): held only while it compiles,

@@ -56,8 +56,7 @@ class GuiMixin:
                                              "suggestions": [s for s in cfg.get("suggestions", []) if s["status"] == "open"
                                                              and not re.search(r"does not match|doesn't compile", s["check"] or "")],
                                              "boundaries": [r for r in cfg.get("boundaries", []) if r["status"] == "open"],
-                                             "compiler_ranges": [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"])}
-                                                                 for r in cfg.get("compiler_ranges", [])]}
+                                             "compiler_ranges": self._range_rows(cfg)}
 
     def _overview(self, slug: str, proj) -> dict:
         if (fork := self.fork_slug(slug)):
@@ -132,6 +131,12 @@ class GuiMixin:
                          "ccx": compilermap.kind(looks) != compilermap.kind((own["toolchain"], tuple(own["flags"])))
                          or addr in cmap.contradicted}
         return out
+
+    def _range_rows(self, cfg: dict) -> list[dict]:
+        """The project's compiler ranges for the GUI, each with what checking it again said (rangecheck.py)."""
+        said = {tuple(map(tuple, c["spans"])): c.get("said", "") for c in cfg.get("range_checks", []) if c.get("audit")}
+        return [r | {"name": SHORT_NAMES.get(r["toolchain"], r["toolchain"]), "check": said.get(((r["start"], r["end"]),), "")}
+                for r in cfg.get("compiler_ranges", [])]
 
     def map_signature(self, slug: str) -> str:
         """What the function map shows, summed up: it changes when a function is added, matched, tried or claimed.

@@ -54,7 +54,7 @@ class CompilerMixin:
     def _short(self, lab: compilermap.Label) -> str:
         return f"{SHORT_NAMES.get(lab[0], lab[0])} {' '.join(lab[1])}".strip()
 
-    def compiler_map_text(self, slug: str, survey: bool = False) -> str:
+    def compiler_map_text(self, slug: str, survey: bool = False, check_ranges: bool = False) -> str:
         """The map for agents: where it differs from the compiler the game builds with today, and why."""
         self._rom_only(slug, "compiler_map")
         proj = self._project(slug)
@@ -64,6 +64,9 @@ class CompilerMixin:
         started = ""
         if survey:
             started = self.start_survey(slug)["state"] + ". "
+        if check_ranges:
+            started += (f"Checking {self.rangechecks.audit(proj)} applied range(s) again, with the evidence their "
+                        f"neighbours already give (in the background). ")
         cfg = self.cfg(proj)
         syms = self.symbols(proj["id"])
         lines = [f"{started}The game builds with {self._short((cfg['compiler']['toolchain'], tuple(cfg['compiler']['flags'])))}"
@@ -86,9 +89,10 @@ class CompilerMixin:
             names = ", ".join(syms.label(a) for a in sorted(cmap.contradicted)[:12])
             lines.append(f"{len(cmap.contradicted)} functions show a habit their compiler never does: {names}"
                          + (", ..." if len(cmap.contradicted) > 12 else "") + ". try_compiler them with another one.")
+        lines += self.rangechecks.text(proj)
         state = self.surveys.get(slug) or {}
         last = (cfg.get("compiler_survey") or {})
-        lines.append(f"The judge's survey (agents' C built with each compiler the project uses): "
+        lines.append("The judge's survey (agents' C built with each compiler the project uses): "
                      + (f"running, {state.get('tried', 0)} tried, {state.get('confirmed', 0)} confirmed" if state.get("state") == "running"
                         else f"{len(last.get('confirmed', {}))} confirmed in {len(last.get('tried', {}))} functions tried"
                         if last else "not run yet")
@@ -219,6 +223,8 @@ class CompilerMixin:
             habits = ", ".join(cmap.never.get(compilermap.kind(today), []))
             lines.append(f"Its code shows a habit {self._short(today)} never has here ({habits}): it was probably "
                          f"built by another compiler. compiler_map() shows which compilers this game uses.")
+        for c in self.rangechecks.checks_on(proj, fn["vram"]):
+            lines.append(self.rangechecks.task_text(c, fn["name"]))
         return ["", "### Compiler"] + lines if lines else []
 
     def suggest(self, agent: Agent, slug: str, text: str, compiler: str = "", flags: str = "",
@@ -267,11 +273,8 @@ class CompilerMixin:
         self._update_cfg(slug, change)
         s = found[0]
         note = f" ({check})" if check else ""
-        if spans and not self._range_proof(proj, spans):
-            return (f"Suggested, not applied by itself: ranges this small ({sum(b - a for a, b in spans)} bytes, "
-                    f"{self._functions_in(proj, spans)} function(s)) prove nothing about the compiler, since a few "
-                    f"instructions come out the same from several compilers. More likely the C isn't the original's "
-                    f"yet. It waits for the user.{note}")
+        if spans and tc:  # a hypothesis: its neighbours decide (rangecheck.py), not its size
+            return f"Suggested.{note} " + self.rangechecks.propose(proj, s, function, tc, flag_list, spans, source)
         if tc and self.auto_compiler and ("matches the game" in (s["check"] or "") or len(s["agents"]) >= self.AGREE):
             try:
                 self.resolve_suggestion(slug, s["id"], apply=True, guard=True)
@@ -334,6 +337,7 @@ class CompilerMixin:
         if d is None:
             return f"{what}: doesn't compile:\n{problem.strip()[-1500:]}"
         if ok:
+            self.rangechecks.tried(proj, fn, tc, flag_list, source, True)
             return (f"{what}: MATCHES the game byte for byte. Suggest it: suggest(compiler=\"{tc}\", flags=\"{' '.join(flag_list)}\", "
                     f"function=\"{fn['name']}\", ranges=<the address range it built>, source=<this C>)")
         return f"{what}: score {d.score} ({d.percent:.1f}%), not a match\n{d.render(context=1, max_rows=40)}"

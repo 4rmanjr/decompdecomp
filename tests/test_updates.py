@@ -169,9 +169,8 @@ def test_apply_installs_what_a_fresh_check_finds(monkeypatch):
     monkeypatch.setattr(updates, "restart", lambda port, secret: None)
     up.last = old
     up.apply()
-    import time
-    for _ in range(50):
-        if installed:
-            break
-        time.sleep(0.05)
+    import threading
+    for t in threading.enumerate():  # its install thread must end while restart is still the stand-in
+        if t.name == "update":
+            t.join(10)
     assert installed == [new]

@@ -1,4 +1,4 @@
-"""The end of a decomp is a linked file: when the last function of a file matches, decomp.wtf marks it Matching in
+"""The end of a decomp is a linked file: when the last function of a file matches, decompdecomp marks it Matching in
 configure.py, the game is built from the C and the project's checksum check must still pass; once linked, no change
 may make the built game differ.
 

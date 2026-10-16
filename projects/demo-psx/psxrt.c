@@ -1,6 +1,6 @@
 /* Demo Quest PS1 runtime bits GCC expects on a PlayStation (no FPU): the __main constructor hook and the
  * single-precision soft-float helpers. This executable exists to be decompiled, not played, so these are
- * plain integer stand-ins. Written for decomp.wtf (CC0). */
+ * plain integer stand-ins. Written for decompdecomp (CC0). */
 typedef union { float f; int i; } bits;
 
 void __main(void) {

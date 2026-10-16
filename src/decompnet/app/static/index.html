@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>decomp.wtf</title>
+<title>decompdecomp</title>
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
@@ -12,11 +12,11 @@
 <div class="app">
 
 <!-- ================================================================ sidebar -->
-<aside class="nav" id="nav" aria-label="decomp.wtf">
+<aside class="nav" id="nav" aria-label="decompdecomp">
   <div class="nav-top">
-    <a class="brand" href="#/" aria-label="decomp.wtf home">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6"/><rect x="9" y="1" width="6" height="6"/><rect x="1" y="9" width="6" height="6"/><rect class="hollow" x="9.75" y="9.75" width="4.5" height="4.5"/></svg>
-      <span>decomp<b>.wtf</b></span>
+    <a class="brand" href="#/" aria-label="decompdecomp home">
+      <svg viewBox="0 0 14 10" aria-hidden="true"><rect class="orig" x="4" y="0" width="1.76" height="1.76"/><rect class="orig" x="0" y="2" width="1.76" height="1.76"/><rect class="orig" x="2" y="2" width="1.76" height="1.76"/><rect class="orig" x="4" y="2" width="1.76" height="1.76"/><rect class="orig" x="0" y="4" width="1.76" height="1.76"/><rect class="orig" x="4" y="4" width="1.76" height="1.76"/><rect class="orig" x="0" y="6" width="1.76" height="1.76"/><rect class="orig" x="4" y="6" width="1.76" height="1.76"/><rect class="orig" x="0" y="8" width="1.76" height="1.76"/><rect class="orig" x="2" y="8" width="1.76" height="1.76"/><rect class="orig" x="4" y="8" width="1.76" height="1.76"/><rect x="12" y="0" width="1.76" height="1.76"/><rect x="8" y="2" width="1.76" height="1.76"/><rect x="10" y="2" width="1.76" height="1.76"/><rect x="12" y="2" width="1.76" height="1.76"/><rect x="8" y="4" width="1.76" height="1.76"/><rect x="12" y="4" width="1.76" height="1.76"/><rect x="8" y="6" width="1.76" height="1.76"/><rect x="12" y="6" width="1.76" height="1.76"/><rect x="8" y="8" width="1.76" height="1.76"/><rect x="10" y="8" width="1.76" height="1.76"/><rect x="12" y="8" width="1.76" height="1.76"/></svg>
+      <span>decomp<b>decomp</b></span>
     </a>
     <button class="ghost icon nav-close" id="navClose" type="button" aria-label="Close menu">✕</button>
   </div>
@@ -34,10 +34,10 @@
     <a class="nav-item" href="#/settings" data-route="settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.9 1h2.2l.4 1.9 1.3.6 1.7-1 1.5 1.5-1 1.7.6 1.3L15 6.9v2.2l-1.9.4-.6 1.3 1 1.7-1.5 1.5-1.7-1-1.3.6L9.1 15H6.9l-.4-1.9-1.3-.6-1.7 1-1.5-1.5 1-1.7-.6-1.3L1 9.1V6.9l1.9-.4.6-1.3-1-1.7 1.5-1.5 1.7 1 1.3-.6L6.9 1ZM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>Settings</a>
     <div class="nav-meta">
       <span class="muted small" id="navVersion"></span>
-      <button class="nav-update" id="navUpdate" type="button" hidden title="A new decomp.wtf is ready">Update</button>
+      <button class="nav-update" id="navUpdate" type="button" hidden title="A new decompdecomp is ready">Update</button>
       <span class="grow"></span>
       <button class="ghost icon sm" id="themeBtn" type="button" aria-label="Switch light/dark" title="Light / dark"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 1.5v10a5 5 0 0 1 0-10Z"/></svg></button>
-      <button class="ghost icon sm" id="quitBtn" type="button" aria-label="Quit decomp.wtf" title="Quit decomp.wtf"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 1.5h1.5v6h-1.5zM4.1 3.6l1.06 1.06A4.5 4.5 0 1 0 10.84 4.66L11.9 3.6A6 6 0 1 1 4.1 3.6Z"/></svg></button>
+      <button class="ghost icon sm" id="quitBtn" type="button" aria-label="Quit decompdecomp" title="Quit decompdecomp"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 1.5h1.5v6h-1.5zM4.1 3.6l1.06 1.06A4.5 4.5 0 1 0 10.84 4.66L11.9 3.6A6 6 0 1 1 4.1 3.6Z"/></svg></button>
     </div>
   </div>
 </aside>
@@ -46,7 +46,7 @@
 <div class="main" id="main">
 <header class="mbar">
   <button class="ghost icon" id="navOpen" type="button" aria-label="Menu"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v1.5H2zm0 3.25h12v1.5H2zM2 10.5h12V12H2z"/></svg></button>
-  <a class="brand" href="#/"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6"/><rect x="9" y="1" width="6" height="6"/><rect x="1" y="9" width="6" height="6"/><rect class="hollow" x="9.75" y="9.75" width="4.5" height="4.5"/></svg><span>decomp<b>.wtf</b></span></a>
+  <a class="brand" href="#/"><svg viewBox="0 0 14 10" aria-hidden="true"><rect class="orig" x="4" y="0" width="1.76" height="1.76"/><rect class="orig" x="0" y="2" width="1.76" height="1.76"/><rect class="orig" x="2" y="2" width="1.76" height="1.76"/><rect class="orig" x="4" y="2" width="1.76" height="1.76"/><rect class="orig" x="0" y="4" width="1.76" height="1.76"/><rect class="orig" x="4" y="4" width="1.76" height="1.76"/><rect class="orig" x="0" y="6" width="1.76" height="1.76"/><rect class="orig" x="4" y="6" width="1.76" height="1.76"/><rect class="orig" x="0" y="8" width="1.76" height="1.76"/><rect class="orig" x="2" y="8" width="1.76" height="1.76"/><rect class="orig" x="4" y="8" width="1.76" height="1.76"/><rect x="12" y="0" width="1.76" height="1.76"/><rect x="8" y="2" width="1.76" height="1.76"/><rect x="10" y="2" width="1.76" height="1.76"/><rect x="12" y="2" width="1.76" height="1.76"/><rect x="8" y="4" width="1.76" height="1.76"/><rect x="12" y="4" width="1.76" height="1.76"/><rect x="8" y="6" width="1.76" height="1.76"/><rect x="12" y="6" width="1.76" height="1.76"/><rect x="8" y="8" width="1.76" height="1.76"/><rect x="10" y="8" width="1.76" height="1.76"/><rect x="12" y="8" width="1.76" height="1.76"/></svg><span>decomp<b>decomp</b></span></a>
 </header>
 
 <!-- ================================================================ new project -->
@@ -57,7 +57,7 @@
       <h1>Pick your game.<br>Your agents turn it into C.</h1>
       <p class="lede">N64, PlayStation 1 and 2, GameCube, Wii, Game Boy Advance and DS from scratch, or any public decomp. Every function is checked against your copy, byte for byte, and the result rebuilds your game: the base for ports and mods.</p>
       <ol class="how">
-        <li><b>Drop your game</b><span>decomp.wtf finds every function and the compiler</span></li>
+        <li><b>Drop your game</b><span>decompdecomp finds every function and the compiler</span></li>
         <li><b>Free matches first</b><span>the autopilot tries a machine draft of each one</span></li>
         <li><b>Agents do the rest</b><span>Claude Code, Codex, Antigravity, opencode or any API model</span></li>
       </ol>
@@ -105,7 +105,7 @@
           <button class="primary" id="errBack" type="button">Try another file</button>
           <button class="ghost" id="errCopy" type="button">Copy for a bug report</button>
           <a class="ghost btn" id="errLogLink" href="/api/log" target="_blank" rel="noopener">The full log</a>
-          <a class="ghost btn" href="https://github.com/i12bp8/decomp.wtf/issues/new" target="_blank" rel="noopener">Report it</a>
+          <a class="ghost btn" href="https://github.com/n-delic/decomp.wtf/issues/new" target="_blank" rel="noopener">Report it</a>
         </div>
       </div>
     </div>
@@ -146,9 +146,9 @@
   <header class="page-head">
     <p class="eyebrow">Public decomps</p>
     <h1>Continue a public decomp</h1>
-    <p class="muted">Paste a community decomp's repository and add your own copy of its game. Before anything is cloned, decomp.wtf shows what the project says about AI and contributions: every project decides that for itself. Your fork stays on this computer; decomp.wtf never pushes it or opens pull requests.</p>
+    <p class="muted">Paste a community decomp's repository and add your own copy of its game. Before anything is cloned, decompdecomp shows what the project says about AI and contributions: every project decides that for itself. Your fork stays on this computer; decompdecomp never pushes it or opens pull requests.</p>
     <div class="row repo-row"><input id="repoUrl" class="mono" placeholder="https://github.com/owner/repo" aria-label="Repository address"><button class="primary" id="repoFork" type="button">Look at it</button></div>
-    <p class="credit small"><a href="https://decomp.dev" target="_blank" rel="noopener">decomp.dev</a>, the community's home for matching decompilation progress, made by <a href="https://github.com/encounter" target="_blank" rel="noopener">encounter</a> (who also makes decomp-toolkit and objdiff, two of the tools decomp.wtf is built on), retired its project directory on 15 October 2026. Each project's page there still has its history, files and contributors.</p>
+    <p class="credit small"><a href="https://decomp.dev" target="_blank" rel="noopener">decomp.dev</a>, the community's home for matching decompilation progress, made by <a href="https://github.com/encounter" target="_blank" rel="noopener">encounter</a> (who also makes decomp-toolkit and objdiff, two of the tools decompdecomp is built on), retired its project directory on 15 October 2026. Each project's page there still has its history, files and contributors.</p>
   </header>
   <div class="cat-tools" id="catTools">
     <input id="catSearch" class="search" type="search" placeholder="Search games and teams" aria-label="Search projects">
@@ -368,7 +368,7 @@
     </div>
     <section class="panel danger-zone">
       <header class="panel-head"><h2>Remove project</h2></header>
-      <div class="pad row"><p class="muted small grow">Matched functions and notes are deleted from decomp.wtf. You can keep or delete the project folder.</p><button class="ghost danger" id="deleteBtn" type="button">Remove project…</button></div>
+      <div class="pad row"><p class="muted small grow">Matched functions and notes are deleted from decompdecomp. You can keep or delete the project folder.</p><button class="ghost danger" id="deleteBtn" type="button">Remove project…</button></div>
     </section>
   </section>
 </main>
@@ -381,7 +381,7 @@
     <section class="panel"><header class="panel-head"><h2>Agent apps on this computer</h2><button class="ghost small-btn" id="agRefresh" type="button">Refresh</button></header><div class="pad" id="agList"></div></section>
     <div class="stack-col">
       <section class="panel"><header class="panel-head"><h2>Models with an API key</h2></header><div class="pad" id="apiBox"></div></section>
-      <section class="panel"><header class="panel-head"><h2>Use decomp.wtf from your agent</h2></header><div class="pad" id="mcpBox"></div></section>
+      <section class="panel"><header class="panel-head"><h2>Use decompdecomp from your agent</h2></header><div class="pad" id="mcpBox"></div></section>
     </div>
   </div>
 </main>
@@ -389,14 +389,14 @@
 <!-- ================================================================ compilers & tools -->
 <main id="toolsPage" class="view" hidden>
   <header class="page-head"><p class="eyebrow">Compilers &amp; tools</p><h1>What builds your games</h1>
-    <p class="muted">decomp.wtf installs what a project needs by itself. Proprietary compilers (IDO, CodeWarrior) are only installed when you accept that.</p></header>
+    <p class="muted">decompdecomp installs what a project needs by itself. Proprietary compilers (IDO, CodeWarrior) are only installed when you accept that.</p></header>
   <div class="chips" id="toolChips"></div>
   <div class="tool-grid" id="toolGrid"></div>
 </main>
 
 <!-- ================================================================ settings -->
 <main id="settingsPage" class="view" hidden>
-  <header class="page-head"><p class="eyebrow">Settings</p><h1>How decomp.wtf works for you</h1></header>
+  <header class="page-head"><p class="eyebrow">Settings</p><h1>How decompdecomp works for you</h1></header>
   <div class="cols">
     <section class="panel"><header class="panel-head"><h2>Agents</h2></header><div class="pad" id="setAgents"></div></section>
     <div class="stack-col">

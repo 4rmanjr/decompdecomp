@@ -63,7 +63,7 @@ def identify(src: bytes | Path, name: str = "") -> Picked:
     if psx.is_disc(src):
         return _from_disc(src)
     if src[:4] == b"\x7fELF":
-        raise RomError("this ELF program isn't for a console decomp.wtf can split from scratch yet")
+        raise RomError("this ELF program isn't for a console decompdecomp can split from scratch yet")
     raise RomError("this isn't a ROM, disc or game program this app can read: pick an N64 ROM (.z64, .n64, .v64), "
                    "a PlayStation 1 or 2 disc image (.bin, .iso, .chd) or its program file (e.g. SLUS_200.00)")
 

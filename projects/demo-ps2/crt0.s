@@ -1,4 +1,4 @@
-# Demo Quest PS2 start-up: clear .bss, set the stack and $gp, call main. Written for decomp.wtf (CC0).
+# Demo Quest PS2 start-up: clear .bss, set the stack and $gp, call main. Written for decompdecomp (CC0).
 # Numeric registers ($8 = t0, $9 = t1, $28 = gp, $29 = sp) and reorder mode, for the period EE assembler.
         .set reorder
         .section .text

@@ -1,6 +1,6 @@
 /* Demo Quest GC runtime: the register save/restore helpers CodeWarrior calls in prologues and epilogues
  * (PowerPC EABI layout, registers stored below r11), with an entry point per register like the SDK's.
- * Written for decomp.wtf (CC0). */
+ * Written for decompdecomp (CC0). */
 void _savegpr_14(void);
 void _savegpr_15(void);
 void _savegpr_16(void);

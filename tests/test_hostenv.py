@@ -1,4 +1,4 @@
-"""decomp.wtf in WSL (Windows) and Docker (macOS): paths the user gives on their own computer, and what the app can
+"""decompdecomp in WSL (Windows) and Docker (macOS): paths the user gives on their own computer, and what the app can
 and can't do from inside (open the browser, show a folder, how the user's agents reach it)."""
 
 import pytest
@@ -69,7 +69,7 @@ def _no_wslpath(*args, **kwargs):  # this test machine has no WSL
 
 @pytest.mark.skipif(toolchains.installed("gcc-2.7.2-kmc") is None, reason="needs gcc-2.7.2-kmc")
 def test_compiles_when_the_app_runs_from_root(monkeypatch):
-    """A service or a container starts decomp.wtf in /, and there's no bwrap in decomp.wtf's own Linux: KMC GCC's
+    """A service or a container starts decompdecomp in /, and there's no bwrap in decompdecomp's own Linux: KMC GCC's
     assembler can't read its input from there, so every compile runs in its own work folder."""
     from decompnet import compiler, project
 

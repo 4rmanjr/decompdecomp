@@ -1,6 +1,6 @@
 /* Demo Quest PS2 runtime bits GCC expects: on the EE, `long` is 64 bits and there is no 64-bit multiply or
  * divide instruction, so libgcc's helpers are needed. Written with shifts and adds only (which the EE does
- * natively), so they never call themselves. Written for decomp.wtf (CC0). */
+ * natively), so they never call themselves. Written for decompdecomp (CC0). */
 typedef unsigned long long u64;
 typedef long long s64;
 

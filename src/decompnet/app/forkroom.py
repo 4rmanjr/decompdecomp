@@ -8,7 +8,7 @@ ROM projects (collab.py):
 - a member's match is sent to the host, which builds it in its own tree against its own copy and commits it;
 - edits of other files (headers, new source files, split files) are made by the host, which checks them the same way;
 - members follow the host's commits as git bundles: only what the repository tracks, never the game, its extracted
-  files or the build (those are gitignored in every project decomp.wtf makes or forks).
+  files or the build (those are gitignored in every project decompdecomp makes or forks).
 A public decomp's members get the project from its own host (GitHub, ...) at the commit the room's host started from;
 the bundle then only holds the room's own commits.
 """
@@ -165,7 +165,7 @@ def pull(root: Path, data: bytes, ref: str) -> str:
     tip = fetch_bundle(root, data, ref)
     dirty = bool(_git(root, "status", "--porcelain", "--untracked-files=no"))
     if dirty:
-        _git(root, "stash", "push", "-q", "-m", "decomp.wtf: work in progress before following the room")
+        _git(root, "stash", "push", "-q", "-m", "decompdecomp: work in progress before following the room")
     _git(root, "reset", "-q", "--hard", tip)
     if dirty and subprocess.run(["git", "-c", "safe.directory=*", "stash", "pop", "-q"], cwd=root,
                                 capture_output=True).returncode != 0:

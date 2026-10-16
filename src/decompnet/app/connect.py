@@ -1,6 +1,6 @@
-"""Make decomp.wtf available inside the AI agents the user already uses: register `decomp mcp` with Claude Code,
+"""Make decompdecomp available inside the AI agents the user already uses: register `decomp mcp` with Claude Code,
 Codex, Antigravity CLI and opencode (their own `mcp add` commands; opencode's config file). After that, asking the
-agent "decompile my game at ~/roms/game.z64" is enough: it finds decomp.wtf's tools and the app shows its work live.
+agent "decompile my game at ~/roms/game.z64" is enough: it finds decompdecomp's tools and the app shows its work live.
 Only done when the user clicks Connect (or runs `decomp connect`)."""
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _opencode_config() -> Path:
 
 
 def commands(kind: str) -> list[str] | None:
-    """The command that registers decomp.wtf with this agent (None: done through a config file)."""
+    """The command that registers decompdecomp with this agent (None: done through a config file)."""
     exe = _which(KINDS[kind].command) or KINDS[kind].command
     env = f"DECOMP_AGENT_NAME={LABEL[kind]}"
     bridge = bridge_command()
@@ -58,7 +58,7 @@ def shown(kind: str) -> str:
 
 
 def status(kind: str) -> bool:
-    """Whether decomp.wtf is already registered with this agent."""
+    """Whether decompdecomp is already registered with this agent."""
     exe = _which(KINDS[kind].command)
     if not exe:
         return False
@@ -78,7 +78,7 @@ def status(kind: str) -> bool:
 
 
 def connect(kind: str) -> str:
-    """Register decomp.wtf with the agent. Returns what happened, for the user."""
+    """Register decompdecomp with the agent. Returns what happened, for the user."""
     kind = kind_id(kind)
     if kind not in LABEL:
         raise ValueError(f"unknown agent {kind!r}")
@@ -95,7 +95,7 @@ def connect(kind: str) -> str:
                                           "environment": {"DECOMP_AGENT_NAME": LABEL[kind]}}
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-        return f"added decomp.wtf to {path}"
+        return f"added decompdecomp to {path}"
     cmd = commands(kind)
     if kind != "antigravity" and status(kind):  # replace an older registration (agy's `mcp add` updates in place)
         _run([cmd[0], "mcp", "remove", *(["-s", "user"] if kind == "claude" else []), NAME], 30)

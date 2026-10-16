@@ -1,7 +1,7 @@
 @font-face { font-family: "Geist"; src: url("/assets/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("/assets/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 
-/* ------------------------------------------------------------------ tokens (shared with decomp.wtf) */
+/* ------------------------------------------------------------------ tokens (shared with decompdecomp) */
 :root {
   --bg: #f4f2ec; --bg-alt: #ebe8df; --panel: #fbfaf6; --raise: #ffffff; --nav: #efece4;
   --ink: #14130f; --ink-2: #3a382f; --muted: #6d695e; --faint: #a7a295;
@@ -102,8 +102,8 @@ a.ghost, a.primary { text-decoration: none; }
 .nav-top { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 8px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font: 500 15px/1 var(--mono); letter-spacing: -.01em; }
 .brand b { font-weight: 500; color: var(--match); }
-.brand svg { width: 18px; height: 18px; fill: var(--match); }
-.brand svg .hollow { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.brand svg { width: 22px; height: 16px; fill: var(--match); }
+.brand svg .orig { fill: var(--ink); }  /* the original's "d", next to the matching one */
 .nav-close { display: none; }
 .nav-new {
   display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 12px; border-radius: 10px; text-decoration: none;

@@ -1,7 +1,7 @@
 # Reading objdiff
 
 objdiff compares your compiled function with the original, instruction by instruction, relocations
-included. The match percentage is how alike they are; 100% means identical. decomp.wtf's score is
+included. The match percentage is how alike they are; 100% means identical. decompdecomp's score is
 (1 - match) × instructions × 100: lower is better, 0 is identical.
 
 The diff shows TARGET (original) and YOURS side by side, only around differences:

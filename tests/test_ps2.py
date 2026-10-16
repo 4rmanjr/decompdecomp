@@ -51,7 +51,7 @@ def test_import(psx):
 
 def test_a_removed_game_can_be_imported_again(tmp_path):
     """Issue #18: removing a project left its symbols behind, and importing the game again (the new project gets
-    the same id) failed on them. A database that has such leftovers loses them when decomp.wtf opens it."""
+    the same id) failed on them. A database that has such leftovers loses them when decompdecomp opens it."""
     net = RomNetwork(tmp_path / "app.db", tmp_path)
     slug = net.import_rom(EXE, confirmed=True, log=lambda *_: None)
     assert net.store.one("SELECT COUNT(*) AS n FROM symbols")["n"] > 60

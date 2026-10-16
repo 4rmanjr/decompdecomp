@@ -1,7 +1,7 @@
 """Public matching decompilation projects with their progress, as decomp.dev listed them.
 
 decomp.dev retired its project directory on 2026-10-15 (projects.json answers 410 Gone; each project's own page
-stays). decomp.wtf no longer asks for it: an install shows the list it downloaded before, if any, and public decomps
+stays). decompdecomp no longer asks for it: an install shows the list it downloaded before, if any, and public decomps
 are forked by their repository address, after a look at what the project says about AI (forks/policy.py)."""
 
 from __future__ import annotations

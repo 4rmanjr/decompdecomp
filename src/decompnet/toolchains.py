@@ -94,7 +94,7 @@ def unsupported_cpu() -> str | None:
     machine = current_platform().split("-", 1)[1]
     if machine == "x86_64":
         return None
-    return (f"decomp.wtf needs a 64-bit Intel or AMD PC for now (the games' compilers are x86 programs; this "
+    return (f"decompdecomp needs a 64-bit Intel or AMD PC for now (the games' compilers are x86 programs; this "
             f"computer's processor is {machine})")
 
 
@@ -272,7 +272,7 @@ def install(tid: str, *, accept_license: bool = False, force: bool = False, log=
         downloads = root() / ".downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         for part in parts:
-            archive = downloads / Path(part["url"]).name
+            archive = downloads / (part.get("file") or Path(part["url"]).name)  # file: when two urls share a name
             if not archive.exists() or (part.get("sha256") and _sha256(archive) != part["sha256"]):
                 _download(part["url"], archive, log)
             digest = _sha256(archive)
@@ -285,7 +285,9 @@ def install(tid: str, *, accept_license: bool = False, force: bool = False, log=
                 shutil.copyfile(archive, dest / part["binary"])
                 os.chmod(dest / part["binary"], 0o755)
             else:
-                _extract(archive, dest, part.get("subdir"))
+                into = dest / part.get("into", "")  # a pack of several versions: each in its own folder
+                into.mkdir(parents=True, exist_ok=True)
+                _extract(archive, into, part.get("subdir"))
                 if part.get("executable"):  # archives that don't record the executable bit
                     for f in dest.rglob("*"):
                         if f.is_file():

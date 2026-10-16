@@ -1,4 +1,4 @@
-# Demo Quest PS1 start-up: clear .bss, set the stack and $gp, call main. Written for decomp.wtf (CC0).
+# Demo Quest PS1 start-up: clear .bss, set the stack and $gp, call main. Written for decompdecomp (CC0).
         .set noreorder
         .set noat
         .section .text

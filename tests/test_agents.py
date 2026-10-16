@@ -140,7 +140,7 @@ def test_diffs_sum_up_and_shorten_long_runs():
 
 
 def test_helpers_and_the_agent_you_talk_to_never_share_an_identity(tmp_path):
-    """8 Antigravity helpers showed as 15 agents: the helpers reached decomp.wtf through the user's own `decomp mcp`,
+    """8 Antigravity helpers showed as 15 agents: the helpers reached decompdecomp through the user's own `decomp mcp`,
     which signed each in as a new agent of the user's, named like the helpers (antigravity-9...). Chat identities
     are numbered differently now, and a helper never counts as the agent the user talks to."""
     from decompnet.app.engine import RomNetwork

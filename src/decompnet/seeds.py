@@ -27,7 +27,7 @@ M2C_TARGETS = {
     "agbcc": "gba-gcc-c",
 }
 # What m2c's --valid-syntax output needs to compile: its unknown types and macros, defined the simplest way that
-# keeps the code's meaning (written for decomp.wtf; the names are m2c's interface).
+# keeps the code's meaning (written for decompdecomp; the names are m2c's interface).
 M2C_MACROS = """\
 #ifndef M2C_DEFINES
 #define M2C_DEFINES

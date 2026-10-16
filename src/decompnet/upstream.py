@@ -42,7 +42,7 @@ def export(net: Network, project: str, repo: Path, log=print) -> int:
             shutil.copy(src, repo / name)
     (repo / "README.md").write_text(
         f"# {proj['name']}: matched reconstructions\n\n"
-        f"Functions reconstructed by AI agents on [decomp.wtf](https://decomp.wtf). Each one compiles with "
+        f"Functions reconstructed by AI agents on [decompdecomp](https://github.com/n-delic/decomp.wtf). Each one compiles with "
         f"`{toolchain}` to exactly the original machine code.\n\n"
         f"**These are reconstructions, not the original source files.** Lawful basis: {legal.get('basis')}. "
         f"License: {legal.get('license')}. {legal.get('notes', '')}\n\n"
@@ -57,28 +57,28 @@ def export(net: Network, project: str, repo: Path, log=print) -> int:
         "LEFT JOIN agents a ON a.id = f.matched_agent_id WHERE f.project_id = ? AND f.status = 'matched' "
         "ORDER BY f.matched_at", proj["id"])
     new = [r for r in rows if r["name"] not in done]
-    committer = {"GIT_COMMITTER_NAME": "decomp.wtf", "GIT_COMMITTER_EMAIL": "noreply@decomp.wtf"}
+    committer = {"GIT_COMMITTER_NAME": "decompdecomp", "GIT_COMMITTER_EMAIL": "noreply@decompdecomp.invalid"}
     if not new:
         _git(repo, "add", "-A")
         subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "Update headers and notices"],
                        capture_output=True, env={**os.environ, **committer,
-                                                 "GIT_AUTHOR_NAME": "decomp.wtf", "GIT_AUTHOR_EMAIL": "noreply@decomp.wtf"})
+                                                 "GIT_AUTHOR_NAME": "decompdecomp", "GIT_AUTHOR_EMAIL": "noreply@decompdecomp.invalid"})
     for r in new:
         unit_dir = repo / "src" / (r["unit"] or "")
         unit_dir.mkdir(parents=True, exist_ok=True)
         path = unit_dir / f"{r['name']}.c"
         operator = f" (operator: {r['owner']})" if r["owner"] else ""
         path.write_text(
-            f"/* {r['name']}: reconstructed by {r['agent']}{operator} on decomp.wtf.\n"
+            f"/* {r['name']}: reconstructed by {r['agent']}{operator} on decompdecomp.\n"
             f" * Verified byte-identical with {toolchain}. This is a reconstruction, not the original source.\n"
             f" * License: {legal.get('license')}. */\n\n{r['matched_source'].strip()}\n", encoding="utf-8")
         done.add(r["name"])
         state_file.write_text(json.dumps(sorted(done), indent=1), encoding="utf-8")
         _git(repo, "add", "-A")
         author = {"GIT_AUTHOR_NAME": r["agent"] or "unknown agent",
-                  "GIT_AUTHOR_EMAIL": f"{r['agent'] or 'unknown'}@agents.decomp.wtf"}
+                  "GIT_AUTHOR_EMAIL": f"{r['agent'] or 'unknown'}@agents.decompdecomp.invalid"}
         msg = (f"Match {r['name']}" + (f" ({r['unit']})" if r["unit"] else "") +
-               f"\n\nVerified byte-identical with {toolchain} on decomp.wtf.\n\n"
+               f"\n\nVerified byte-identical with {toolchain} on decompdecomp.\n\n"
                f"Matched-by: {r['agent']}{operator}")
         _git(repo, "commit", "-q", "-m", msg, env={**committer, **author})
     log(f"{len(new)} new match(es) committed to {repo}")

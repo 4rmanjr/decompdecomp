@@ -6,8 +6,8 @@
 `ninja` builds everything and checks the ROM; `ninja prepare` only what decompiling needs; `ninja rom` the ROM check.
 The build extracts your copy of the game (extract/baserom.nds), delinks its code into objects with ds-decomp (dsd),
 compiles src/ with CodeWarrior for DS, links everything with CodeWarrior's linker, rebuilds the ROM and checks it
-against your copy, byte for byte. objdiff.json (for objdiff and decomp.wtf) compares every source file with the
-original. Made by decomp.wtf, modeled on the build of AetiasHax's Princess Maker 4 decomp (CC0).
+against your copy, byte for byte. objdiff.json (for objdiff and decompdecomp) compares every source file with the
+original. Made by decompdecomp, modeled on the build of AetiasHax's Princess Maker 4 decomp (CC0).
 """
 
 import argparse
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import ninja_syntax
 
-# Settings (decomp.wtf wrote these for this game; change them if the game was built differently)
+# Settings (decompdecomp wrote these for this game; change them if the game was built differently)
 GAME = "game"
 MWCC_VERSION = "2.0/sp1p5"
 CC_FLAGS = ["-O4,p", "-enum", "int", "-char", "signed", "-str", "noreuse", "-proc", "arm946e", "-gccext,on", "-fp",

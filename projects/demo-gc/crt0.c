@@ -1,6 +1,6 @@
 /* Demo Quest GC start-up, written the way the CodeWarrior SDK's __start.c is: asm functions in .init that set up
  * the stack and small-data registers, then __init_data walks the linker-generated _rom_copy_info and
- * _bss_init_info tables. Written for decomp.wtf (CC0). */
+ * _bss_init_info tables. Written for decompdecomp (CC0). */
 typedef unsigned int u32;
 
 typedef struct { u32 *rom; u32 *addr; u32 size; } RomCopyInfo;

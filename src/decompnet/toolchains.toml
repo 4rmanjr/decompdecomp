@@ -182,7 +182,7 @@ name = "cloudflared"
 kind = "tool"
 license = "Apache-2.0"
 source = "cloudflare/cloudflared 2026.10.0"
-description = "Cloudflare's tunnel client. decomp.wtf uses a free quick tunnel (no account) when you invite friends to a project."
+description = "Cloudflare's tunnel client. decompdecomp uses a free quick tunnel (no account) when you invite friends to a project."
 [[cloudflared.parts]]
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-linux-amd64"
 sha256 = "d33ff2d14475178d2012c2c56beba87389ac5ded27649519f198a7d3134a99db"
@@ -413,6 +413,27 @@ description = "Every CodeWarrior version GameCube and Wii games were built with 
 [[mwcc.parts]]
 url = "https://files.decomp.dev/compilers_20251118.zip"
 sha256 = "69b0d4980a2eccea4ae6e70b486714b5190cb6c75e3bc7b8fb5878a8854d0d1c"
+
+[msvc]
+name = "Microsoft Visual C++ 6.0, 7.0 and 7.1 (PC)"
+kind = "compiler-pack"
+platform = "PC"
+license = "proprietary"
+source = "the decomp community's archives, as decomp.me uses them (OmniBlade/decomp.me msvcwin9x, roblabla/MSVC-7.0-Portable)"
+description = "The compilers most Windows games of 1998-2005 were built with: Visual C++ 6.0, .NET 2002 (7.0) and .NET 2003 (7.1). Windows programs, run through wibo on Linux and macOS."
+[[msvc.parts]]
+url = "https://github.com/OmniBlade/decomp.me/releases/download/msvcwin9x/msvc6.0.tar.gz"
+sha256 = "5c81e9c2ab0ac5545022c1418a23392cb514db950cf6dcb1f48327270403fcd3"
+into = "6.0"
+[[msvc.parts]]
+url = "https://github.com/roblabla/MSVC-7.0-Portable/releases/download/release/msvc7.0.tar.gz"
+sha256 = "9b995af7ff4b31f7d8cc91194f54e21a0a07ff6be360a94e9aa3686649b3f072"
+file = "msvc7.0-portable.tar.gz"
+into = "7.0"
+[[msvc.parts]]
+url = "https://github.com/OmniBlade/decomp.me/releases/download/msvcwin9x/msvc7.0.tar.gz"  # holds 7.1 (13.10.3077)
+sha256 = "49eba7f9f72644f6f872a4176baeac544e8b5dfb2be1f47bb4d439b1136ffeac"
+into = "7.1"
 
 [mwccarm]
 name = "Metrowerks CodeWarrior for Nintendo DS (mwccarm)"

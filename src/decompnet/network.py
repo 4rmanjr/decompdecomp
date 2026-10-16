@@ -26,7 +26,7 @@ CLAIM_TTL = 30 * 60
 # A function an agent just released goes to the back of the queue for this long, for every agent: the next one
 # starts on something fresh instead of passing the same function back and forth. Asked for by name, it comes at once.
 RELEASE_COOLDOWN = 15 * 60
-MACHINE_AGENTS = ("autopilot", "permuter")  # decomp.wtf's own workers: their claims never mean "given up on"
+MACHINE_AGENTS = ("autopilot", "permuter")  # decompdecomp's own workers: their claims never mean "given up on"
 # Twins first (see app/twins.py): a function whose code the game has more than once (boost: how many more times)
 # and isn't too big or given up on, best value per instruction first; its twins (boost -1) last, as they match for
 # free once it does.
@@ -177,7 +177,7 @@ class Network:
         own = {r["id"] for r in db.execute("SELECT id FROM agents WHERE name IN (?, ?)", MACHINE_AGENTS)}
         for row in db.execute("SELECT c.function_id, c.agent_id, f.project_id, f.name FROM claims c "
                               "JOIN functions f ON f.id=c.function_id WHERE c.expires_at < ?", (now,)).fetchall():
-            if row["agent_id"] in own:  # decomp.wtf's own tries (cut short by a restart): nobody gave up on it
+            if row["agent_id"] in own:  # decompdecomp's own tries (cut short by a restart): nobody gave up on it
                 continue
             db.execute("UPDATE functions SET abandons=abandons+1 WHERE id=?", (row["function_id"],))
             self._event(db, row["project_id"], row["agent_id"], "expired", row["name"])

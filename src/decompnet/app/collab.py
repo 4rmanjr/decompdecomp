@@ -1,6 +1,6 @@
 """Private rooms: friends who each own the same game decompile it together.
 
-The host's decomp.wtf is the hub. It serves a small, separate HTTP app (only /collab routes; never the GUI or the
+The host's decompdecomp is the hub. It serves a small, separate HTTP app (only /collab routes; never the GUI or the
 agents' MCP endpoint) that a quick tunnel makes reachable. A friend joins with the invite link *and their own copy of
 the game*: the ROM's SHA-1 must equal the host's, checked on both sides. No ROM bytes or assembly ever cross the
 wire. Each side reads the code from its own copy; what travels is the work: claims (so nobody does the same function
@@ -428,12 +428,12 @@ def host_app(net, rooms: dict[str, Room]) -> Starlette:
         return {"ok": True}
 
     async def landing(request: Request):
-        return HTMLResponse("<!doctype html><meta charset=utf-8><title>decomp.wtf room</title>"
+        return HTMLResponse("<!doctype html><meta charset=utf-8><title>decompdecomp room</title>"
                             "<body style='font:16px system-ui;max-width:36em;margin:4rem auto;padding:0 1rem'>"
-                            "<h1>decomp.wtf room</h1><p>This is an invite to decompile a game together. Open "
-                            "<b>decomp.wtf</b>, choose <b>Join a friend</b>, and paste this page's address. "
+                            "<h1>decompdecomp room</h1><p>This is an invite to decompile a game together. Open "
+                            "<b>decompdecomp</b>, choose <b>Join a friend</b>, and paste this page's address. "
                             "You'll need your own copy of the game.</p><p>Don't have the app? "
-                            "<a href='https://decomp.wtf'>decomp.wtf</a></p>")
+                            "<a href='https://github.com/n-delic/decomp.wtf'>decompdecomp</a></p>")
 
     routes = [
         Route("/", landing), Route("/join/{code}", landing),
@@ -500,7 +500,7 @@ def parse_invite(link: str) -> tuple[str, str]:
         return link, "open"
     m = re.match(r"^(https?://[^/\s]+(?::\d+)?)/join/([A-Za-z0-9_-]{4,})(?:#room=([\w-]+))?$", link)
     if not m:
-        raise NetworkError("that doesn't look like a decomp.wtf invite link")
+        raise NetworkError("that doesn't look like a decompdecomp invite link")
     return m.group(1), m.group(2) + (f"#{m.group(3)}" if m.group(3) else "")
 
 
@@ -657,7 +657,7 @@ def _hello(http: httpx.Client, link: str) -> tuple[str, str, dict]:
     try:
         r = http.get(f"{url}/collab/hello", params={"invite": code, "room": room_hint})
     except httpx.HTTPError:
-        raise NetworkError("can't reach that room: is the host's decomp.wtf open and sharing?") from None
+        raise NetworkError("can't reach that room: is the host's decompdecomp open and sharing?") from None
     hello = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code != 200:
         raise NetworkError(hello.get("error", "the invite didn't work"))

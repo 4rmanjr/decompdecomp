@@ -20,7 +20,7 @@ The loop
 The goal: linked files
 A decomp is done when the game is built from its C, file by file, and still comes out byte for byte: that's what
 "linked" means on decomp.dev, and what ports (Aurora on GameCube/Wii) and mods start from. A file is linked once
-every function *and all its data* match: decomp.wtf then marks it Matching in configure.py, builds the whole game
+every function *and all its data* match: decompdecomp then marks it Matching in configure.py, builds the whole game
 and keeps it only if the project's checksum check passes. `claim_function` gives you the files closest to done
 first, and the match that finishes a file's functions shows its data next to the original's. `file_status(path)`
 shows that any time. The usual fixes:
@@ -32,7 +32,7 @@ shows that any time. The usual fixes:
   "undefined: 'lbl_…'" in file_status means the file uses a label its own data should provide).
 - Once linked, a file must keep building the same game: a change that alters it is undone.
 
-Files decomp.wtf made (text_<offset>.c)
+Files decompdecomp made (text_<offset>.c)
 Code that had no source file gets one per stretch of code (`text_<offset>.c`, `.cpp` for C++ code); it often holds
 several of the game's original files, and it can only link when it's exactly one. `file_status` shows its ranges.
 When you can tell where an original file ends (a block of functions that use their own strings and constants, a

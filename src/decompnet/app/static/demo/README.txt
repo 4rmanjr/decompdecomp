@@ -1,10 +1,10 @@
 Demo Quest 64 (demo-quest-64.z64)
 
-A small N64 ROM image made for decomp.wtf, so you can try the app without a game of your own.
-Built by projects/demo-rom/build.py in the decomp.wtf source repository with KMC-compatible GCC 2.7.2.
+A small N64 ROM image made for decompdecomp, so you can try the app without a game of your own.
+Built by projects/demo-rom/build.py in the decompdecomp source repository with KMC-compatible GCC 2.7.2.
 
 Contents:
-- Demo Quest game code, main loop and a tiny C library: written for decomp.wtf, CC0-1.0 (public domain).
+- Demo Quest game code, main loop and a tiny C library: written for decompdecomp, CC0-1.0 (public domain).
 - zlib 1.1.4 (c) 1995-2002 Jean-loup Gailly and Mark Adler, under the zlib license:
   This software is provided 'as-is', without any express or implied warranty. Permission is granted to
   anyone to use this software for any purpose, including commercial applications, and to alter it and

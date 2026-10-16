@@ -1,4 +1,4 @@
-"""decomp.wtf on Windows as on Linux: agents started through npm's .cmd launchers, stopping an agent with everything it
+"""decompdecomp on Windows as on Linux: agents started through npm's .cmd launchers, stopping an agent with everything it
 started, UTF-8 output and files, HTTPS, startup apps, dtk's build paths."""
 
 import json
@@ -136,7 +136,7 @@ def test_https_is_verified_by_windows():
 def test_running_at_log_on_needs_no_administrator(monkeypatch):
     import winreg
 
-    key = r"Software\decomp.wtf-tests\Run"
+    key = r"Software\decompdecomp-tests\Run"
     monkeypatch.setattr(service, "RUN_KEY", key)
     started = []
     monkeypatch.setattr(service.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
@@ -149,7 +149,7 @@ def test_running_at_log_on_needs_no_administrator(monkeypatch):
         service.remove()
         assert not service.installed()
     finally:
-        for k in (key, r"Software\decomp.wtf-tests"):
+        for k in (key, r"Software\decompdecomp-tests"):
             try:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, k)
             except OSError:
@@ -157,7 +157,7 @@ def test_running_at_log_on_needs_no_administrator(monkeypatch):
 
 
 def test_builds_find_decomp_wtfs_own_ninja(tmp_path, monkeypatch):
-    """ninja comes in decomp.wtf's own environment, which isn't on PATH once decomp.wtf is installed (a GameCube game's
+    """ninja comes in decompdecomp's own environment, which isn't on PATH once decompdecomp is installed (a GameCube game's
     first build ran `ninja`: on Windows it wasn't found)."""
     own = os.path.normcase(os.path.dirname(sys.executable))
     monkeypatch.setenv("PATH", os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)

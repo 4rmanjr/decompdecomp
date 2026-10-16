@@ -1,6 +1,6 @@
 """Machine code no compiler makes: functions written in assembly, which no C or C++ source compiles to.
 
-decomp.wtf matches functions from C/C++ only (an asm function would "match" anything), so a function like this is
+decompdecomp matches functions from C/C++ only (an asm function would "match" anything), so a function like this is
 taken out of agents' way before they spend their turns on it. Only a certain sign counts, since a C function taken
 for assembly would never be worked on.
 
@@ -14,7 +14,7 @@ SDK's headers (OSInitFastCast's asm block, in HuSysInit), and an agent matches t
 
 MIPS (N64, PlayStation, PlayStation 2), see mips_reason: coprocessor 0 (the system: mfc0, mtc0, rfe, eret) or, on
 the PlayStations, coprocessor 2 (the PS1's GTE, the PS2's VU0: ctc2, mtc2, lwc2, cop2 commands), which C compilers
-never emit (PSY-Q's libgte is written in assembly; C that drives the GTE does it with inline asm, which decomp.wtf
+never emit (PSY-Q's libgte is written in assembly; C that drives the GTE does it with inline asm, which decompdecomp
 doesn't take); code that ends without a return or a jump and so runs on into the next function (an extra entry
 point into hand-written code: the splitter cut it off); or a first block that reads a temporary register (at, v0,
 v1, t0-t9) or k0/k1 before setting it (compiled code gets its arguments in a0-a3).

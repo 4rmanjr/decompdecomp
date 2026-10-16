@@ -5,7 +5,7 @@ function entered past its own push, or a guess that isn't a function) takes that
 then writes outside the list: "IndexError: list assignment index out of range" ended the whole disassembly of
 Spyro: Attack of the Rhynocs. A push there now stores nothing, as a load from there already reads "unknown".
 
-Standard library only: this runs in luvdis's environment, not decomp.wtf's.
+Standard library only: this runs in luvdis's environment, not decompdecomp's.
 """
 
 import importlib.util

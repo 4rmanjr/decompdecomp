@@ -95,7 +95,7 @@ def nds(arm9: bytes, build_info: int, callback: int) -> bytes:
     arm7 = struct.pack("<I", 0xEAFFFFFE) + bytes(0x1FC)  # b . (the ARM7 just waits)
     arm7_off = len(rom)
     rom += arm7
-    name, text = b"readme.txt", b"Demo Quest DS: a homemade ROM for decomp.wtf (CC0).\n"
+    name, text = b"readme.txt", b"Demo Quest DS: a homemade ROM for decompdecomp (CC0).\n"
     fnt_off = len(rom)
     fnt = struct.pack("<IHH", 8, 0, 1) + bytes([len(name)]) + name + b"\0"  # the root directory: one file
     rom += fnt + bytes(-len(fnt) % 0x200)
@@ -104,7 +104,7 @@ def nds(arm9: bytes, build_info: int, callback: int) -> bytes:
     banner_off = len(rom)
     banner = bytearray(0x840)
     struct.pack_into("<H", banner, 0, 1)
-    title = "Demo Quest DS\ndecomp.wtf".encode("utf-16-le")
+    title = "Demo Quest DS\ndecompdecomp".encode("utf-16-le")
     for lang in range(6):
         banner[0x240 + lang * 0x100:0x240 + lang * 0x100 + len(title)] = title
     struct.pack_into("<H", banner, 2, crc16(bytes(banner[0x20:0x840])))

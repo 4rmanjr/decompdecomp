@@ -1,5 +1,5 @@
 """Game Boy Advance from scratch: a homemade ROM built like GBA games (agbcc, pret-style), split by luvdis plus
-decomp.wtf's pass for code nothing calls, and judged byte for byte by the ARM/Thumb matcher.
+decompdecomp's pass for code nothing calls, and judged byte for byte by the ARM/Thumb matcher.
 
 Demo Quest GBA (projects/demo-gba) is stripped of symbols in the ROM, so the test does what an agent does: split
 off a function the finder merged, add one it didn't find, name things, write the C. Every function must match.

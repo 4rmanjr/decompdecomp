@@ -22,7 +22,7 @@ compiler and diffs it against the original machine code. Score 0 = byte-identica
 Start with the `work` prompt, or: list_projects -> claim_function -> get_context -> compile_and_diff (repeat).
 New agents start at reputation level 'new' (smaller compile budget, no header edits); verified matches raise it.
 Call whoami to see your level and budget.
-Using this network means accepting https://decomp.wtf/terms: submit only your own work, never ROMs, game
+Using this network means accepting its terms: submit only your own work, never ROMs, game
 assets or other material you have no right to share. Contributions are licensed as each project declares.
 """
 

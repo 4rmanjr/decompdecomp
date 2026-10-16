@@ -48,7 +48,7 @@ PLATFORM_GUIDES = {
 }
 
 INSTRUCTIONS = """\
-decomp.wtf: you are decompiling a game ROM that the user owns into C that compiles to exactly the same
+decompdecomp: you are decompiling a game ROM that the user owns into C that compiles to exactly the same
 machine code. Your C is compiled with the game's original compiler, linked at the function's real address
 and compared with the ROM: score 0 means byte-identical, and the function is saved as matched.
 Start with project_info, then claim_function -> compile_and_diff (repeat). guide(topic) has know-how.
@@ -56,7 +56,7 @@ Everything runs on the user's computer. The game's code is the user's: never pub
 """
 
 WORK_PROMPT = """\
-You are a decompilation agent in decomp.wtf, working on {title}. Other agents may be working on other
+You are a decompilation agent in decompdecomp, working on {title}. Other agents may be working on other
 functions of the same game at the same time; the tools keep you from colliding.
 
 Your job: turn functions of this game into C that compiles to *exactly* the original machine code.
@@ -81,7 +81,7 @@ Write plausible original code, pure C (no inline asm). Be brief in your messages
 """
 
 FORK_PROMPT = """\
-You are a decompilation agent in decomp.wtf, continuing {title}: a public matching-decompilation project
+You are a decompilation agent in decompdecomp, continuing {title}: a public matching-decompilation project
 for {platform}. Other agents may be working on other functions of the same project at the same time; the
 tools keep you from colliding.
 
@@ -105,7 +105,7 @@ machine code, judged by objdiff. Use only the decomp tools. Repeat for up to {co
    starts with those notes.
 5. The goal is linked files: the game built from the C, byte for byte. When a match finishes a file's
    functions, you're shown its data next to the original's: fix what differs (order, const, statics,
-   values) with edit_file until file_status says it matches; decomp.wtf then links the file.
+   values) with edit_file until file_status says it matches; decompdecomp then links the file.
 6. compile_and_diff says when to move on (no better after 4 compiles in a row; up to 10 for big functions):
    then release_function with precise notes (what you tried, what is left) and claim the next. Very large
    functions: get the structure right first; a near miss is worth the extra compiles.
@@ -233,13 +233,13 @@ def call(net: RomNetwork, agent: Agent, slug: str, name: str, args: dict) -> str
 
 
 # Antigravity CLI otherwise finds MCP tools on demand (an extra step each, through its generic dispatcher):
-# decomp.wtf's tools are all there is to the job, so they are loaded up front.
+# decompdecomp's tools are all there is to the job, so they are loaded up front.
 ALWAYS_LOAD = {"antigravity/alwaysLoad": True}
 
 
 def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]]) -> MCPServer:
     """MCP server for CLI agents. `agent_of` maps a request to (agent, project slug)."""
-    mcp = MCPServer(name="decomp", title="decomp.wtf", instructions=INSTRUCTIONS, version=__version__)
+    mcp = MCPServer(name="decomp", title="decompdecomp", instructions=INSTRUCTIONS, version=__version__)
 
     async def run(ctx: Context, name: str, **args) -> str:
         try:
@@ -389,6 +389,6 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
 
     @mcp.prompt(title="Decompile", description="Work loop: claim functions and match them byte for byte.")
     def work(count: str = "5") -> str:
-        return "Call project_info first, then follow the decomp.wtf work loop for up to " + count + " functions."
+        return "Call project_info first, then follow the decompdecomp work loop for up to " + count + " functions."
 
     return mcp

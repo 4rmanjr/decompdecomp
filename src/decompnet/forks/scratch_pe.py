@@ -13,7 +13,7 @@ does the delinking itself:
   matches whatever names the C uses, under objdiff's usual rules.
 
 The project (tools/configure.py, tools/delink.py) cuts the functions out of the user's copy into COFF objects at
-build time, one per source file (src/auto/text_<address>.c, about 4 KiB of functions each), and compiles src/ with
+build time, one per source file (src/auto/text_<address>.cpp, about 4 KiB of functions each), and compiles src/ with
 MSVC through wibo. A program built without relocations (most games before 2005) has every address fixed, which is
 what this reads; there's no relink of the whole .exe yet, so files aren't linked into the game as on GameCube.
 """
@@ -350,12 +350,13 @@ def tool_args() -> list[str]:
     return args
 
 
-TYPES_H = """/* Basic types for this decompilation (32-bit x86, Visual C++). Agents add structs and prototypes here or in
- * new headers next to it.
+TYPES_H = """/* Basic types for this decompilation (32-bit x86, Visual C++, written in C++). Agents add structs, classes and
+ * prototypes here or in new headers next to it.
  *
- * Function names follow how MSVC decorates C names: _func_00401000 is `func_00401000` (__cdecl),
- * _func_00401020@8 is `__stdcall func_00401020` taking 8 bytes of arguments, @func_00401040@8 is
- * `__fastcall func_00401040`. Data is D_<address> (`extern int D_00402034;`), imports __imp__<name>. */
+ * The game's functions are func_<address> and its data D_<address>: write them as free functions or as a class's
+ * methods (`void Town::func_0041B470(int id)`), with the original's calling convention (methods: this in ecx; free
+ * functions: __cdecl, __stdcall or __fastcall, as the code shows). The build gives what they compile to the
+ * original's symbol names, so any C++ name mangling pairs with the game's code. Data: `extern int D_00402034;`. */
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -373,7 +374,7 @@ typedef int BOOL;
 #define TRUE 1
 #define FALSE 0
 #ifndef NULL
-#define NULL ((void*)0)
+#define NULL 0
 #endif
 
 #endif
@@ -465,7 +466,7 @@ def create(root: Path, game: Path, *, compiler: str | None = None, log=print) ->
                        "relocs": [list(r) for r in f.relocs]} for f in fns] for u, fns in groups.items()},
     }, indent=1), encoding="utf-8")
     for u, fns in groups.items():
-        src = root / "src" / "auto" / f"{u}.c"
+        src = root / "src" / "auto" / f"{u}.cpp"  # C++, as PC games of the time were written (C compiles too)
         src.parent.mkdir(parents=True, exist_ok=True)
         src.write_text(f"/* {len(fns)} function{'s' if len(fns) != 1 else ''} from 0x{fns[0].addr:08X} to "
                        f"0x{fns[-1].addr + fns[-1].size:08X}, found by Ghidra. */\n#include \"common.h\"\n",

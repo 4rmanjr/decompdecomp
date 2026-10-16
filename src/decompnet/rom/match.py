@@ -26,9 +26,9 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 
 from .. import scoring
-from ..elfobj import _MASKS, FunctionObj, Reloc, _canonical, _section_target, _symbol_at
+from ..elfobj import _MASKS, FunctionObj, Reloc, _canonical, _section_target, _symbol_at, unmangle
 from .split import RomFunction
-from .symbols import SymbolTable
+from .symbols import AUTO_NAME, SymbolTable
 
 R_MIPS_32, R_MIPS_26, R_MIPS_HI16, R_MIPS_LO16, R_MIPS_GPREL16 = 2, 4, 5, 6, 7
 _REF = re.compile(r"%(hi|lo|gp_rel)\(\s*([A-Za-z_.$][\w.$]*)\s*(?:([+-])\s*(0x[0-9A-Fa-f]+|\d+))?\s*\)")
@@ -198,6 +198,11 @@ class _Linker:
         self._data_relocs: dict[int, list] = {}
         self.words: list[int] = []
         self.fn_shndx = None
+        # the $gp the assembler assumed (.reginfo's ri_gp_value): a $gp-relative reference to the object's own data
+        # holds its offset less this (EE-GCC: -0x4000 for the first small datum)
+        reginfo = self.elf.get_section_by_name(".reginfo")
+        raw = reginfo.data() if reginfo is not None else b""
+        self.gp0 = struct.unpack_from("<i" if self.elf.little_endian else ">i", raw, 20)[0] if len(raw) >= 24 else 0
 
     def problem(self, text: str) -> None:
         if text not in self.problems:
@@ -230,6 +235,8 @@ class _Linker:
             return None
         sym = r["symtab"].get_symbol(r["symidx"])
         shndx = sym["st_shndx"]
+        if r["type"] == R_MIPS_GPREL16 and sym["st_info"]["bind"] == "STB_LOCAL":
+            residual += self.gp0  # (a C static, or C++'s definitions: global data a C file only declares)
         if shndx in ("SHN_UNDEF", "SHN_COMMON") or shndx in (0xFF03, 0xFF04):  # + MIPS small common / small undefined
             base = self.resolve_name(_canonical(sym.name, sym["st_info"]["bind"]))
             return None if base is None else (base + residual) & 0xFFFFFFFF
@@ -247,6 +254,8 @@ class _Linker:
         base = self.symbols.resolve(named[0]) if named else None
         if base is not None:
             addr = base + named[1]
+            if sym["st_info"]["type"] == "STT_SECTION" or sym["st_info"]["bind"] == "STB_LOCAL":
+                self.local_map.setdefault((shndx, off), addr)  # g++'s `.sdata+4`: the export places the section
         else:
             want = self.target_at.get(r["off"])
             if want is None or want[0] != r["type"]:
@@ -404,6 +413,7 @@ class _Linker:
 
 def link(obj: bytes, name: str, target: RomTarget, symbols: SymbolTable, read: ReadFn) -> LinkResult:
     """Link a compiled candidate at the target's address and compare it with the ROM."""
+    obj = unmangle(obj, lambda n: n in symbols.by_name or bool(AUTO_NAME.match(n)))  # C++ names: the game's
     return _Linker(obj, name, target, symbols, read).run()
 
 

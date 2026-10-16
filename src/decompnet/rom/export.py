@@ -175,7 +175,7 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
             as_fallback.append((f["name"], "its own data isn't laid out like the game's"))
             f["kind"] = "asm"
             continue
-        src = out / "src" / f["seg"] / f"{f['name']}.c"
+        src = out / "src" / f["seg"] / f"{f['name']}.{'cpp' if compiled.language == 'c++' else 'c'}"  # as it compiled
         src.parent.mkdir(parents=True, exist_ok=True)
         include = "common.h" if not unit else f"common_{unit}.h"
         prelude = toolchains.get(compiler_for(cfg, row["vram"])["toolchain"]).prelude

@@ -57,6 +57,7 @@ class Toolchain:
     pip_extra: list[str] = field(default_factory=list)  # extra requirements for a git tool's environment
     requires_java: int = 0  # minimum Java version (Ghidra)
     prelude: str = ""  # C put before every file it compiles: works around a compiler's own bugs (see toolchains.toml)
+    cplusplus: bool = False  # it compiles C++ too (by the file's extension: .cpp)
 
     @property
     def proprietary(self) -> bool:

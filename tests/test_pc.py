@@ -82,7 +82,7 @@ def test_every_function_is_found_with_its_extent(pc):
     root = Path(net.project_row(slug)["root"])
     files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split()
     assert files and not [f for f in files if f.startswith(("orig/", "build/"))]
-    assert "config/demoquest/functions.json" in files and any(f.startswith("src/auto/") for f in files)
+    assert "config/demoquest/functions.json" in files and any(f.startswith("src/auto/") and f.endswith(".cpp") for f in files)
 
 
 @needs_tools
@@ -102,6 +102,12 @@ def test_agents_match_functions(pc):
         decorated = next(s for s in syms if re.sub(r"^[_@]|@\d+$", "", s) == name)
         res = net.attempt(agent, decorated.replace(name, rename[name]), sub(csource.get(source, name)), slug)
         assert res["matched"], res["text"]
+    # C++: a class's method, whatever MSVC mangles its name to, pairs with the original's function
+    abs_name = rename["abs_s32"]
+    assert net.forks.edit_file(agent, slug, "include/common.h", "", f"struct Num {{ static s32 {abs_name}(s32 v); }};\n",
+                               "a class").startswith("✅")
+    res = net.attempt(agent, f"_{abs_name}", f"s32 Num::{abs_name}(s32 v) {{\n    return v < 0 ? -v : v;\n}}\n", slug)
+    assert res["matched"], res["text"]
     other = f"_func_{syms['_entity_points']:08X}"
     wrong = net.attempt(agent, other, sub(csource.get(source, "entity_points")).replace("return 75;", "return 76;"),
                         slug)

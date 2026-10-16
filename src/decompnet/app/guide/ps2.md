@@ -26,6 +26,11 @@ address ranges only; the brief says when a function is in such a range.
   loves `lui`/`addiu` pairs over `$gp` when the threshold is 0.
 - EE-GCC 3.2 loads a switch's jump table with `addiu %lo(jtbl)` then `lw 0(reg)`; 2.9x/2.96 use
   `lw %lo(jtbl)(reg)`. That alone tells the two apart. C++ is common: old GCC 2.9x mangling (`update__7CPlayerf`) and vtable thunks.
+Games started from scratch take C++ too: source that doesn't compile as C is compiled as C++, and its names are given
+back to the game's, so `void CPed::func_00123456(int x)` is judged as func_00123456. A method's `this` is its first
+argument ($a0), as in C. Put classes in the shared header inside `#ifdef __cplusplus` ... `#endif`: the functions
+already matched as C must keep compiling as C (a header edit that breaks one is undone). Constructors and destructors
+can't be named by address: write them as ordinary methods (`CPed *CPed::func_0012AB30()`) that set the vtable.
 Small data is `$gp`-relative (-G8 typical), so declare externs with their real sizes.
 
 Libraries: Sony's libgraph, libdma, libpad, libcdvd, libkernl, libsd and libvu0 are linked as

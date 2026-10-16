@@ -33,7 +33,9 @@ DISCARD = ("*(.reginfo) *(.MIPS.abiflags) *(.MIPS.options) *(.pdr) *(.comment) *
 try:
     from decompnet import toolchains
     from decompnet.compiler import run_in
+    from decompnet.elfobj import unmangle
     from decompnet.project import compiler_config, compiler_for
+    from decompnet.rom.symbols import AUTO_NAME
 except ImportError:
     sys.exit("This build uses decompdecomp's pinned compilers: install decompdecomp first (https://github.com/n-delic/decompdecomp).")
 
@@ -148,7 +150,26 @@ def build_objects(todo: list[tuple[str, str, str]]) -> None:
             res = run_in(cfg, ROOT, argv, inputs=[src, "include"], outputs=[obj])
             if res.returncode != 0 or not target.exists():
                 fail(f"compiling {src} failed:\n{(res.stdout + res.stderr)[-3000:]}")
+            if src.endswith(".cpp"):  # C++ names back to the game's, as decompdecomp judged it
+                names = {*B["symbols"], *(f["name"] for f in B["functions"])}
+                target.write_bytes(unmangle(target.read_bytes(), lambda n: n in names or bool(AUTO_NAME.match(n))))
             trim(target)
+            weaken_data(obj)
+
+
+def weaken_data(obj: str) -> None:
+    """`s32 g_score;` in a header is a common symbol to GCC's C, but a definition in every file to CodeWarrior (.sbss)
+    and to C++ (.sdata): made weak, the game's own definition (asm/data) wins, as decompdecomp's matcher judged it."""
+    from elftools.elf.elffile import ELFFile
+
+    with open(ROOT / obj, "rb") as f:
+        elf = ELFFile(f)
+        symtab = elf.get_section_by_name(".symtab")
+        names = {s.name for s in (symtab.iter_symbols() if symtab else ())
+                 if s["st_info"]["bind"] == "STB_GLOBAL" and isinstance(s["st_shndx"], int) and s["st_shndx"] < 0xFF00
+                 and not elf.get_section(s["st_shndx"])["sh_flags"] & 0x4}  # not in code (SHF_EXECINSTR)
+    if names:
+        run([binutils("objcopy"), *(f"--weaken-symbol={n}" for n in sorted(names)), obj])
 
 
 def _size(obj: str, sections: tuple[str, ...]) -> int:

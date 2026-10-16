@@ -62,6 +62,7 @@ class CompilerConfig:
     runtime32: str | None = None  # 32-bit x86 C runtime for old i386 compiler binaries (see toolchains)
     wsl: bool = False  # a Linux toolchain on Windows: runs inside WSL 2, `cmd` holds WSL paths (see wsl.py)
     prelude: str = ""  # the toolchain's prelude (Toolchain.prelude)
+    cplusplus: bool = False  # it compiles C++ too: what doesn't compile as C is tried as C++ (Toolchain.cplusplus)
 
 
 @dataclass
@@ -69,6 +70,7 @@ class CompileResult:
     ok: bool
     obj: bytes | None
     log: str
+    language: str = "c"  # "c++" when it compiled only as C++ (see compile_source)
 
 
 def _sandbox_mode(cfg: CompilerConfig) -> str:
@@ -148,21 +150,36 @@ def compile_source(cfg: CompilerConfig, context_header: str, source: str, truste
             shutil.copytree(d, inc, dirs_exist_ok=True)
         # LF on every platform: to the old GCCs a backslash before CRLF doesn't continue a line ("stray '\' in program")
         (inc / "context.h").write_text(context_header, encoding="utf-8", newline="\n")
-        (work / "func.c").write_text(cfg.prelude + '#include "context.h"\n#line 1 "func.c"\n' + source + "\n",
-                                     encoding="utf-8", newline="\n")
-
         root = _root(cfg, work)
-        subst = {"{src}": f"{root}/func.c", "{obj}": f"{root}/func.o", "{include}": f"{root}/include"}
-        argv = [subst.get(a, a) for a in cfg.cmd]
-        argv = [a.replace("{include}", subst["{include}"]) for a in argv]
-        try:
-            with _SLOTS:
-                proc = _exec(cfg, work, argv, cfg.timeout,
-                             **({"outputs": ["func.o"], "stage": root} if _sandbox_mode(cfg) == "wsl" else {}))
-        except subprocess.TimeoutExpired:
-            return CompileResult(False, None, f"compiler timed out after {cfg.timeout}s")
-        log = (proc.stdout + proc.stderr).replace(root + "/", "")
-        obj = work / "func.o"
-        if proc.returncode != 0 or not obj.exists():
-            return CompileResult(False, None, log[-4000:] or f"compiler exited with {proc.returncode}")
-        return CompileResult(True, obj.read_bytes(), log[-2000:])
+        result = _compile_as(cfg, work, root, source, "c")
+        # C++ for what doesn't compile as C (a class's method, new, templates): C stays C, so what matched as C
+        # still compiles exactly as it did (GTA San Andreas is C++; 1,222 of its functions matched as C)
+        if not result.ok and cfg.cplusplus and not result.log.startswith("compiler timed out"):
+            cpp = _compile_as(cfg, work, root, source, "cpp")
+            if cpp.ok or _CPP.search(source):
+                return cpp
+        return result
+
+
+_CPP = re.compile(r"::|\bclass\b|\btemplate\b|\bnew\b|\bdelete\b|\bvirtual\b|\boperator\b|\bnamespace\b|\bthis\b")
+
+
+def _compile_as(cfg: CompilerConfig, work: Path, root: str, source: str, ext: str) -> CompileResult:
+    name = f"func.{ext}"
+    (work / name).write_text(cfg.prelude + f'#include "context.h"\n#line 1 "{name}"\n' + source + "\n",
+                             encoding="utf-8", newline="\n")
+    subst = {"{src}": f"{root}/{name}", "{obj}": f"{root}/func.o", "{include}": f"{root}/include"}
+    argv = [subst.get(a, a) for a in cfg.cmd]
+    argv = [a.replace("{include}", subst["{include}"]) for a in argv]
+    (work / "func.o").unlink(missing_ok=True)
+    try:
+        with _SLOTS:
+            proc = _exec(cfg, work, argv, cfg.timeout,
+                         **({"outputs": ["func.o"], "stage": root} if _sandbox_mode(cfg) == "wsl" else {}))
+    except subprocess.TimeoutExpired:
+        return CompileResult(False, None, f"compiler timed out after {cfg.timeout}s")
+    log = (proc.stdout + proc.stderr).replace(root + "/", "")
+    obj = work / "func.o"
+    if proc.returncode != 0 or not obj.exists():
+        return CompileResult(False, None, log[-4000:] or f"compiler exited with {proc.returncode}")
+    return CompileResult(True, obj.read_bytes(), log[-2000:], "c++" if ext == "cpp" else "c")

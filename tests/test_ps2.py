@@ -297,3 +297,32 @@ def test_a_game_built_with_two_compilers(tmp_path):
     with pytest.raises(NetworkError):  # matched code in a range never stops matching: that compiler is refused
         net.set_compiler_ranges(slug, [[start, end]], "ee-gcc-3.2")
     assert net.overview(slug)["compiler_ranges"][0]["toolchain"] == "mwcps2-3.0.1"
+
+
+@pytest.mark.parametrize("toolchain", ["ee-gcc-2.96", "ee-gcc-3.2"])
+def test_a_function_written_as_a_cpp_method_matches(toolchain, tmp_path):
+    """GTA San Andreas is C++ (2,493 of its indirect calls are virtual calls): a function can be written as a class's
+    method. C that compiles stays C; the rest compiles as C++, and GCC's names (2.9x: clamp_s32__4Mathiii, 3.2:
+    _ZN4Math9clamp_s32Eiii) are given back to the game's before it's judged."""
+    if toolchains.installed(toolchain) is None:
+        pytest.skip(f"needs {toolchain}")
+    build = DEMO / "build" if toolchain == "ee-gcc-2.96" else DEMO / "build" / toolchain
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), toolchain], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain=toolchain)
+    agent = _name_the_game(net, slug, build / "demoq_ps2.elf")
+    method = ("struct Math { static s32 clamp_s32(s32 v, s32 lo, s32 hi); };\n"
+              "s32 Math::clamp_s32(s32 v, s32 lo, s32 hi) {\n    if (v < lo) {\n        return lo;\n    }\n"
+              "    if (v > hi) {\n        return hi;\n    }\n    return v;\n}\n")
+    res = net.attempt(agent, "clamp_s32", method, slug)
+    assert res["matched"], res["text"]
+    # a call to another of the game's functions, from C++, resolves to it too
+    caller = ("struct Score { static void add_score(s32 points); };\n"
+              + csource.get((GAME / "game.c").read_text(), "add_score").replace("void add_score(", "void Score::add_score(", 1))
+    res = net.attempt(agent, "add_score", caller, slug)
+    assert res["matched"], res["text"]
+    if toolchains.installed("binutils-mips") is not None and shutil.which("ld.lld"):
+        out = net.export_rom(slug, log=lambda *_: None)  # the export builds them as .cpp, to the same bytes
+        assert out["identical"], out["log"]
+        assert (Path(out["path"]) / "src" / "cod" / "clamp_s32.cpp").exists(), out.get("fallback")

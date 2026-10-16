@@ -27,7 +27,7 @@ from .. import scoring, seeds, similarity, toolchains
 from ..elfobj import FunctionObj
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
-from ..rom.symbols import AUTO_NAME, IDENT, Symbol, SymbolTable
+from ..rom.symbols import IDENT, Symbol, SymbolTable
 
 DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx", "EEGCC": "ee-gcc-2.96",
                      "EEGCC-2.9": "ee-gcc-2.9-991111", "EEGCC-2.95.2": "ee-gcc-2.95.2", "EEGCC-2.95.3": "ee-gcc-2.95.3",

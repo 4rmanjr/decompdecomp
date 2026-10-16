@@ -285,3 +285,44 @@ def extract_function(data: bytes, name: str) -> FunctionObj | None:
         relocs.append(Reloc(r["off"], r["type"], sym_name, addend))
     relocs.sort(key=lambda r: r.offset)
     return FunctionObj(name=name, arch=arch, big_endian=big_endian, code=code, relocs=relocs)
+
+
+_GCC2_MANGLED = re.compile(r"([A-Za-z_]\w*?)__(?:[FQCtH]|\d)")  # GCC 2.9x: Update__4CPedi, func_00123456__Fi
+
+
+def unmangle(data: bytes, known) -> bytes:
+    """A compiled object with its C++ names turned back into the game's own, so a function written as a class's
+    method (`void CPed::func_00123456(int)`) is judged as, and calls, the game's func_00123456: GCC 2.9x's
+    `func_00123456__4CPedi`, GCC 3's `_ZN4CPed13func_00123456Ei`. `known(name)` says whether a name is one of the
+    game's. The new name is shorter, so it's written over the old one in the string table."""
+    if b"__" not in data and b"_Z" not in data:
+        return data
+    elf = ELFFile(BytesIO(data))
+    symtab = elf.get_section_by_name(".symtab")
+    if not isinstance(symtab, SymbolTableSection):
+        return data
+    base = elf.get_section(symtab["sh_link"])["sh_offset"]
+    out = bytearray(data)
+    for sym in symtab.iter_symbols():
+        name = sym.name
+        if not name or known(name):
+            continue
+        new = None
+        m = _GCC2_MANGLED.match(name)
+        if m and known(m.group(1)):
+            new = m.group(1)
+        elif name.startswith("_Z"):  # <length><identifier>... (the Itanium C++ ABI)
+            i = 2
+            while i < len(name) and new is None:
+                d = re.match(r"\d+", name[i:])
+                if d is None:
+                    i += 1
+                    continue
+                n, i = int(d.group()), i + len(d.group())
+                if known(name[i:i + n]):
+                    new = name[i:i + n]
+                i += n
+        if new:
+            at = base + sym["st_name"]
+            out[at:at + len(new) + 1] = new.encode() + b"\0"
+    return bytes(out)

@@ -242,7 +242,7 @@ def test_a_job_always_ends_and_says_why(tmp_path):
     story: before, an error of a kind nobody caught left the GUI on "Analysing…" forever."""
     import subprocess
 
-    from decompnet.app.server import Jobs
+    from decompnet.app.support import Jobs
 
     jobs = Jobs(tmp_path / "logs" / "decomp.log")
 
@@ -360,7 +360,7 @@ def test_settings_saved_from_many_threads_stay_whole(tmp_path):
     came back as empty settings, and with them the helpers to resume."""
     import threading
 
-    from decompnet.app.server import Settings
+    from decompnet.app.support import Settings
 
     st = Settings(tmp_path / "settings.json")
     st.save()

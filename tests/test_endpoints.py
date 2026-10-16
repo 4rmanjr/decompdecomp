@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from decompnet.app import agents
-from decompnet.app.server import Settings, _session_options, _spread
+from decompnet.app.support import Settings, _session_options, _spread
 
 
 def test_the_one_saved_api_becomes_the_first_endpoint(tmp_path):

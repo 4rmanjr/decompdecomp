@@ -88,6 +88,16 @@ BATCH_INSNS = 48
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
                       "ps2": ["ee-gcc-2.96", "ee-gcc-2.9-991111", "ee-gcc-2.95.2", "ee-gcc-2.95.3", "ee-gcc-3.2",
                               "mwcps2-2.3.3", "mwcps2-3.0.1"], "gba": ["agbcc"]}
+def _default_flags(toolchain: str, platform: str, gp: int) -> list[str]:
+    """A toolchain's flags for a game: PlayStation games keep globals up to 8 bytes $gp-relative when they use $gp
+    (GCC's -G8; CodeWarrior's -sdatathreshold 8)."""
+    flags = toolchains.get(toolchain).flags
+    if platform not in ("psx", "ps2"):
+        return flags
+    small = ["-sdatathreshold", str(8 if gp else 0)] if toolchain.startswith("mwcps2") else [f"-G{8 if gp else 0}"]
+    return [f for f in flags if not f.startswith("-G")] + small
+
+
 _AUTO_TOKEN = re.compile(r"\b(?:func|D|B|jtbl|RO|STR|FLT|DBL)_[0-9A-F]{8}\b")
 _ADDRESS = re.compile(r"^(?:0x)?([0-9A-Fa-f]{8})$")
 
@@ -394,13 +404,11 @@ class RomNetwork(Network):
             rom = (workdir / res.image).read_bytes()
 
         guess = info["compiler_guess"] if picked.platform == "ps2" else res.compiler  # PS2: what the program says
+        # the user's own choice stands; the test picks among the GCCs (m2c's drafts are GCC-style: CodeWarrior never
+        # matches them, so the test can't speak for it)
+        test_compilers = picked.platform == "ps2" and not toolchain and info["compiler_guess"].startswith("EEGCC")
         toolchain = toolchain or DEFAULT_TOOLCHAIN.get(guess, DEFAULT_TOOLCHAIN[info["compiler_guess"]])
-        tc = toolchains.get(toolchain)
-        default_flags = tc.flags
-        if picked.platform in ("psx", "ps2"):  # globals up to 8 bytes $gp-relative when the game uses $gp
-            small = (["-sdatathreshold", str(8 if res.gp else 0)] if toolchain.startswith("mwcps2")
-                     else [f"-G{8 if res.gp else 0}"])
-            default_flags = [f for f in tc.flags if not f.startswith("-G")] + small
+        default_flags = _default_flags(toolchain, picked.platform, res.gp)
         cfg = {
             "kind": "rom", "platform": picked.platform, "big_endian": picked.big_endian, "gp": res.gp,
             "rom": {**info, "file": res.image or picked.filename, "program": picked.filename},
@@ -453,8 +461,65 @@ class RomNetwork(Network):
                        "VALUES(?,?,?,?,?,?,?)", (pid, 1, BASE_HEADER.format(title=info["title"]) + (GP_NOTE if res.gp else ""),
                                                   None, "basic types", now, ""))
             self._event(db, pid, None, "import", f"{len(res.functions)} functions from {info['title']}")
+        if test_compilers and not flags:
+            self.test_compilers(slug, log=log)
         log(f"ready: {len(res.functions)} functions to decompile")
         return slug
+
+    def test_compilers(self, slug: str, sample: int = 24, log=print) -> dict[str, int]:
+        """Which of the platform's installed compilers builds this game: m2c drafts of small functions from all over
+        it, compiled with each and judged like any attempt. The one that matches the most becomes the project's (a
+        tie keeps the current one). What a program says about its compiler can mislead: GTA San Andreas keeps one
+        library's "MW MIPS C Compiler" note, and its own code is EE-GCC 2.96's. Returns compiler -> matches."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from ..compiler import compile_source
+        from ..project import compiler_config
+
+        proj = self._project(slug)
+        cfg = self.cfg(proj)
+        current = cfg["compiler"]["toolchain"]
+        tcs = [t for t in PLATFORM_COMPILERS.get(cfg.get("platform"), []) if toolchains.installed(t) is not None
+               and all(toolchains.installed(d) is not None for d in toolchains.get(t).requires)
+               and not t.startswith("mwcps2")]  # drafts are GCC-style: see import_rom
+        rows = self.store.all("SELECT * FROM functions WHERE project_id=? AND n_insns BETWEEN 6 AND 30 ORDER BY vram",
+                              proj["id"])
+        rows = rows[::max(1, len(rows) // sample)][:sample]  # spread over the whole game, not one library
+        if len(tcs) < 2 or not rows or not seeds.available():
+            return {}
+        header = self._context(proj["id"])["header"]
+        drafts = []
+        for fn in rows:
+            data_asm = "\n".join(self._jtbl_asm(proj, fn)) if "jtbl_" in (fn["asm"] or "") else None
+            draft = seeds.generate_from_asm(self._asm_text(fn, proj), fn["name"], current, header, data_asm, valid=True)
+            if draft:
+                drafts.append((fn, f"{seeds.M2C_MACROS}\n{draft}\n"))
+        log(f"testing {len(tcs)} compilers on {len(drafts)} small functions")
+
+        def matches(job) -> bool:
+            tc, (fn, source) = job
+            settings = {"toolchain": tc, "flags": _default_flags(tc, cfg["platform"], cfg.get("gp")), "timeout": 20}
+            result = compile_source(compiler_config(Path(proj["root"]), {"compiler": settings}), header, source)
+            if not result.ok:
+                return False
+            cand, verdict, _ = self._evaluate(fn, proj, result.obj)
+            return cand is not None and (verdict if verdict is not None
+                                         else scoring.diff(self._target_obj(fn, proj), cand).bytes_match)
+
+        jobs = [(tc, d) for tc in tcs for d in drafts]
+        with ThreadPoolExecutor(4) as pool:
+            found = list(pool.map(matches, jobs))
+        counts = {tc: sum(ok for (t, _), ok in zip(jobs, found) if t == tc) for tc in tcs}
+        best = max(tcs, key=lambda t: (counts[t], t == current))
+        log("compiler test: " + ", ".join(f"{SHORT_NAMES.get(t, t)} {counts[t]}" for t in tcs))
+        if counts[best] >= 3 and counts[best] > counts.get(current, 0):  # 1-2: trivial code any compiler makes
+            cfg["compiler"] = {"toolchain": best, "flags": _default_flags(best, cfg["platform"], cfg.get("gp")),
+                               "timeout": 20}
+            with self.store.tx() as db:
+                db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
+            log(f"{SHORT_NAMES.get(best, best)} builds this game's code ({counts[best]} of {len(drafts)} drafts match "
+                f"byte for byte, {counts.get(current, 0)} with {SHORT_NAMES.get(current, current)}): using it")
+        return counts
 
     def _import_gba(self, picked, slug: str, workdir: Path, toolchain: str | None, flags: list[str] | None, log) -> str:
         """Game Boy Advance: functions found by luvdis (plus a pass for code nothing calls), judged by the ARM matcher."""
@@ -1704,7 +1769,8 @@ class RomNetwork(Network):
         proj = self._project(slug)
         tc = toolchains.get(toolchain)
         cfg = self.cfg(proj)
-        cfg["compiler"] = {"toolchain": tc.id, "flags": flags or tc.flags, "timeout": 20}
+        cfg["compiler"] = {"toolchain": tc.id, "flags": flags or _default_flags(tc.id, cfg.get("platform", ""), cfg.get("gp")),
+                           "timeout": 20}
         with self.store.tx() as db:
             db.execute("UPDATE projects SET config=? WHERE id=?", (json.dumps(cfg), proj["id"]))
             db.execute("UPDATE functions SET seed=NULL WHERE project_id=? AND status='open'", (proj["id"],))

@@ -130,3 +130,28 @@ def test_games_built_with_other_compilers_match(toolchain, tmp_path):
         assert ov["compiler"]["flags"] == ["-O2", "-sdatathreshold", "8"]
         assert ov["rom"]["compiler_guess"].startswith("MWCPS2")  # CodeWarrior's .mwcats sections give it away
     _match_every_function(net, slug, build / "demoq_ps2.elf")
+
+
+@pytest.mark.parametrize("toolchain", ["ee-gcc-2.96", *OTHER_COMPILERS])
+def test_the_import_finds_the_compiler(toolchain, tmp_path):
+    """Not told which compiler built it, the import works it out: CodeWarrior and its version, and SN's 2.95.2, from
+    the code's style; the other GCCs by compiling drafts of small functions with each."""
+    if toolchains.installed(toolchain) is None or toolchains.installed("m2c") is None:
+        pytest.skip(f"needs {toolchain} and m2c")
+    build = DEMO / "build" if toolchain == "ee-gcc-2.96" else DEMO / "build" / toolchain
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), toolchain], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None)
+    assert net.overview(slug)["compiler"]["toolchain"] == toolchain
+
+
+def test_a_librarys_note_does_not_name_the_compiler(monkeypatch):
+    """GTA San Andreas keeps one "MW MIPS C Compiler" note, from a library: its own code is EE-GCC 2.96's, and
+    agents could match nothing until the compiler was switched. The code's style outweighs the note."""
+    from decompnet.rom import ps2
+
+    if not EXE.exists():
+        pytest.skip("needs the PS2 demo built")
+    monkeypatch.setattr(ps2, "_sections", lambda data: {".comment": b"MW MIPS C Compiler (2.4.1.01)\0PlayStation2\0"})
+    assert ps2.guess_compiler(EXE.read_bytes()) == "EEGCC"

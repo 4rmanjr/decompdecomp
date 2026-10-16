@@ -2407,6 +2407,7 @@ async function renderProjectSettings() {
   $("projFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("");
 }
 $("setTcReset").onclick = () => { $("setFlags").value = ""; };
+$("setTc").onchange = () => { $("setFlags").value = ""; };  // one compiler's flags aren't another's (-G8 vs -sdatathreshold): its defaults
 $("setTcSave").onclick = async () => {
   try {
     const flags = $("setFlags").value.trim();

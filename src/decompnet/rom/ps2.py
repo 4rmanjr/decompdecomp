@@ -35,14 +35,47 @@ def _sections(data: bytes) -> dict[str, bytes]:
     return out
 
 
+def code_style(data: bytes) -> tuple[int, float, float, float]:
+    """(returns, share of returns with a nop in the delay slot, `daddu rd, rs, $zero` moves per return, share of
+    $ra saves made with sq) over the program's executable code."""
+    phoff, = struct.unpack_from("<I", data, 28)
+    phentsize, phnum = struct.unpack_from("<HH", data, 42)
+    returns = nops = moves = sd = sq = 0
+    for i in range(phnum):
+        kind, off, _, _, size, _, flags, _ = struct.unpack_from("<8I", data, phoff + phentsize * i)
+        if kind != 1 or not flags & 1:  # loaded and executable
+            continue
+        words = struct.unpack_from(f"<{min(size, len(data) - off) // 4}I", data, off)
+        for k, w in enumerate(words):
+            op, rs, rt = w >> 26, (w >> 21) & 31, (w >> 16) & 31
+            if w == 0x03E00008 and k + 1 < len(words):  # jr $ra
+                returns += 1
+                nops += words[k + 1] == 0
+            elif op == 0 and w & 0x7FF == 0x2D and rt == 0 and rs:
+                moves += 1
+            elif rs == 29 and rt == 31:
+                sd += op == 0x3F
+                sq += op == 0x1F
+    return returns, nops / (returns or 1), moves / (returns or 1), sq / ((sd + sq) or 1)
+
+
 def guess_compiler(data: bytes) -> str:
-    """Which compiler built the game, from what it left in the program: CodeWarrior's .mwcats sections or its
-    "MW MIPS C Compiler" note, or a GCC version note. Most games keep neither: then EE-GCC 2.96, the PS2 SDK's."""
+    """Which compiler built the game. Its code says it best (what agents saw on GTA San Andreas, whose one
+    "MW MIPS C Compiler" note comes from a library while its own code is EE-GCC 2.96's): CodeWarrior leaves the delay
+    slot of a return empty (a nop after 94% of them in its demo builds; GCC 9-19%, GTA SA 11%), 2.x moves registers
+    without daddu, and SN's EE-GCC 2.95.2 saves $ra with sq. A GCC version note picks among the GCCs; without one,
+    EE-GCC 2.96, the PS2 SDK's (the import then tests the GCCs on the code). Too little code: the notes alone."""
     sections = _sections(data)
     comment = sections.get(".comment", b"")
+    gcc = next((guess for pattern, guess in _GCC if re.search(pattern, comment)), None)
+    returns, nops, moves, sq = code_style(data)
+    if returns >= 20:
+        if nops > 0.6:
+            return "MWCPS2-3" if moves > 1 else "MWCPS2-2"
+        return gcc or ("EEGCC-2.95.2" if sq > 0.5 else "EEGCC")
     if ".mwcats" in sections or b"MW MIPS C Compiler" in comment:
         return "MWCPS2-2" if re.search(rb"MW MIPS C Compiler \(2\.", comment) else "MWCPS2-3"
-    return next((guess for pattern, guess in _GCC if re.search(pattern, comment)), "EEGCC")
+    return gcc or "EEGCC"
 
 
 def read_elf(data: bytes, boot_name: str = "") -> tuple[bytes, dict]:

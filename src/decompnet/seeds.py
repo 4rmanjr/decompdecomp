@@ -20,6 +20,12 @@ from .elfobj import FunctionObj
 M2C_TARGETS = {
     "gcc-2.7.2-kmc": "mips-gcc-c",
     "ee-gcc-2.96": "mipsee-gcc-c",
+    "ee-gcc-2.9-991111": "mipsee-gcc-c",
+    "ee-gcc-2.95.2": "mipsee-gcc-c",
+    "ee-gcc-2.95.3": "mipsee-gcc-c",
+    "ee-gcc-3.2": "mipsee-gcc-c",
+    "mwcps2-2.3.3": "mipsee-gcc-c",  # m2c has no CodeWarrior MIPS target: the EE one reads its code as well
+    "mwcps2-3.0.1": "mipsee-gcc-c",
     "ido-7.1": "mips-ido-c",
     "ido-5.3": "mips-ido-c",
     "gcc-2.7.2-psx": "mipsel-gcc-c",

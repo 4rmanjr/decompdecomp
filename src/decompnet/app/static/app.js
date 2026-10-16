@@ -1502,7 +1502,9 @@ $("stopAll").onclick = async () => {
 };
 
 /* ------------------------------------------------------------------ the launcher: agent, model, how many */
-const LZ = { kind: null, model: "", count: 1, per: null };
+const LZ = { kind: null, model: "", count: 1, per: null, effort: "" };
+// opencode 2 picks a model's reasoning effort as a variant of it: provider/model#high
+const withEffort = (a, model) => (a.id === "opencode" && LZ.effort && model ? `${model.split("#")[0]}#${LZ.effort}` : model);
 function launcherInit() {
   if (LZ.kind || !S.st) return;
   const l = S.st.settings.launcher || {};
@@ -1533,14 +1535,15 @@ function launchLabel(a, model, count) {
     if (picked.length > 1) return `Start ${count} across ${picked.length} endpoints`;
     return `Start ${picked[0] ? picked[0].name : "API model"}${count > 1 ? ` × ${count}` : ""}`;
   }
-  return `Start ${a.name}${model ? ` · ${modelName(a, model)}` : ""}${count > 1 ? ` × ${count}` : ""}`;
+  return `Start ${a.name}${model ? ` · ${modelName(a, model)}` : ""}${a.id === "opencode" && LZ.effort && model ? ` · ${LZ.effort}` : ""}${count > 1 ? ` × ${count}` : ""}`;
 }
 
 async function startAgents(a, model, count, btn, extra = {}) {
   if (btn) btn.disabled = true;
   try {
     const options = { ...extra };
-    if (model && a.id !== "api") options.model = model;
+    if (model && a.id !== "api") options.model = withEffort(a, model);
+    if (a.id === "opencode" && LZ.effort && !model) throw new Error("pick a model to set its effort");
     if (LZ.per) options.per_session = LZ.per;
     await api("/api/agents/start", { method: "POST", body: { kind: a.id, slug: S.slug, count, options } });
     S.st.settings.launcher = { kind: a.id, model: model || "", count };
@@ -1582,7 +1585,8 @@ function renderLauncher(box, compact = false) {
     const known = opts.some((o) => o.id === LZ.model);
     body = `<label class="field"><span>Model</span><select data-f="model">${opts.map((o) => `<option value="${esc(o.id)}" ${known && o.id === LZ.model ? "selected" : ""}>${esc(o.name)}${o.note ? ` — ${esc(o.note)}` : ""}</option>`).join("")}
         <option value="__other" ${known ? "" : "selected"}>Another model…</option></select></label>
-      <input data-f="custom" class="mono lz-custom" placeholder="model name, as ${esc(a.name)} calls it" value="${known ? "" : esc(LZ.model)}" ${known ? "hidden" : ""}>`;
+      <input data-f="custom" class="mono lz-custom" placeholder="model name, as ${esc(a.name)} calls it" value="${known ? "" : esc(LZ.model)}" ${known ? "hidden" : ""}>
+      ${a.id === "opencode" ? `<label class="field"><span>Effort (how hard the model thinks; opencode 2, for models that offer it)</span><select data-f="effort">${[["", "Model's default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["max", "Max"]].map(([v, l]) => `<option value="${v}" ${LZ.effort === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : ""}`;
   }
   const ready = a.installed;
   box.innerHTML = `<div class="lz-kinds">${kinds}</div>
@@ -1601,6 +1605,8 @@ function renderLauncher(box, compact = false) {
   const label = () => { const btn = box.querySelector('[data-act="start"]'); if (btn) btn.textContent = launchLabel(a, LZ.model, LZ.count); };
   if (sel) sel.onchange = () => { if (sel.value === "__other") { custom.hidden = false; custom.focus(); LZ.model = custom.value.trim(); } else { custom.hidden = true; LZ.model = sel.value; } label(); };
   if (custom) custom.oninput = () => { LZ.model = custom.value.trim(); label(); };
+  const eff = box.querySelector('[data-f="effort"]');
+  if (eff) eff.onchange = () => { LZ.effort = eff.value; label(); };
   box.querySelectorAll("[data-step]").forEach((b) => { b.onclick = () => { LZ.count = Math.max(1, Math.min(8, LZ.count + Number(b.dataset.step))); box.querySelector(".stepper output").textContent = LZ.count; label(); }; });
   const per = box.querySelector('[data-f="per"]');
   if (per) per.onchange = () => { LZ.per = Math.max(1, Math.min(20, Number(per.value) || 4)); };

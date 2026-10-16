@@ -126,6 +126,10 @@ def test_opencode_free_models_keep_their_tools_but_never_get_to_use_them(tmp_pat
         work.mkdir()
         m._command(s, "tok", work)
         assert json.loads((work / "opencode.json").read_text())["permission"] == {"edit": rule, "bash": rule, "webfetch": rule}
+    # its own connection, with its own token; the user's `decomp` (decomp connect) off: opencode 2's shared service ran
+    # that one without the session's token, so every helper worked as the user's one chat agent
+    mcp = json.loads((work / "opencode.json").read_text())["mcp"]
+    assert mcp["decompdecomp"]["headers"] == {"Authorization": "Bearer tok"} and mcp["decomp"]["enabled"] is False
 
 
 def test_gemini_cli_helpers_carry_on_as_antigravity():

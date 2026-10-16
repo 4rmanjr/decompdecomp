@@ -856,10 +856,14 @@ class Manager:
             # used from within OpenCode"). "ask" keeps the usual tools, and `opencode run` rejects every ask itself.
             zen = (model or _config_model("opencode") or "opencode/").startswith("opencode/")
             never = "ask" if zen else "deny"
+            # Its own name for decompdecomp, and the user's `decomp` (decomp connect) off: opencode 2 merges the two, and
+            # its shared background service ran the user's one, without this session's token, so every helper worked
+            # as the user's chat agent, all of them on one claim
             (workdir / "opencode.json").write_text(json.dumps({
                 "$schema": "https://opencode.ai/config.json",
-                "mcp": {"decomp": {"type": "remote", "url": self.mcp_url, "enabled": True,
-                                   "headers": {"Authorization": f"Bearer {token}"}}},
+                "mcp": {"decompdecomp": {"type": "remote", "url": self.mcp_url, "enabled": True,
+                                         "headers": {"Authorization": f"Bearer {token}"}},
+                        "decomp": {"type": "remote", "url": self.mcp_url, "enabled": False}},
                 "permission": {"edit": never, "bash": never, "webfetch": never},
             }), encoding="utf-8")
             # --print-logs: opencode's JSON error only says "Unexpected server error"; the log line says what failed.

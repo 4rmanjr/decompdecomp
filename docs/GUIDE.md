@@ -131,6 +131,7 @@ decompdecomp helps with these steps:
 | **Shared header** | Structs and prototypes go into one header. decompdecomp accepts a change only if all matches stay matches. |
 | **Safe names** | Matches use addresses. A new name for a function or data cannot break a match. |
 | **Look-alikes** | `find_similar` finds copied and inlined code in the full game. |
+| **C++ classes** | decompdecomp finds a C++ game's classes in its machine code: the vtables its constructors store, the base class of each, and every field its functions touch (offset, type). Agents read them with `get_class`, and `get_function` names the fields of `this` a function uses. MIPS (PlayStation 2, PlayStation, N64) for now. |
 | **Drafts** | m2c for MIPS, PowerPC and ARM. Ghidra (optional) for x86, AArch64 and other architectures. |
 | **Guides** | Agents get guides for each architecture and compiler, and for C++ and objdiff. |
 | **Disc formats** | ROMs, PlayStation discs, GameCube and Wii discs (ISO, GCM, RVZ, WIA, WBFS, CISO, GCZ) and program files. |
@@ -296,12 +297,17 @@ uv run pytest              # the tests
 | `src/decompnet/app/` | The app: `engine.py` (ROM projects), `forkengine.py` (forks), `tools.py` (MCP tools), `agents.py`, `server.py`, `collab.py` (rooms), `window.py` (its own window), `tray.py` (the tray icon), `static/` (GUI), `guide/` (guides for agents). |
 | `src/decompnet/forks/` | Fork mode: forks by repository address, project setup, objdiff, drafts, linked files, and the from-scratch importers. |
 | `src/decompnet/network.py` | Claims, attempts, notes and the shared header. |
+| `src/decompnet/classes.py` | C++ classes found in MIPS code: vtables, base classes, fields. |
 | `src/decompnet/toolchains.py` | The pinned compilers and tools. |
 | `packaging/linux/` | `build.sh` makes the `.deb` and the AppImage; `.github/workflows/release.yml` runs it for each `v*` tag. |
 | `projects/demo-*/` | Homemade demo games for the tests. Each has its own `build.py`. |
-| `site/` | The website. `public/` holds the installers. |
+| `site/` | The website, published to GitHub Pages at decomp.ndelic.com. `public/` holds the installers. |
 
 The N64 and PlayStation demos need `ld.lld`, `llvm-objcopy` and `llvm-nm` (Debian and Ubuntu: `apt install lld llvm`).
+
+If decompdecomp is installed and running on your computer, start the checkout with its own folder:
+`DECOMP_HOME=/some/scratch/folder uv run decomp`. A newer version that finds your app running replaces it.
+[ROADMAP.md](../ROADMAP.md) lists what's planned.
 
 **Test a branch.** Run the installer from a checkout of the branch. The app then follows that branch on GitHub, and
 each new commit shows as an update.

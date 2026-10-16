@@ -35,6 +35,10 @@ uv run pytest -q              # the tests
 uv run pytest tests/test_ps2.py -q   # one file
 ```
 
+If you use decompdecomp yourself, keep your own copy out of your tests: run the checkout with
+`DECOMP_HOME=/some/scratch/folder uv run decomp`. A newer version that finds your installed app running replaces it.
+The tests already use a folder of their own.
+
 Compilers and tools (splat, objdiff, dtk, wibo, Ghidra and the period compilers) are pinned with checksums in
 `src/decompnet/toolchains.toml`, and the app installs them in Setup. Many tests skip when a compiler isn't installed,
 and that's fine. The homemade demo games in `projects/demo-*` are built by their own scripts. The N64 and PS1 demos
@@ -58,6 +62,8 @@ Some things we won't merge:
 - Letting agents edit a project's build setup. They're limited to source and header files on purpose.
 - Links to the decomp.wtf website. That domain isn't ours. Keep the internal names (`decomp`, `decompnet`,
   `~/Decomp`, `.decomp.wtf.json`): existing installs depend on them.
+
+Not sure what to work on? [ROADMAP.md](ROADMAP.md) lists what's planned, and why.
 
 ## Pull requests
 

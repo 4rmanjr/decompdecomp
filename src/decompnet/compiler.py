@@ -61,6 +61,7 @@ class CompilerConfig:
     include_dirs: tuple[str, ...] = ()  # absolute paths of extra (static) header dirs
     runtime32: str | None = None  # 32-bit x86 C runtime for old i386 compiler binaries (see toolchains)
     wsl: bool = False  # a Linux toolchain on Windows: runs inside WSL 2, `cmd` holds WSL paths (see wsl.py)
+    prelude: str = ""  # the toolchain's prelude (Toolchain.prelude)
 
 
 @dataclass
@@ -147,8 +148,8 @@ def compile_source(cfg: CompilerConfig, context_header: str, source: str, truste
             shutil.copytree(d, inc, dirs_exist_ok=True)
         # LF on every platform: to the old GCCs a backslash before CRLF doesn't continue a line ("stray '\' in program")
         (inc / "context.h").write_text(context_header, encoding="utf-8", newline="\n")
-        (work / "func.c").write_text('#include "context.h"\n#line 1 "func.c"\n' + source + "\n", encoding="utf-8",
-                                     newline="\n")
+        (work / "func.c").write_text(cfg.prelude + '#include "context.h"\n#line 1 "func.c"\n' + source + "\n",
+                                     encoding="utf-8", newline="\n")
 
         root = _root(cfg, work)
         subst = {"{src}": f"{root}/func.c", "{obj}": f"{root}/func.o", "{include}": f"{root}/include"}

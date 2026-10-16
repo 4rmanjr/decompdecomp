@@ -56,6 +56,7 @@ class Toolchain:
     binary_name: str = ""  # main executable of a tool, without .exe
     pip_extra: list[str] = field(default_factory=list)  # extra requirements for a git tool's environment
     requires_java: int = 0  # minimum Java version (Ghidra)
+    prelude: str = ""  # C put before every file it compiles: works around a compiler's own bugs (see toolchains.toml)
 
     @property
     def proprietary(self) -> bool:

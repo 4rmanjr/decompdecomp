@@ -60,8 +60,10 @@ def compiler_config(root: Path, cfg: dict) -> CompilerConfig:
     ro_paths = [str((root / p).resolve()) for p in c.get("ro_paths", [])]
     runtime32 = None
     linux = False
+    prelude = ""
     if "toolchain" in c:
         tc = toolchains.get(c["toolchain"])
+        prelude = tc.prelude
         linux = tc.via_wsl  # Windows: a Linux toolchain, run inside WSL 2
         if linux and not (ok := wsl.status())[0]:
             raise toolchains.ToolchainError(f"{tc.name} is a Linux program: on Windows it runs in WSL 2. {ok[1]}")
@@ -92,6 +94,7 @@ def compiler_config(root: Path, cfg: dict) -> CompilerConfig:
         include_dirs=tuple(str((root / p).resolve()) for p in c.get("include_dirs", [])),
         runtime32=runtime32,
         wsl=linux,
+        prelude=prelude,
     )
 
 

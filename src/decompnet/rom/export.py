@@ -101,6 +101,7 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
     if not configs:
         raise ExportError("this project has no splat configuration to export from")
     image_name = cfg["rom"]["file"]
+    prelude = toolchains.get(cfg["compiler"]["toolchain"]).prelude if cfg["compiler"].get("toolchain") else ""
     image = (work / image_name).read_bytes()
 
     if out.exists():
@@ -177,7 +178,7 @@ def export_rom(net, slug: str, out: Path, log=print) -> dict:
         src = out / "src" / f["seg"] / f"{f['name']}.c"
         src.parent.mkdir(parents=True, exist_ok=True)
         include = "common.h" if not unit else f"common_{unit}.h"
-        src.write_text(f'#include "{include}"\n\n{row["matched_source"].strip()}\n', encoding="utf-8")
+        src.write_text(f'{prelude}#include "{include}"\n\n{row["matched_source"].strip()}\n', encoding="utf-8")
         f["kind"] = "c"
         f["src"] = src.relative_to(out).as_posix()
         f["obj"] = f"build/src/{f['seg']}/{f['name']}.o"

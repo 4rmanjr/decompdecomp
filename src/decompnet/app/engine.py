@@ -30,6 +30,8 @@ from ..rom import detect, match, split
 from ..rom.symbols import AUTO_NAME, IDENT, Symbol, SymbolTable
 
 DEFAULT_TOOLCHAIN = {"KMC": "gcc-2.7.2-kmc", "IDO": "ido-7.1", "PSYQ": "gcc-2.7.2-psx", "EEGCC": "ee-gcc-2.96",
+                     "EEGCC-2.9": "ee-gcc-2.9-991111", "EEGCC-2.95.2": "ee-gcc-2.95.2", "EEGCC-2.95.3": "ee-gcc-2.95.3",
+                     "EEGCC-3.2": "ee-gcc-3.2", "MWCPS2-2": "mwcps2-2.3.3", "MWCPS2-3": "mwcps2-3.0.1",
                      "AGBCC": "agbcc"}
 # How ready each platform is for a full decomp you can port and mod; the GUI and the README show it.
 # recommended: the most tested path, from import to a project that builds the game (GameCube and Wii: the same kind
@@ -44,10 +46,18 @@ COMPILERS = {
     "gcc-2.7.2-psx": "PlayStation games (PSY-Q era GCC)",
     "gcc-2.8.1-psx": "later PlayStation games",
     "ee-gcc-2.96": "PlayStation 2 games (Sony's EE GCC)",
+    "ee-gcc-2.9-991111": "launch-era PlayStation 2 games (the first SDK's GCC)",
+    "ee-gcc-2.95.2": "PlayStation 2 games built with SN Systems' ProDG",
+    "ee-gcc-2.95.3": "later PlayStation 2 games built with SN Systems' ProDG",
+    "ee-gcc-3.2": "late PlayStation 2 games (2003-2005)",
+    "mwcps2-2.3.3": "PlayStation 2 games built with CodeWarrior (2000-2001, proprietary)",
+    "mwcps2-3.0.1": "PlayStation 2 games built with CodeWarrior (2002-2005, proprietary)",
     "agbcc": "Game Boy Advance games (pret's agbcc, GCC 2.95)",
 }
 SHORT_NAMES = {"gcc-2.7.2-kmc": "KMC GCC 2.7.2", "ido-7.1": "IDO 7.1", "ido-5.3": "IDO 5.3",
                "gcc-2.7.2-psx": "GCC 2.7.2 (PS1)", "gcc-2.8.1-psx": "GCC 2.8.1 (PS1)", "ee-gcc-2.96": "EE-GCC 2.96",
+               "ee-gcc-2.9-991111": "EE-GCC 2.9", "ee-gcc-2.95.2": "EE-GCC 2.95.2 (SN)", "ee-gcc-2.95.3": "EE-GCC 2.95.3 (SN)",
+               "ee-gcc-3.2": "EE-GCC 3.2", "mwcps2-2.3.3": "CodeWarrior PS2 2.3.3", "mwcps2-3.0.1": "CodeWarrior PS2 3.0.1",
                "agbcc": "agbcc"}
 # CodeWarrior versions in the `mwcc` pack (GameCube, Wii) and the `mwccarm` pack (DS), and Visual C++ versions (PC),
 # for games started from scratch.
@@ -76,7 +86,8 @@ TOOLS = {
 # Functions this small are handed out in batches (claim_function count): agents match most on the first try.
 BATCH_INSNS = 48
 PLATFORM_COMPILERS = {"n64": ["gcc-2.7.2-kmc", "ido-7.1", "ido-5.3"], "psx": ["gcc-2.7.2-psx", "gcc-2.8.1-psx"],
-                      "ps2": ["ee-gcc-2.96"], "gba": ["agbcc"]}
+                      "ps2": ["ee-gcc-2.96", "ee-gcc-2.9-991111", "ee-gcc-2.95.2", "ee-gcc-2.95.3", "ee-gcc-3.2",
+                              "mwcps2-2.3.3", "mwcps2-3.0.1"], "gba": ["agbcc"]}
 _AUTO_TOKEN = re.compile(r"\b(?:func|D|B|jtbl|RO|STR|FLT|DBL)_[0-9A-F]{8}\b")
 _ADDRESS = re.compile(r"^(?:0x)?([0-9A-Fa-f]{8})$")
 
@@ -382,11 +393,14 @@ class RomNetwork(Network):
         if res.image and res.image != picked.filename:  # splat works on a flat image made from the program
             rom = (workdir / res.image).read_bytes()
 
-        toolchain = toolchain or DEFAULT_TOOLCHAIN.get(res.compiler, DEFAULT_TOOLCHAIN[info["compiler_guess"]])
+        guess = info["compiler_guess"] if picked.platform == "ps2" else res.compiler  # PS2: what the program says
+        toolchain = toolchain or DEFAULT_TOOLCHAIN.get(guess, DEFAULT_TOOLCHAIN[info["compiler_guess"]])
         tc = toolchains.get(toolchain)
         default_flags = tc.flags
-        if picked.platform in ("psx", "ps2"):
-            default_flags = [f for f in tc.flags if not f.startswith("-G")] + [f"-G{8 if res.gp else 0}"]
+        if picked.platform in ("psx", "ps2"):  # globals up to 8 bytes $gp-relative when the game uses $gp
+            small = (["-sdatathreshold", str(8 if res.gp else 0)] if toolchain.startswith("mwcps2")
+                     else [f"-G{8 if res.gp else 0}"])
+            default_flags = [f for f in tc.flags if not f.startswith("-G")] + small
         cfg = {
             "kind": "rom", "platform": picked.platform, "big_endian": picked.big_endian, "gp": res.gp,
             "rom": {**info, "file": res.image or picked.filename, "program": picked.filename},

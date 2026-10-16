@@ -69,8 +69,12 @@ def test_a_removed_game_can_be_imported_again(tmp_path):
 
 def test_every_game_function_matches(psx):
     net, slug = psx
+    _match_every_function(net, slug, ELF)
+
+
+def _match_every_function(net, slug, elf):
     agent, _ = net.local_agent("psx-agent")
-    syms = {s.name: s["st_value"] for s in ELFFile(open(ELF, "rb")).get_section_by_name(".symtab").iter_symbols()}
+    syms = {s.name: s["st_value"] for s in ELFFile(open(elf, "rb")).get_section_by_name(".symtab").iter_symbols()}
     header = (GAME / "game.h").read_text()
     header = "\n".join(l for l in header.splitlines()
                        if not l.startswith("#include") and not re.match(r"typedef \w+( \w+)? [su]\d+;|typedef \w+ f\d+;", l))
@@ -87,7 +91,13 @@ def test_every_game_function_matches(psx):
                 net.rename_symbol(agent, slug, current, name)
                 table = net.symbols(net.project_row(slug)["id"])
     source = (GAME / "game.c").read_text()
-    scores = {name: net.attempt(agent, name, csource.get(source, name), slug)["score"] for name in FUNCTIONS}
+    scores = {}
+    for name in FUNCTIONS:
+        res = net.attempt(agent, name, csource.get(source, name), slug)
+        scores[name] = res["score"]
+        if not res["matched"]:
+            print(name, res["text"][:3000])
+            net.release(agent, name, "", slug)
     assert all(score == 0 for score in scores.values()), scores
 
 
@@ -98,3 +108,25 @@ def test_wrong_code_does_not_match(psx):
     res = net.attempt(agent, fn["name"], f"int {fn['name']}(int a) {{ return a * 3; }}", slug)
     assert not res["matched"]
     net.release(agent, fn["name"], "", slug)
+
+
+OTHER_COMPILERS = ["ee-gcc-2.9-991111", "ee-gcc-2.95.2", "ee-gcc-2.95.3", "ee-gcc-3.2", "mwcps2-2.3.3", "mwcps2-3.0.1"]
+
+
+@pytest.mark.parametrize("toolchain", OTHER_COMPILERS)
+def test_games_built_with_other_compilers_match(toolchain, tmp_path):
+    """PS2 games were built with many compilers: Sony's EE-GCC releases, SN Systems' (ProDG) and Metrowerks'
+    CodeWarrior. The demo built with each must import with it and match function by function."""
+    if toolchains.installed(toolchain) is None or toolchains.installed("wibo") is None:
+        pytest.skip(f"needs {toolchain} (and wibo)")
+    build = DEMO / "build" / toolchain
+    if not (build / "SLUS_999.99").exists():
+        subprocess.run([sys.executable, str(DEMO / "build.py"), toolchain], check=True)
+    net = RomNetwork(tmp_path / "app.db", tmp_path)
+    slug = net.import_rom(build / "SLUS_999.99", confirmed=True, log=lambda *_: None, toolchain=toolchain)
+    ov = net.overview(slug)
+    assert ov["compiler"]["toolchain"] == toolchain and ov["functions"] > 60
+    if toolchain.startswith("mwcps2"):
+        assert ov["compiler"]["flags"] == ["-O2", "-sdatathreshold", "8"]
+        assert ov["rom"]["compiler_guess"].startswith("MWCPS2")  # CodeWarrior's .mwcats sections give it away
+    _match_every_function(net, slug, build / "demoq_ps2.elf")

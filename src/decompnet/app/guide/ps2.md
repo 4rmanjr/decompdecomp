@@ -13,7 +13,13 @@ CPU: the Emotion Engine (R5900), MIPS III-like with 128-bit registers.
 - Float compares: `c.lt.s` + `bc1t`/`bc1f`; float to int: `cvt.w.s` + `mfc1`.
 
 Compilers: Sony's ee-gcc 2.9x (most games), Metrowerks for PS2, or SN Systems' compiler; the project
-decides per file. C++ is common: old GCC 2.9x mangling (`update__7CPlayerf`) and vtable thunks.
+decides per file. Games started from scratch get one picked from the program: CodeWarrior when its `.mwcats`
+sections or its "MW MIPS C Compiler" note survived, a GCC version from a `GCC: (GNU)` note, EE-GCC 2.96 otherwise.
+If nothing matches although the C is right, the compiler may be another one: the user can switch it.
+- CodeWarrior: small data is `-sdatathreshold 8`, not `-G8`; it gives each function its own section and
+  loves `lui`/`addiu` pairs over `$gp` when the threshold is 0.
+- EE-GCC 3.2 loads a switch's jump table with `addiu %lo(jtbl)` then `lw 0(reg)`; 2.9x/2.96 use
+  `lw %lo(jtbl)(reg)`. That alone tells the two apart. C++ is common: old GCC 2.9x mangling (`update__7CPlayerf`) and vtable thunks.
 Small data is `$gp`-relative (-G8 typical), so declare externs with their real sizes.
 
 Libraries: Sony's libgraph, libdma, libpad, libcdvd, libkernl, libsd and libvu0 are linked as

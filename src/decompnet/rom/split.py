@@ -8,6 +8,7 @@ can pair up (%hi/%lo, jal targets). We parse that output into plain records the 
 from __future__ import annotations
 
 import re
+import struct
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ _LABEL = re.compile(r"^\s*(?:jlabel\s+)?(\.?L[0-9A-F]{8}):?\s*$")
 _DATA = re.compile(r"^\s*/\* ([0-9A-F]+ )?([0-9A-F]{8})(?: [0-9A-F]+)? \*/\s+\.(\w+)\s*(.*?)\s*$")
 _DLABEL = re.compile(r"^\s*dlabel\s+(\S+)")
 _GLABEL = re.compile(r"^\s*glabel\s+(\S+)")
+_JLABEL = re.compile(r"^\s*jlabel\s+(\S+)")  # a file that starts at a jump target: a piece of a function
 
 
 @dataclass
@@ -42,6 +44,7 @@ class RomFunction:
     lines: list[AsmLine]
     asm_path: Path
     labels: set[int] = field(default_factory=set)
+    piece: bool = False  # splat filed a switch's case on its own (merge_switch_cases puts it back)
 
     @property
     def size(self) -> int:
@@ -188,12 +191,12 @@ def _patch_config(path: Path) -> tuple[str, str, int]:
 def parse_function(path: Path, segment: str, big_endian: bool = True) -> RomFunction | None:
     """One function from a spimdisasm .s file. The 8-digit field is the instruction's bytes in file order."""
     order = "big" if big_endian else "little"
-    name, lines, labels = None, [], set()
+    name, lines, labels, piece = None, [], set(), False
     for raw in path.read_text(encoding="utf-8").splitlines():
         if name is None:
-            m = _GLABEL.match(raw)
+            m = _GLABEL.match(raw) or _JLABEL.match(raw)
             if m:
-                name = m.group(1)
+                name, piece = m.group(1), raw.lstrip().startswith("jlabel")
             continue
         m = _INSN.match(raw)
         if m:
@@ -206,7 +209,7 @@ def parse_function(path: Path, segment: str, big_endian: bool = True) -> RomFunc
     if name is None or not lines:
         return None
     _trim_padding(lines)
-    return RomFunction(name, lines[0].vram, lines[0].rom, segment, lines, path, labels)
+    return RomFunction(name, lines[0].vram, lines[0].rom, segment, lines, path, labels, piece)
 
 
 def _trim_padding(lines: list[AsmLine]) -> None:
@@ -226,6 +229,34 @@ def _complete_delay_slot(fn: RomFunction, rom: bytes, big_endian: bool = True) -
     insn = rabbitizer.Instruction(word, last.vram + 4)
     fn.lines.append(AsmLine(last.rom + 4, last.vram + 4, word, insn.getOpcodeName(), insn.disassemble().split(None, 1)[1]
                             if " " in insn.disassemble().strip() else ""))
+
+
+def merge_switch_cases(functions: list[RomFunction], data: list[DataSymbol], image: bytes,
+                       big_endian: bool) -> list[RomFunction]:
+    """spimdisasm can end a function with a switch at its first return and make each later case a function of its
+    own: it does with EE-GCC 3.2, which loads the jump table with `addiu %lo(jtbl)` and then `lw 0(reg)`. A function
+    or piece right after one whose jump table points at it is a case of that switch: put it back. Pieces nothing
+    claims are left out, as before. `functions` by address."""
+    tables = {d.name: d for d in data if d.kind == "jtbl" and d.rom is not None and d.size >= 4}
+    fmt = ">I" if big_endian else "<I"
+    out: list[RomFunction] = []
+    targets: set[int] = set()  # where the last function's jump tables point
+    for fn in functions:
+        prev = out[-1] if out else None
+        if prev and prev.segment == fn.segment and fn.vram == prev.vram + prev.size and fn.vram in targets:
+            prev.lines += fn.lines
+            prev.labels |= fn.labels | {fn.vram}
+            continue
+        if fn.piece:
+            continue
+        out.append(fn)
+        targets = set()
+        for name in {m for ln in fn.lines for m in re.findall(r"jtbl_[0-9A-Fa-f]{8}", ln.operands)}:
+            t = tables.get(name)
+            if t is not None:
+                raw = image[t.rom:t.rom + t.size]
+                targets |= {w for (w,) in struct.iter_unpack(fmt, raw[:len(raw) // 4 * 4]) if w > fn.vram}
+    return out
 
 
 def parse_data(path: Path) -> list[DataSymbol]:
@@ -428,6 +459,7 @@ def split_rom(workdir: Path, rom_name: str = "rom.z64", log=print,
     data = []
     for path in sorted((workdir / "asm" / "data").glob("**/*.s")):
         data += parse_data(path)
+    unique = merge_switch_cases(unique, data, rom, big_endian)
     if not unique:
         raise RomError("splat found no functions; the code may be compressed or use an unusual boot layout")
     segments = segments_from_config(config)

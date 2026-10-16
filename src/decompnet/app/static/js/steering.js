@@ -1,0 +1,355 @@
+"use strict";  // each script is strict on its own (see base.js)
+/* ------------------------------------------------------------------ drawers, keys */
+function closeAll() {
+  if (!$("drawer").hidden) giveBack(null);
+  for (const id of ["drawer", "dialog"]) $(id).hidden = true;
+  document.body.classList.remove("locked");
+  S.fn = null;
+  if (S.map.length) drawMap();
+}
+document.querySelectorAll(".drawer").forEach((d) => {
+  d.addEventListener("click", (e) => {
+    if (e.target !== d && !e.target.closest("[data-close]")) return;
+    if (d.id === "drawer") { giveBack(null); S.fn = null; drawMap(); }
+    d.hidden = true;
+    if ($("drawer").hidden && $("dialog").hidden) document.body.classList.remove("locked");
+  });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { if (!$("launchPop").hidden) { hideLaunch(); return; } closeAll(); return; }
+  if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;  // typing
+  if (!$("drawer").hidden && (e.key === "j" || e.key === "k")) { e.preventDefault(); stepFn(e.key === "j" ? 1 : -1); return; }
+  if (e.key === "/" && S.slug && $("drawer").hidden) {
+    e.preventDefault();
+    if (S.tab !== "functions") location.hash = `#/p/${S.slug}/functions`;
+    setTimeout(() => $("fnSearch").focus(), 50);
+  }
+});
+
+function cmdBox(cmd) {
+  return `<div class="cmd"><code>${esc(cmd)}</code><button type="button" data-copy="${esc(cmd)}">Copy</button></div>`;
+}
+function wireCopies(root) {
+  root.querySelectorAll("[data-copy]").forEach((b) => { b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); }); });
+}
+
+function dialog(title, html) {
+  $("dialogTitle").textContent = title;
+  $("dialogBody").innerHTML = html;
+  $("dialog").hidden = false;
+  document.body.classList.add("locked");
+  wireCopies($("dialogBody"));
+  return $("dialogBody");
+}
+
+$("joinBtn").onclick = openJoin;
+$("askBtn").onclick = openConnect;
+$("talkBtn").onclick = openConnect;
+$("connectBtn").onclick = openConnect;
+
+/* Your own agent with decompdecomp's tools: registered once, then you just ask it. */
+async function connectRows(box) {
+  const render = (rows) => {
+    box.innerHTML = rows.map((a) => `<div class="line-item"><div class="txt"><b>${esc(a.name)}</b><span class="mono">${esc(a.command)}</span></div>
+      ${!a.installed ? `<span class="muted small">not installed</span>` : a.connected ? `<span class="ok-mark">connected</span>` : `<button class="primary small-btn" data-connect="${esc(a.id)}" type="button">Connect</button>`}</div>`).join("");
+    box.querySelectorAll("[data-connect]").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = "Connecting…";
+        try {
+          await api("/api/connect", { method: "POST", body: { id: b.dataset.connect } });
+          toast(`Connected. Ask it to decompile your game.`, "match");
+          render((await api("/api/connect")).agents);
+        } catch (e) { toast(esc(e.message), "err"); b.disabled = false; b.textContent = "Connect"; }
+      };
+    });
+  };
+  try {
+    const r = await api("/api/connect");
+    render(r.agents);
+    return r;
+  } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return null; }
+}
+const HOST_NAMES = { windows: "Windows", macos: "your Mac", linux: "this computer" };
+async function openConnect() {
+  if (S.st && S.st.runtime && S.st.runtime !== "native") return openHostConnect();
+  const body = dialog("Use decompdecomp from your AI agent", `<p>Connect the agent you already use, once. Then ask it in your terminal, for example:</p>
+    ${cmdBox("decompile my game at ~/roms/game.z64")}
+    <p class="muted small">It confirms the game is your own copy, imports it, opens this live view and works with every tool here: the byte-for-byte judge, the autopilot, helper agents, export. Anything it does shows up here as it happens.</p>
+    <div class="setup-group" id="connectRows"><p class="muted small">Looking for your agents…</p></div>
+    <div class="setup-group"><h3>Any other MCP client (Cursor, Claude Desktop, Windsurf, your own)</h3><pre class="code" id="bridgeJson"></pre>
+      <p class="muted small">It starts decompdecomp when needed; no token, nothing to update when the app restarts.</p></div>`);
+  const r = await connectRows(body.querySelector("#connectRows"));
+  if (r) body.querySelector("#bridgeJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2);
+}
+
+/* decompdecomp in WSL (Windows) or in Docker: the agents you talk to run on the computer itself, so they're
+   connected from there, by the `decomp` command the installer put on it. */
+async function openHostConnect() {
+  const host = HOST_NAMES[S.st.host_os] || "your computer";
+  const shell = S.st.host_os === "windows" ? "PowerShell" : "a terminal";
+  const body = dialog("Use decompdecomp from your AI agent", `<p>Run this once in ${esc(shell)} on ${esc(host)}: it connects Claude Code, Codex, Antigravity CLI and opencode there.</p>
+    ${cmdBox("decomp connect")}
+    <p>Then ask your agent, for example:</p>
+    ${cmdBox(S.st.host_os === "windows" ? "decompile my game at C:\\Games\\game.z64" : "decompile my game at ~/roms/game.z64")}
+    <p class="muted small">decompdecomp runs in ${S.st.runtime === "wsl" ? "its own WSL 2 Linux on Windows" : "Docker"}; your agent reaches it through the command below. Anything it does shows up here as it happens.</p>
+    <div class="setup-group"><h3>Any other MCP client (Cursor, Claude Desktop, Windsurf, your own)</h3><pre class="code" id="bridgeJson"></pre></div>`);
+  try {
+    const r = await api("/api/connect");
+    body.querySelector("#bridgeJson").textContent = JSON.stringify({ mcpServers: { decomp: { command: r.bridge[0], args: r.bridge.slice(1) } } }, null, 2);
+  } catch (e) { body.querySelector("#bridgeJson").textContent = e.message; }
+}
+
+/* ------------------------------------------------------------------ steering: instructions, next in line */
+function renderSteering(ov) {
+  const sp = ov.spend;
+  const n = ov.helper_matches || 0;
+  $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)} spent${n ? ` · ${money(sp.usd / n)}/match` : ""}`
+    : sp && sp.tokens ? `· ${(sp.tokens / 1000).toFixed(0)}k tokens` : "";
+  $("instrState").textContent = ov.instructions ? "agents get these" : "none yet";
+  const sg = ov.suggestions || [];
+  const tcName = (id) => (S.st?.toolchains || []).find((t) => t.id === id)?.name || id;
+  const bd = ov.boundaries || [];
+  $("suggestPanel").hidden = !sg.length && !bd.length;
+  $("suggestList").innerHTML = bd.map((r) => `<div class="note"><small>${esc(r.agent)} · ${clock(r.t)} · where a function ends</small>
+    <b class="mono">${esc(r.function)}</b> ends at <span class="mono">${hex8(r.end)}</span>: the ${r.cut} bytes after it aren't code. ${esc(r.reason)}
+    <p class="small muted mono">after ${hex8(r.end)}: ${esc(r.rest)}</p>
+    <div class="row"><button class="primary small-btn" type="button" data-bapply="${r.id}">Cut it there</button><button class="ghost small-btn" type="button" data-bdismiss="${r.id}">Dismiss</button></div></div>`).join("") + sg.map((s) => `<div class="note"><small>${esc(s.agents.join(", "))}${s.agents.length > 1 ? ` · ${s.agents.length} agents agree` : ""} · ${clock(s.t)}</small>${esc(s.text)}
+    ${s.check ? `<p class="small ${s.check.includes("matches the game") ? "" : "muted"}">${s.check.includes("matches the game") ? "✓ " : ""}${esc(s.check)}</p>` : ""}
+    <div class="row">${s.toolchain ? `<button class="primary small-btn" type="button" data-apply="${s.id}">Use ${esc(tcName(s.toolchain))} ${esc(s.flags.join(" "))}${(s.ranges || []).length ? ` for ${s.ranges.length} range${s.ranges.length > 1 ? "s" : ""}` : ""}</button>` : ""}<button class="ghost small-btn" type="button" data-dismiss="${s.id}">Dismiss</button></div></div>`).join("");
+}
+$("suggestList").onclick = async (e) => {
+  const cut = e.target.closest("button[data-bapply], button[data-bdismiss]");
+  if (cut) {
+    const apply = cut.dataset.bapply != null;
+    try {
+      S.ov = await api("/api/boundary", { method: "POST", body: { slug: S.slug, id: Number(cut.dataset.bapply || cut.dataset.bdismiss), action: apply ? "apply" : "dismiss" } });
+      renderStats(S.ov);
+      toast(apply ? "Cut. The rest is set aside as not code." : "Dismissed.");
+    } catch (err) { toast(esc(err.message), "err"); }
+    return;
+  }
+  const b = e.target.closest("button[data-apply], button[data-dismiss]");
+  if (!b) return;
+  const apply = b.dataset.apply != null;
+  try {
+    S.ov = await api("/api/suggestion", { method: "POST", body: { slug: S.slug, id: Number(b.dataset.apply || b.dataset.dismiss), action: apply ? "apply" : "dismiss" } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast(apply ? "Applied. Agents compile with it from their next attempt on." : "Dismissed.");
+  } catch (err) { toast(esc(err.message), "err"); }
+};
+// a disc's title is often only its serial (GTA San Andreas imports as SLES-52541): the user names it
+$("phRename").onclick = () => {
+  const body = dialog("Rename this project", `<label class="field"><span>Name</span><input id="renameText" maxlength="80" value="${esc(S.ov.title)}"></label>
+    <p class="muted small">Only the name it shows by changes; its folder and history stay as they are.</p>
+    <div class="row"><button class="primary" id="renameGo" type="button">Rename</button><button class="ghost" data-close type="button">Cancel</button></div>`);
+  const input = body.querySelector("#renameText");
+  input.select();
+  const go = async () => {
+    try {
+      S.ov = await api("/api/title", { method: "POST", body: { slug: S.slug, title: input.value } });
+      renderHeader(S.ov);
+      $("dialog").hidden = true;
+      document.body.classList.remove("locked");
+      loadNav();
+    } catch (e) { toast(esc(e.message), "err"); }
+  };
+  body.querySelector("#renameGo").onclick = go;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+};
+$("instrSave").onclick = async () => {
+  try {
+    S.ov = await api("/api/instructions", { method: "POST", body: { slug: S.slug, text: $("instrEdit").value } });
+    renderSteering(S.ov);
+    toast("Saved. Agents get them from their next task on.");
+  } catch (e) { toast(esc(e.message), "err"); }
+};
+async function togglePrio(name, on) {
+  try {
+    const r = await api("/api/priority", { method: "POST", body: { slug: S.slug, name, on } });
+    S.ov.priority = r.priority;
+    toast(on ? `Agents take <code>${esc(name)}</code> next.` : "No longer first in line.");
+    renderList(); renderPrio();
+  } catch (e) { toast(esc(e.message), "err"); }
+}
+function renderPrio() {
+  const list = (S.ov && S.ov.priority) || [];
+  const box = $("prioList");
+  if (S.ov && S.ov.kind === "fork") { box.innerHTML = `<li class="muted small">Agents pick the easiest open functions first.</li>`; return; }
+  box.innerHTML = list.length ? list.map((n) => `<li><span class="star">★</span>${fnLink(n)}<span class="grow"></span><button class="link-btn" data-unpin="${esc(n)}" type="button">remove</button></li>`).join("")
+    : `<li class="muted small">Nothing pinned: agents take the easiest open functions first. Open a function and click ★ Next to put it first.</li>`;
+  box.querySelectorAll(".fn").forEach((x) => { x.onclick = () => openFn(x.dataset.fn); });
+  box.querySelectorAll("[data-unpin]").forEach((b) => { b.onclick = () => togglePrio(b.dataset.unpin, false); });
+}
+
+/* Autopilot: free matches before any agent spends a token: identical code (twins) of what's matched, then every
+   function's machine draft through the judge; the permuter works on near misses meanwhile. */
+function renderAutopilot(ov) {
+  const box = $("autopilot"), ap = ov.autopilot, tw = ov.twins, pm = ov.permuter;
+  const canRun = (ov.kind !== "fork" || ov.ready) && ov.functions - ov.matched > 0;
+  box.hidden = !ap && !canRun && !tw && !pm;
+  if (box.hidden) return;
+  const running = ap && ap.state === "running";
+  const twinsRunning = tw && tw.state === "running";
+  box.classList.toggle("on", !!(running || twinsRunning));
+  $("apBar").hidden = !running || ap.phase === "twins";
+  const perm = pm && (pm.tried || pm.state === "running")
+    ? ` The permuter ${pm.state === "running" ? `is rewriting near misses${pm.current ? ` (now ${pm.current})` : ""}` : "rewrote near misses"}: ${plural(pm.tried, "function")}, ${pm.matched} matched.` : "";
+  const twinsDone = (ap && ap.twins) || (tw && tw.matched) || 0;
+  if (running && ap.phase === "twins") {
+    $("apTitle").textContent = "Autopilot: matching code the game has more than once (twins of matched functions)";
+    $("apSub").textContent = `Each match's code is tried on its identical copies, names swapped; the judge decides.${perm}`;
+    $("apBtn").textContent = "Stop";
+  } else if (running) {
+    $("apTitle").textContent = `Autopilot: trying each function's machine draft · ${ap.matched.toLocaleString()} matched for free`;
+    $("apSub").textContent = `${ap.tried.toLocaleString()} of ${ap.total.toLocaleString()} tried${ap.near ? ` · ${ap.near} more are 90%+ there` : ""}${ap.twins ? ` · ${ap.twins.toLocaleString()} from identical code` : ""}. Agents work alongside it.${perm}`;
+    $("apBar").firstElementChild.style.width = `${(100 * ap.tried) / Math.max(1, ap.total)}%`;
+    $("apBtn").textContent = "Stop";
+  } else if (ap || tw) {
+    const total = (ap ? ap.matched : 0) + (ap ? 0 : twinsDone);
+    $("apTitle").textContent = twinsRunning ? `Matching identical code: ${tw.matched.toLocaleString()} so far`
+      : total ? `Autopilot matched ${total.toLocaleString()} function${total === 1 ? "" : "s"} for free` : "Autopilot found no free matches this time";
+    const parts = [];
+    if (twinsDone) parts.push(`${twinsDone.toLocaleString()} from identical code`);
+    if (tw && tw.asm) parts.push(`${tw.asm.toLocaleString()} copies of assembly set aside (not for agents)`);
+    if (ap && ap.tried) parts.push(`${ap.tried.toLocaleString()} machine drafts tried${ap.near ? `, ${ap.near} more 90%+ there` : ""}`);
+    $("apSub").textContent = (parts.length ? parts.join(" · ") + ". " : "") + (ap && ap.no_drafts ? "" : "Run it again after agents add types and names: drafts get better.") + perm;
+    $("apBtn").textContent = "Run again";
+  } else {
+    $("apTitle").textContent = "Free matches first";
+    $("apSub").textContent = (ov.kind === "fork" && ov.origin !== "scratch"
+      ? "Autopilot matches the code this game has more than once from its matched copies (names swapped, judged like any attempt)"
+      : "Autopilot matches identical copies of matched code and tries every function's machine draft (m2c) through the judge") + `; whatever matches costs no agent time.${perm}`;
+    $("apBtn").textContent = "Run autopilot";
+  }
+  $("apBtn").onclick = async () => {
+    $("apBtn").disabled = true;
+    try {
+      S.ov = await api("/api/autopilot", { method: "POST", body: { slug: S.slug, action: running ? "stop" : "start" } });
+      renderAutopilot(S.ov);
+    } catch (e) { toast(esc(e.message), "err"); } finally { $("apBtn").disabled = false; }
+  };
+}
+
+const LAYOUT = { gc: "dtk-template", wii: "dtk-template", nds: "ds-decomp", win32: "Ghidra + objdiff" };
+const cwName = (c) => (c.startsWith("DS/") ? `CodeWarrior for DS ${c.slice(3)}` : `CodeWarrior ${c}`);
+
+/* ------------------------------------------------------------------ source: the base for ports and mods */
+function renderSource(ov) {
+  const ex = ov.export, fork = ov.kind === "fork";
+  $("srcExport").hidden = fork || !ov.exportable;
+  $("srcWhen").textContent = !fork && ex ? `exported ${since(ex.t)}` : "";
+  if (fork) {
+    const rb = ov.rebuild;
+    $("srcText").innerHTML = ov.origin === "scratch"
+      ? `This project <b>is</b> the source tree: a ${LAYOUT[ov.platform] || "decomp"} project that rebuilds your game on every build. Every match is committed to git in the project folder.`
+        + (rb ? `<p class="small ${rb.identical ? "ok" : "warn-text"}">${rb.identical ? "✓ The rebuilt game is your copy, byte for byte" + (/padding/.test(rb.detail) ? " (up to the padding at its end: your copy is trimmed)." : ".")
+          : `The rebuilt game isn't your copy byte for byte yet: ${esc(rb.detail)}. Decompiling works anyway: every function is compared with your copy's own code.`}</p>` : "")
+      : `This project <b>is</b> the source tree${ov.repo_url ? ` (a fork of <a class="link" href="${esc(ov.repo_url)}" target="_blank" rel="noopener">${esc(ov.repo_url.replace(/^https?:\/\//, ""))}</a>)` : ""}. Every match is committed to the <code>decomp-wtf</code> branch, ready to send upstream.`;
+    $("srcState").innerHTML = `<div class="row"><button class="ghost small-btn" id="forkMeasure" type="button">Re-measure with objdiff</button>${rb ? `<button class="ghost small-btn" id="romCheck" type="button">Rebuild the game and compare</button>` : ""}</div>`;
+    if (rb) $("romCheck").onclick = async () => {
+      $("romCheck").disabled = true;
+      toast("Rebuilding the game and comparing it with your copy…");
+      try {
+        const { job } = await api("/api/fork/rom-check", { method: "POST", body: { slug: S.slug } });
+        const r = await followJob(job);
+        toast(r.identical ? "The rebuilt game is your copy, byte for byte." : `Not identical yet: ${esc(r.detail)}`, r.identical ? "match" : "");
+        S.ov = await api(`/api/project?slug=${S.slug}`);
+        renderSource(S.ov);
+      } catch (e) { toast(esc(e.message), "err"); if ($("romCheck")) $("romCheck").disabled = false; }
+    };
+    $("forkMeasure").onclick = async () => {
+      toast("Measuring the whole project with objdiff…");
+      try { const { job } = await api("/api/fork/check", { method: "POST", body: { slug: S.slug } }); await followJob(job); toast("Progress updated.", "match"); refreshMap(); }
+      catch (e) { toast(esc(e.message), "err"); }
+    };
+    return;
+  }
+  if (!ov.exportable) {
+    $("srcText").textContent = `Exporting a rebuildable project isn't available for ${ov.platform_name || "this platform"} yet. Your matched C is kept in the project.`;
+    $("srcState").innerHTML = "";
+    return;
+  }
+  $("srcText").innerHTML = "decompdecomp writes a complete decompilation project: the matched functions as C, everything else as assembly, a linker script and <code>build.py</code>. Then it builds it to prove it rebuilds your game <b>byte for byte</b>. It's the base for ports and mods; game code and data stay out of git, so the tree is safe to put in a repository.";
+  const stale = ex && ex.matched != null && ex.matched < ov.matched;
+  $("srcState").innerHTML = !ex ? `<span class="muted small">Not exported yet.</span>`
+    : `<div class="src-line ${ex.identical === false ? "bad" : "ok"}">${ex.identical === false ? "✕ the last rebuild differed" : "✓ rebuilds byte for byte"}</div>
+       <div class="src-line">${ex.matched != null ? `${ex.matched.toLocaleString()} of ${ex.functions.toLocaleString()} functions in C` : ""}${stale ? ` · <b>${ov.matched - ex.matched} new matches since</b>` : ""}</div>
+       ${ex.path ? `<div class="src-line">${esc(ex.path)}</div>` : ""}`;
+  $("srcExport").textContent = ex ? "Export again" : "Export project";
+}
+$("srcOpen").onclick = () => openFolder();
+$("srcExport").onclick = async () => {
+  $("srcExport").disabled = true;
+  $("expLog").hidden = false;
+  $("expResult").innerHTML = "";
+  try {
+    const { job } = await api("/api/export", { method: "POST", body: { slug: S.slug } });
+    const r = await followJob(job, $("expLog"));
+    $("expResult").innerHTML = r.identical === false
+      ? `<div class="notice bad"><span><b>Exported, but the rebuild differs.</b> ${esc(r.log.split("\n").filter(Boolean).pop() || "")}</span></div>`
+      : `<div class="notice room"><span><b>Rebuilds byte for byte.</b> ${r.matched != null ? `${r.matched} of ${r.functions} functions are C.` : ""}</span></div>${cmdBox(`cd "${r.path}" && python build.py`)}`;
+    wireCopies($("expResult"));
+    S.ov = await api(`/api/project?slug=${S.slug}`);
+    renderSource(S.ov);
+  } catch (e) { toast(esc(e.message), "err"); } finally { $("srcExport").disabled = false; }
+};
+
+/* ------------------------------------------------------------------ project settings */
+async function renderProjectSettings() {
+  const ov = S.ov;
+  if (!ov) return;
+  const fork = ov.kind === "fork";
+  $("compilerPanel").hidden = fork;
+  if (!fork) {
+    if (!S.st) await loadState();
+    fillCompilers($("setTc"), ov.compiler.toolchain, { n64: "N64", psx: "PS1", ps2: "PS2", gba: "GBA" }[ov.platform]);
+    $("setFlags").value = ov.compiler.flags.join(" ");
+    $("setRanges").value = "";
+    const hex = (n) => "0x" + n.toString(16).toUpperCase();
+    $("rangeList").innerHTML = (ov.compiler_ranges || []).length ? `<p class="col-title">Built with another compiler</p>` + ov.compiler_ranges.map((r) =>
+      `<div class="row"><code class="grow">${hex(r.start)}-${hex8(r.end)}</code><span class="small">${esc(r.name)} ${esc(r.flags.join(" "))}${r.check ? `<br><span class="muted">checked: ${esc(r.check)}</span>` : ""}</span><button class="ghost small-btn" type="button" data-unrange="${hex(r.start)}-${hex8(r.end)}">Remove</button></div>`).join("") : "";
+  }
+  const facts = [["Platform", ov.platform_name], ["Game", ov.rom?.title || ov.title], [fork ? "Version" : "Game code", ov.rom?.game_code || ov.version],
+    !fork && ov.rom?.region ? ["Region", ov.rom.region] : null, fork ? ["Layout", ov.origin === "scratch" ? (LAYOUT[ov.platform] || "decomp") + " (from scratch)" : ov.fork_kind] : ["Compiler", `${ov.compiler.name} ${ov.compiler.flags.join(" ")}`],
+    fork && ov.repo_url ? ["Repository", ov.repo_url.replace(/^https?:\/\//, "")] : null,
+    ["Functions", `${ov.functions.toLocaleString()} (${bytes(ov.bytes || 0)} of code)`], ["Folder", ov.folder]].filter(Boolean);
+  $("projFacts").innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || "—")}</dd></div>`).join("");
+}
+$("setTcReset").onclick = () => { $("setFlags").value = ""; };
+$("rangeList").onclick = async (e) => {
+  const b = e.target.closest("button[data-unrange]");
+  if (!b) return;
+  try {
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, ranges: b.dataset.unrange, remove: true } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast("That range is built with the project's compiler again.");
+  } catch (err) { toast(esc(err.message), "err"); }
+};
+$("setTc").onchange = () => { $("setFlags").value = ""; };  // one compiler's flags aren't another's (-G8 vs -sdatathreshold): its defaults
+$("setTcSave").onclick = async () => {
+  try {
+    const flags = $("setFlags").value.trim();
+    S.ov = await api("/api/compiler", { method: "POST", body: { slug: S.slug, toolchain: $("setTc").value, flags: flags ? flags.split(/\s+/) : null, ranges: $("setRanges").value.trim() } });
+    renderStats(S.ov);
+    renderProjectSettings();
+    toast("Compiler settings saved.");
+  } catch (e) { toast(esc(e.message), "err"); }
+};
+$("folderBtn").onclick = () => openFolder();
+$("deleteBtn").onclick = () => {
+  dialog("Remove project", `<p>Remove <b>${esc(S.ov.title)}</b> from decompdecomp? Matched functions and notes are deleted.</p>
+    <label class="check"><input type="checkbox" id="delFiles"><span>Also delete the project folder (your ROM copy and exported sources in it)</span></label>
+    <div class="row"><button class="primary" id="delGo" type="button">Remove</button><button class="ghost" data-close type="button">Cancel</button></div>`);
+  $("delGo").onclick = async () => {
+    try {
+      await api("/api/delete", { method: "POST", body: { slug: S.slug, files: $("delFiles").checked } });
+      $("dialog").hidden = true;
+      document.body.classList.remove("locked");
+      loadNav();
+      location.hash = "#/";
+    } catch (e) { toast(esc(e.message), "err"); }
+  };
+};
+

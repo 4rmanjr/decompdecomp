@@ -66,7 +66,7 @@ from the vtables constructors store, MIPS: the `get_class` tool and the class li
 `compilermap.py` (which compiler built each part of a MIPS game; the judge's survey is `engine.survey_compilers`;
 `app/rangecheck.py` tests a suggested range on its neighbours before it applies), `app/tools.py` (the MCP
 tools and the agent prompt), `app/window.py` + `app/tray.py` (the app's own window and its tray icon; tests set
-`BROWSER=true` and `DECOMP_TRAY=0` so they open neither), `app/guide/*.md` (know-how agents read through `guide(topic)`), `app/static/` (GUI).
+`BROWSER=true` and `DECOMP_TRAY=0` so they open neither), `app/guide/*.md` (know-how agents read through `guide(topic)`), `app/static/` (GUI: `index.html`, `app.css`, and `js/*.js`, nine plain scripts loaded in order; `js/base.js` says which is which).
 
 ## Conventions
 

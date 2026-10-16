@@ -21,7 +21,7 @@ name if a line moved).
 | Free matches | twins `app/twins.py`, autopilot `app/engine/autopilot.py`, the permuter `app/permute.py` |
 | Decompiling together | `app/collab.py`, `app/engine/rooms.py`, `app/routes/rooms.py` |
 | The GUI's API | `app/routes/<part>.py` (`app/routes/__init__.py` lists the parts) |
-| The GUI | `app/static/` (HTML, CSS, JavaScript; no build step) |
+| The GUI | `app/static/`: `index.html`, `app.css`, and `js/` (nine plain scripts loaded in order, one per part of the GUI; `js/base.js` lists them; no build step) |
 | Know-how agents read | `app/guide/*.md`, served by the `guide(topic)` tool |
 | Compilers and tools themselves | `toolchains.toml` (pinned, with checksums), `toolchains.py` |
 | The app's window, tray, updates | `app/window.py`, `app/tray.py`, `app/updates.py` |

@@ -1115,6 +1115,9 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
                            s(function=st("function", True), at=st("address like 0x80001234", True), new_name=st("name"))),
         "read_data": ("Hex dump of the original's data at an address or symbol.", s(what=st("address or symbol", True),
                                                                                     length=it("bytes, up to 512"))),
+        "get_class": ("C++ class layout found in the game's code: fields by offset and virtual functions by slot. "
+                      "Give a vtable address or one of its functions; empty lists the classes.",
+                      s(what=st("vtable address, or a virtual function / constructor"))),
         "list_functions": ("List functions by status.", s(status=st("open | matched | all"), limit=it("max rows"))),
         "add_note": ("Leave a note for other agents.", s(text=st("note", True), function=st("function"))),
         "suggest": ("Suggest a setup change for the user (another compiler or flags), with evidence.",

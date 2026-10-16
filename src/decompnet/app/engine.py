@@ -23,7 +23,7 @@ import threading
 import time
 from pathlib import Path
 
-from .. import scoring, seeds, similarity, toolchains
+from .. import classes, scoring, seeds, similarity, toolchains
 from ..elfobj import FunctionObj
 from ..network import Agent, Network, NetworkError, _hash_token
 from ..rom import detect, match, split
@@ -691,6 +691,68 @@ class RomNetwork(Network):
         self._xrefs[proj["id"]] = {"calls": calls, "called_by": called_by, "uses": uses, "used_by": used_by}
         return self._xrefs[proj["id"]]
 
+    def classes(self, proj) -> classes.Classes | None:
+        """The C++ classes found in a MIPS game's code (classes.py), kept with the cross-references (renames keep
+        addresses; splits and cuts drop both). None: not MIPS code."""
+        if not self.is_rom(proj) or self.cfg(proj).get("platform") == "gba" or (proj["arch"] or "mips") != "mips":
+            return None
+        x = self.xrefs(proj)
+        if "classes" not in x:
+            rows = self.store.all("SELECT vram, target, relocs FROM functions WHERE project_id=? AND target IS NOT NULL",
+                                  proj["id"])
+            x["classes"] = classes.recover(((r["vram"], r["target"], json.loads(r["relocs"])) for r in rows),
+                                           self.reader(proj), bool(self.cfg(proj).get("big_endian", True)))
+        return x["classes"]
+
+    def get_class(self, project: str | None, what: str = "") -> str:
+        self._rom_only(project, "get_class")
+        proj = self._project(project)
+        found = self.classes(proj)
+        if found is None:
+            raise NetworkError("get_class reads MIPS code (PlayStation 2, PlayStation, N64) for now")
+        syms = self.symbols(proj["id"])
+        if not found.by_vtable:
+            return "No C++ classes found: no function stores a vtable (a table of function addresses) into an object."
+        what = what.strip()
+        if not what:
+            rows = sorted(found.by_vtable.values(), key=lambda c: (-len(c.slots), c.vtable))
+            return (f"{len(rows)} classes, found from the vtables their constructors store (largest first; "
+                    f"get_class(vtable or function) has one's fields and virtual functions):\n"
+                    + "\n".join(f"- {syms.label(c.vtable)} (0x{c.vtable:08X}): {len(c.slots)} virtual functions, "
+                                 f"{len(c.fields)} fields seen, at least 0x{c.size_seen():X} bytes"
+                                 + (f", base {syms.label(c.parent)}" if c.parent is not None else "") for c in rows[:60]))
+        m = _ADDRESS.match(what)
+        addr = int(m.group(1), 16) if m else syms.resolve(what)
+        if addr is None:
+            fn = self.store.one("SELECT vram FROM functions WHERE project_id=? AND name=?", proj["id"], what)
+            addr = fn["vram"] if fn else None
+        hits = found.find(addr) if addr is not None else []
+        if not hits:
+            raise NetworkError(f"`{what}` isn't a vtable, or a virtual function, constructor or destructor of one of the "
+                               f"{len(found.by_vtable)} classes found in this game's code: get_class() lists them")
+        return "\n\n".join(classes.describe(c, found, syms.label, focus=addr) for c in hits[:3])
+
+    def _class_brief(self, fn, proj) -> list[str]:
+        """What get_function says about a virtual function, constructor or destructor: its class and the fields of
+        `this` it uses, so agents write this->field at the right offsets."""
+        try:
+            found = self.classes(proj)
+        except Exception:  # a heuristic: it never stands between an agent and the function
+            logging.getLogger("decompdecomp").exception("finding C++ classes failed")
+            return []
+        roles = found.roles.get(fn["vram"]) if found else None
+        if not roles:
+            return []
+        syms = self.symbols(proj["id"])
+        lines = ["", "### C++ class (found from the vtables constructors store; get_class has the whole layout)"]
+        for vt, role in roles[:3]:
+            cls = found.by_vtable[vt]
+            used = [f"+0x{o:X} {f.ctype()}" for o, f in sorted(cls.fields.items()) if fn["vram"] in f.users]
+            base = f", base class {syms.label(cls.parent)}" if cls.parent is not None else ""
+            lines.append(f"- {role} of {syms.label(vt)} ({len(cls.slots)} virtual functions{base}); vtable pointer at "
+                         f"+0x{cls.vptr:X}" + (f"; this function uses {', '.join(used[:16])}" if used else ""))
+        return lines
+
     def _extra_brief(self, fn, proj) -> list[str]:
         if not self.is_rom(proj):
             return []
@@ -715,6 +777,7 @@ class RomNetwork(Network):
                 if r and r["preview"]:
                     desc += f": {r['preview']}"
                 lines.append(f"- {syms.label(a)} (0x{a:08X}; {desc})")
+        lines += self._class_brief(fn, proj)
         twin = self._twin_lines(proj, fn) if fn["status"] != "matched" else []
         lines += twin
         alike = [] if twin else [(r, sim) for r, sim in self.similar(proj, fn, top=3) if r["status"] == "matched"]

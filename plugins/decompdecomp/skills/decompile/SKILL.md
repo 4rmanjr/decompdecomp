@@ -19,7 +19,8 @@ drafts, helper agents working in parallel, and a live view for the user. Its too
 4. **Work.** `claim_function()` gives you a function with its assembly, notes and a machine draft;
    `compile_and_diff(function, source)` until the score is 0 (byte-identical). Read `guide("workflow")` first and
    the compiler guide it points to. Share what you learn: `edit_context` for types and prototypes, `rename_symbol`
-   for names, `add_note` for hints. Stuck after ~20 compiles: `release_function` with notes.
+   for names, `add_note` for hints. C++ games: `get_class(function)` has the class layout found in the game's code.
+   Stuck after ~20 compiles: `release_function` with notes.
 5. **Scale up.** For a big game, `start_agents(count)` adds helper agents; `progress()` shows everyone's work.
 6. **Deliver.** `export_project()` writes a normal decomp project that rebuilds the game byte for byte: the base for
    ports and mods.

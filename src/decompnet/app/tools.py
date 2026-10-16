@@ -201,6 +201,7 @@ HANDLERS: dict[str, Callable[..., str]] = {
         net.request_boundary(agent, slug, function, end, reason),
     "read_data": lambda net, agent, slug, what, length=64: (net.forks.read_data(agent, slug, what, length)
                                                             if net.fork_slug(slug) else net.read_data(slug, what, length)),
+    "get_class": lambda net, agent, slug, what="": net.get_class(slug, what),
     "list_functions": lambda net, agent, slug, status="open", limit=40: net.list_functions(slug, status, limit),
     "add_note": lambda net, agent, slug, text, function="": net.add_note(agent, slug, text, function or None),
     "suggest": lambda net, agent, slug, text, compiler="", flags="", function="", ranges="", source="":
@@ -220,7 +221,7 @@ HANDLERS: dict[str, Callable[..., str]] = {
         net.forks.split_file(agent, _fork(net, slug, "split_file"), path, at, new_name, data),
 }
 
-ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function", "report_boundary"}
+ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function", "report_boundary", "get_class"}
 FORK_ONLY = {"read_file", "search_code", "edit_file", "file_status", "split_file"}
 
 
@@ -349,6 +350,13 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         """Hex dump of the original's data: an address or symbol (ROM projects), a data symbol such as
         lbl_1_data_10 (forks); text, pointers and floats decoded."""
         return await run(ctx, "read_data", what=what, length=length)
+
+    @mcp.tool(meta=ALWAYS_LOAD)
+    async def get_class(ctx: Context, what: str = "") -> str:
+        """C++ classes found in the game's code (ROM projects): give a vtable address or a virtual function,
+        constructor or destructor for its class's fields (offset, type, which functions use them) and virtual
+        functions by slot; nothing lists them all. A layout to write the class from: the judge still decides."""
+        return await run(ctx, "get_class", what=what)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def list_functions(ctx: Context, status: str = "open", limit: int = 40) -> str:

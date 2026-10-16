@@ -31,6 +31,8 @@ back to the game's, so `void CPed::func_00123456(int x)` is judged as func_00123
 argument ($a0), as in C. Put classes in the shared header inside `#ifdef __cplusplus` ... `#endif`: the functions
 already matched as C must keep compiling as C (a header edit that breaks one is undone). Constructors and destructors
 can't be named by address: write them as ordinary methods (`CPed *CPed::func_0012AB30()`) that set the vtable.
+`get_class` has the layout of the class a method belongs to (fields with their offsets and types, base class,
+virtual functions by slot), found from the game's own constructors: start a class from it.
 Small data is `$gp`-relative (-G8 typical), so declare externs with their real sizes.
 
 Libraries: Sony's libgraph, libdma, libpad, libcdvd, libkernl, libsd and libvu0 are linked as

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
-    <img alt="decompdecomp" src=".github/assets/logo-light.svg" width="640">
+    <img alt="decompdecomp" src=".github/assets/logo-light.svg" width="560">
   </picture>
 </p>
 
@@ -22,25 +22,31 @@ game compiles it. If the result is identical to the game, byte for byte, the fun
 
 ## Install
 
-**Linux**
+**Linux**, with the installer (it also gets the compilers and keeps decompdecomp up to date):
 
 ```
 curl -fsSL https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.sh | bash
 ```
 
-Or download the `.deb` or the AppImage from the [releases](https://github.com/n-delic/decompdecomp/releases). Each
-has its own Python. Setup in the app gets the compilers.
+Or as a package, from the [releases](https://github.com/n-delic/decompdecomp/releases) (x86_64; each has its own
+Python, and Setup in the app gets the compilers):
 
-**Windows** (experimental: decompdecomp runs in WSL 2, which the installer turns on)
+```
+sudo apt install ./decompdecomp_*_amd64.deb        # Debian, Ubuntu, Pop!_OS, Mint
+chmod +x decompdecomp-*-x86_64.AppImage && ./decompdecomp-*-x86_64.AppImage   # any other distribution
+```
+
+**Windows** (experimental: decompdecomp runs in WSL 2, which the installer turns on), in PowerShell:
 
 ```
 irm https://raw.githubusercontent.com/n-delic/decompdecomp/main/site/public/install.ps1 | iex
 ```
 
-The installer installs the app and the compilers, then opens the app. To start it again, type
-`decomp` or use your apps menu. It opens in a window of its own (with Edge, Chrome, Brave or Chromium). Closing the
-window keeps decompdecomp in the system tray, so your agents keep working; quit it from the tray or the app's ⏻
-button. macOS is coming.
+**macOS** is coming.
+
+To start decompdecomp, type `decomp` or use your apps menu. It opens in a window of its own (with Edge, Chrome,
+Brave or Chromium). Closing the window keeps decompdecomp in the system tray, so your agents keep working; quit it
+from the tray or the app's ⏻ button.
 
 ## Start
 

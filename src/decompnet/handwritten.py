@@ -206,12 +206,22 @@ def mips_reason(code: bytes, big_endian: bool, platform: str = "") -> str | None
         return None
     for w in words:
         op = w >> 26
+        if op == 0 and w & 0x3F == 0x0C:  # not break (0x0D): GCC emits that for its own divide-by-zero checks
+            return ("makes a system call (syscall): a kernel entry stub, written in assembly; C has no way to emit "
+                    "it (the PS2's libkernl stubs: addiu v1, n; syscall; jr ra)")
         if op == 0x10:
             return "uses coprocessor 0 (the system's: mfc0, mtc0, rfe, eret): no C compiler emits it"
         if platform in ("psx", "ps", "ps2") and (op == 0x12 or op in (0x32, 0x3A, 0x36, 0x3E)):
             unit = "the GTE (coprocessor 2)" if platform != "ps2" else "VU0 (coprocessor 2)"
             return (f"uses {unit}: no C compiler emits it (PSY-Q's libgte is written in assembly; C does it with "
                     "inline asm)" if platform != "ps2" else f"uses {unit}: C reaches it only through inline asm")
+    if platform in ("psx", "ps"):
+        # a BIOS call: li t2, 0xA0/0xB0/0xC0 (the table), jr t2, li t1, n (the function number) in any order. A C
+        # call through a pointer would use jalr and pass its arguments in a0-a3, never a number in t1
+        head = words[:4]
+        tables = {w & 0xFFFF for w in head if w >> 26 == 9 and (w >> 21) & 31 == 0 and (w >> 16) & 31 == 10}
+        if tables & {0xA0, 0xB0, 0xC0} and 0x01400008 in head:  # jr t2
+            return "calls the BIOS through its A0/B0/C0 table with the function number in t1: a stub written in assembly"
     body = list(words)
     while len(body) > 1 and body[-1] == 0:  # alignment padding
         body.pop()

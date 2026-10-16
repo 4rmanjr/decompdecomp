@@ -86,3 +86,9 @@ def test_mips_code_no_compiler_makes():
     assert mips_reason(prologue, False, "psx") is None
     assert mips_reason(le(0x8D020000, 0x03E00008, 0), False, "ps2") is None  # lw v0, 0(t0) on the PS2: an argument
     assert mips_reason(le(0x03E00008, 0, 0, 0), False, "psx") is None  # alignment padding after jr ra
+    # kernel entry stubs: the PS2's libkernl (GTA San Andreas has a run of them at 0x53BC60) and the PS1's BIOS calls
+    assert "system call" in mips_reason(le(0x24030010, 0x0000000C, 0x03E00008, 0), False, "ps2")  # li v1, 0x10; syscall
+    assert "BIOS" in mips_reason(le(0x240A00A0, 0x01400008, 0x24090044), False, "psx")  # li t2, 0xa0; jr t2; li t1, 0x44
+    assert mips_reason(le(0x240A00A0, 0x01400008, 0x24090044), False, "n64") is None  # no BIOS table there
+    # but break is GCC's own: a divide with its divide-by-zero check is compiled code
+    assert mips_reason(le(0x0085001A, 0x14A00002, 0, 0x0007000D, 0x00001012, 0x03E00008, 0), False, "psx") is None

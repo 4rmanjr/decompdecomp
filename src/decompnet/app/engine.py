@@ -1533,7 +1533,8 @@ class RomNetwork(Network):
                 self.resolve_suggestion(slug, s["id"], apply=True, guard=True)
             except NetworkError as e:  # it would break matched code: it waits for the user
                 return f"Suggested, not applied by itself: {e}.{note}"
-            return (f"Applied (the user lets agreed compiler changes apply themselves): the project builds with "
+            where = f"{', '.join(f'0x{a:X}-0x{b:X}' for a, b in spans)} build" if spans else "the project builds"
+            return (f"Applied (the user lets agreed compiler changes apply themselves): {where} with "
                     f"{SHORT_NAMES.get(tc, tc)} {' '.join(flag_list)} from now on.{note}")
         return f"Suggested: the user sees it on the project page and can apply it.{note}"
 

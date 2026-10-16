@@ -279,7 +279,7 @@ def test_a_game_built_with_two_compilers(tmp_path):
 
     said = net.suggest(agent, slug, "game.c's code: frame like CodeWarrior's, delay slots filled", "mwcps2-3.0.1",
                        "-O3 -sdatathreshold 8", "entity_default_hp", f"0x{start:X}-0x{end:X}")
-    assert said.startswith("Applied") and "matches the game" in said
+    assert said.startswith("Applied") and "matches the game" in said and f"0x{start:X}-0x{end:X} build with" in said
     ov = net.overview(slug)
     assert ov["compiler"]["toolchain"] == "ee-gcc-2.96"  # the rest of the game keeps its compiler
     assert [(r["start"], r["end"], r["toolchain"]) for r in ov["compiler_ranges"]] == [(start, end, "mwcps2-3.0.1")]

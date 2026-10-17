@@ -5,6 +5,9 @@
   </picture>
 </p>
 
+<h2 align="center">major app rewrite in progress</h2>
+
+
 <p align="center">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-157a49?style=flat-square"></a>
   <img alt="Linux, and Windows through WSL (experimental)" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20WSL%20(experimental)-15140f?style=flat-square">

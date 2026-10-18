@@ -281,7 +281,8 @@ If an import fails, the app shows the reason. **Copy for a bug report** copies t
 for an [issue](https://github.com/n-delic/decompdecomp/issues). **Report a problem**, at the bottom of the sidebar,
 opens a new issue in your browser with your version and system, and copies a report with the log to paste into it.
 The full log is `~/Decomp/.decomp/logs/decomp.log`.
-Read [CONTRIBUTING.md](../CONTRIBUTING.md) before you attach a log.
+Read [CONTRIBUTING.md](../CONTRIBUTING.md) before you attach a log. Not sure it's a bug, or just stuck? Ask on
+[Discord](https://discord.gg/hhEm3zZagB).
 
 ## Development
 

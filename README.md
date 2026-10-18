@@ -8,6 +8,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="AGPL-3.0 license" src="https://img.shields.io/badge/license-AGPL--3.0-157a49?style=flat-square"></a>
   <img alt="Linux" src="https://img.shields.io/badge/platform-Linux-15140f?style=flat-square">
+  <a href="https://discord.gg/hhEm3zZagB"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white"></a>
   <img alt="Agents: Claude Code, Codex, opencode, Antigravity, any API model" src="https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20opencode%20%C2%B7%20API%20models-157a49?style=flat-square">
 </p>
 
@@ -178,6 +179,7 @@ touches the projects of the decompdecomp you have installed.
 - [The guide](docs/GUIDE.md): how it works, agents, teams, platforms and the export.
 - [ROADMAP.md](ROADMAP.md): what's planned, and which feature works on which platform.
 - [Issues](https://github.com/n-delic/decompdecomp/issues): problems and requests.
+- [Discord](https://discord.gg/hhEm3zZagB): questions, progress on your games, and talking with the people building it.
 
 ## Use it responsibly
 

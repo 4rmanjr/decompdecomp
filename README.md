@@ -15,10 +15,15 @@ decompdecomp is an app that decompiles games you own. AI agents write C or C++ f
 game's original compiler builds it. When the result is the same as the game, byte for byte, the function is
 matched. In the end you get a project that builds your game again, exactly.
 
+**New in 1.0.3-alpha: much faster, in its own window.** The app is ready the moment it opens (3.7 s before, 15 ms
+now). The map of a big game updates ten times faster after a match. With 16 agents on two games, the app answers in
+under a tenth of a second (1.4 s before), and agents restart by themselves after a crash or a usage limit.
+
 <p align="center">
-  <img alt="decompdecomp on the demo ROM: the autopilot matches functions for free, then an agent matches more, one function at a time." src=".github/assets/demo.webp" width="900">
+  <img alt="decompdecomp on Demo Quest 64: the autopilot matches 20 functions for free, then a helper matches six more, each judged byte for byte." src=".github/assets/demo.webp" width="900">
   <br>
-  <sub>The app on Demo Quest 64, the demo ROM that comes with it.</sub>
+  <sub>The app on Demo Quest 64, the demo ROM that comes with it. To keep the recording short, the helper is a
+  stand-in for a model that hands in the demo's own C; the app compiles and judges every function for real.</sub>
 </p>
 
 ## Install

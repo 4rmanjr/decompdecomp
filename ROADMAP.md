@@ -139,6 +139,12 @@ In order:
 6. release.yml attaches the window program; the docs, a ROADMAP column "Windows (WSL 2)"; a manual pass on a VM;
    the tag.
 
+### How much usage each agent has left
+
+A window that shows, for each agent you use, what's left of its limits: the 5-hour and weekly limits of Claude Code
+and Codex, and a monthly limit or the credit left on an API key where the provider says it. Helpers already wait for a
+usage limit to reset; this shows it before they hit it, so you can pick which agents to start.
+
 ### Library decomps built locally
 
 Twins across your games already match library code you matched once. The next step: match library decomps and

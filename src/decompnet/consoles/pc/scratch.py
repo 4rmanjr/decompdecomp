@@ -44,6 +44,9 @@ PAD = 0x90  # what Visual C++ 6 pads a function's section with (the linker pads 
 # Visual C++ versions by the build number its tools leave in the program's Rich header, for the C/C++ compiler
 RICH_BUILDS = {8168: "6.0", 8447: "6.0", 8799: "6.0", 8966: "6.0", 9044: "6.0", 9782: "6.0", 9466: "7.0", 9955: "7.0",
                3052: "7.1", 3077: "7.1", 4035: "7.1", 6030: "7.1"}
+# Rich header product ids from Visual C++ 2005 on (its C compiler is 0x6D; 7.1 and older use lower ids): a program
+# built with them is newer than the compiler pack (GitHub #12: a 2010 game only said "Ghidra found no functions")
+NEWER_TOOLS_FIRST_PRODUCT = 0x6D
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -207,6 +210,12 @@ def guess_compiler(data: bytes) -> tuple[str, str]:
         return MSVC_DEFAULT, "the program doesn't say which Visual C++ built it; 6.0 built most games of its time"
     version = max(seen, key=seen.get)
     return version, f"the program's Rich header names Visual C++ {version}'s tools"
+
+
+def newer_tools(builds: list[tuple[int, int, int]]) -> bool:
+    """Whether the Rich header's tools are Visual C++ 2005 or newer: none of the compiler pack's builds, and newer ids."""
+    known = any(build in RICH_BUILDS for _, build, _ in builds)
+    return not known and any(product >= NEWER_TOOLS_FIRST_PRODUCT for product, _, _ in builds)
 
 
 def game_info(path: Path) -> dict:
@@ -472,12 +481,19 @@ def create(root: Path, game: Path, *, compiler: str | None = None, log=print) ->
                             "https://adoptium.net, then try again")
         log("installing Ghidra (540 MB, once): it finds the functions in PC programs")
         toolchains.ensure("ghidra", log=log)
-    pe = read_pe(game.read_bytes())
-
+    data = game.read_bytes()
+    pe = read_pe(data)
+    newer = newer_tools(rich_builds(data))
+    if newer:
+        log("its Rich header names Visual C++ 2005 or newer: decompdecomp builds with 6.0 to 7.1 for now, so expect "
+            "little to match")
     log(f"analysing {game.name} with Ghidra (finds every function; a big game takes a few minutes)")
     found = ghidra.functions(game)
     if not found:
-        raise ForkError("Ghidra found no functions in this program (did its analysis fail or time out?)")
+        why = ("it was built with Visual C++ 2005 or newer (its Rich header says so), and decompdecomp supports 6.0 "
+               "to 7.1 for now" if newer else "a program that is packed or protected (some games' DRM wraps their code) "
+               "shows none until it's unpacked")
+        raise ForkError(f"Ghidra found no functions in this program: {why}.")
     functions = analyse(pe, found)
     groups = units(functions)
     log(f"{len(functions)} functions; {info['compiler_why']}: Visual C++ {compiler}")

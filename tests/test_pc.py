@@ -115,3 +115,14 @@ def test_agents_match_functions(pc):
     net.release(agent, other, "", slug)
     root = Path(net.project_row(slug)["root"])
     assert "Match " in subprocess.run(["git", "log", "--oneline"], cwd=root, capture_output=True, text=True).stdout
+
+
+def test_a_program_built_with_a_newer_visual_cpp_is_told_apart():
+    """GitHub #12: a 2010 game said only "Ghidra found no functions". Its Rich header could have said why."""
+    vc6_game = [(0x0A, 8168, 120), (0x0B, 8168, 30), (0x01, 0, 200)]
+    vs2008_game = [(0x83, 30729, 300), (0x84, 30729, 40), (0x91, 30729, 1)]
+    vc71_with_a_newer_library = [(0x5F, 3077, 90), (0x6D, 50727, 2)]
+    assert scratch_pe.newer_tools(vs2008_game)
+    assert not scratch_pe.newer_tools(vc6_game)
+    assert not scratch_pe.newer_tools(vc71_with_a_newer_library)  # the game's own compiler is in the pack
+    assert not scratch_pe.newer_tools([])  # no Rich header: nothing to go by

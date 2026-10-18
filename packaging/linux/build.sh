@@ -44,7 +44,8 @@ export DECOMP_PACKAGE=deb PATH="/opt/decompdecomp/bin:$PATH"
 exec /opt/decompdecomp/python/bin/python3.12 -m decompnet.app.cli "$@"
 LAUNCHER
 chmod 755 "$DEB/usr/bin/decomp"
-cp "$HERE/decompdecomp.desktop" "$DEB/usr/share/applications/"
+# the menu runs this package's own decomp: an older one from the install command (~/.local/bin) is often first on PATH
+sed 's|^Exec=decomp$|Exec=/usr/bin/decomp|' "$HERE/decompdecomp.desktop" > "$DEB/usr/share/applications/decompdecomp.desktop"
 cp "$ROOT/src/decompnet/app/static/icon.svg" "$DEB/usr/share/icons/hicolor/scalable/apps/decompdecomp.svg"
 cat > "$DEB/DEBIAN/control" <<CONTROL
 Package: decompdecomp

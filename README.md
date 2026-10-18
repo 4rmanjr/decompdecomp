@@ -63,7 +63,8 @@ When you close the window while agents work, decompdecomp asks you: stop them an
 Your projects stay. The new version opens the same `~/Decomp` folder, with every match, name and note in it.
 
 1. **Install the new version** the same way as before: the install command above, or the new `.deb`, `.rpm` or
-   AppImage. The installer removes an older `.deb` or `.rpm` of decompdecomp, so your apps menu shows one.
+   AppImage. The installer removes an older `.deb` or `.rpm` of decompdecomp, so your apps menu shows one. Going
+   the other way, from the install command to a package? Remove the old copy first: `uv tool uninstall decompnet`.
 2. **Start it** with `decomp` or from your apps menu. It opens in its own window now, not in your browser.
 3. **Start your agents again.** Helper agents that were working in the old version don't restart by themselves the
    first time. Open each project and start them; from then on they restart by themselves.

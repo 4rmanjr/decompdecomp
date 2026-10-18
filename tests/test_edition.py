@@ -103,3 +103,19 @@ def test_an_app_given_its_own_home_leaves_the_users_agents_alone(monkeypatch, tm
     monkeypatch.setenv("DECOMP_HOME", str(tmp_path))
     cleanup.old_registrations(tmp_path)
     assert ran == []
+
+
+def test_the_packages_menu_entry_runs_the_packages_own_decomp():
+    """With the install command's copy also there (~/.local/bin, first on PATH), the .deb's menu entry started that
+    older copy instead of the package: the owner's 1.0.3 .deb "installed but can't launch"."""
+    import re
+    import subprocess
+    from pathlib import Path
+
+    packaging = Path(__file__).parents[1] / "packaging" / "linux"
+    command = re.search(r"^sed '([^']+)' \"\$HERE/decompdecomp.desktop\" > \"\$DEB/usr/share/applications/",
+                        (packaging / "build.sh").read_text(), re.M)
+    assert command, "build.sh no longer writes the package's menu entry with sed"
+    entry = subprocess.run(["sed", command.group(1), str(packaging / "decompdecomp.desktop")],
+                           capture_output=True, text=True, check=True).stdout
+    assert "Exec=/usr/bin/decomp\n" in entry

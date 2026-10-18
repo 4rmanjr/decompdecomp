@@ -262,9 +262,15 @@ To continue on another computer, copy the folder (or push it to git) and click *
 project**. decompdecomp checks that your copy is the same game, and judges every saved function again. GameCube, Wii
 and PC projects and public decomps keep their work in their own git repository.
 
-**Polish.** Once half of a ROM project matches, **Start agents** offers a second task: **Polish matched code**.
-Helpers give matched functions real names, types and a comment. A change counts only when the function still
-matches byte for byte. The project shows two numbers: matched, and readable.
+**Polish.** Matched C proves the code is right, but it starts raw: `func_80000A0C`, `D_8004AE30`, `arg0`, padded
+structs and raw offsets. Once half of a ROM project matches, **Start agents** offers a second task: **Polish matched
+code**. A polishing helper takes a matched function and renames it and what it uses across the project
+(`rename_symbol`), describes structs, enums and constants in the shared header, names parameters and locals, and
+writes one comment saying what the function does. A rewrite counts only when the function still matches byte for
+byte; otherwise it's refused and the matching C stays. Starred functions go first, then the biggest (up to 400
+instructions), where the logic is; stubs under 8 instructions are left alone, their names come with their callers.
+The project shows two numbers: matched, and readable. Names are the agent's reading of the code, so check the ones
+that matter to you.
 
 **Notifications.** The bell beside the logo lists what happened in all your projects, each in its project's colour:
 matches, helpers that stopped, what waits for you.

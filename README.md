@@ -126,6 +126,49 @@ from beta to recommended.
 
 Proprietary compilers (CodeWarrior, Visual C++, IDO) are installed only after you accept their licenses in the app.
 
+## Questions people ask
+
+**Is this just Ghidra?** No. Ghidra (and IDA) show you C so you can *read* a program. That C usually doesn't compile,
+and when it does, the game's compiler makes different machine code from it. decompdecomp keeps a function only when
+its C, built by the game's own compiler, gives exactly the original bytes. That's what lets the result build the
+game again, the base for ports and mods.
+
+**What does the C look like?** At first, raw. A match proves the code is right, not that it's easy to read. Here is
+one function of Demo Quest 64 as the autopilot matched it, and the same function made readable. Both compile to
+the same bytes:
+
+```c
+/* As matched */
+void func_80000A0C(s32 arg0) {
+    s32 temp_v0;
+
+    temp_v0 = D_8004AE30 + (arg0 * (D_8004AE58 + 1));
+    D_8004AE30 = temp_v0;
+    if (temp_v0 > 0xF423F) {
+        D_8004AE30 = 0xF423F;
+    }
+}
+```
+
+```c
+/* Made readable: adds points for a hit, times the combo, up to the highest score. */
+void add_score(s32 points) {
+    g_score += points * (g_player.combo + 1);
+    if (g_score > MAX_SCORE) {
+        g_score = MAX_SCORE;
+    }
+}
+```
+
+Agents do that second step too: once half a game matches, **Start agents** offers **Polish matched code**. Helpers
+name functions, globals and parameters, describe structs in the shared header and add a comment, and a change is
+kept only when the function still matches byte for byte. Names are the agent's reading of the code: the bytes
+prove what a function does, not what its author called it.
+
+**Has a whole game been decompiled with it?** Not yet. Games get far (hundreds or thousands of matched functions),
+and the export rebuilds the game byte for byte from matched C plus assembly for what isn't matched yet. A game at
+100%, polished, is the goal, and the first one will be announced here.
+
 ## Help make it better
 
 decompdecomp is built in the open, and it's meant to be easy to work on. Read [CONTRIBUTING.md](CONTRIBUTING.md)

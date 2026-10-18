@@ -19,6 +19,9 @@ from ..network import Agent, NetworkError
 
 CLAIM_SECONDS = 30 * 60
 MAX_INSNS = 400  # bigger functions wait: a readable rewrite of 2,000 instructions is a project of its own
+# stubs and one-liners have nothing to explain (their names come with the functions that call them): polishing
+# smallest first spent a session on empty functions in Mario Kart 64
+MIN_INSNS = 8
 
 
 class Readability:
@@ -48,9 +51,10 @@ class Readability:
             if held is not None and fn is None:
                 raise NetworkError(f"you hold {held['name']}; match it or release_function it first")
             if fn is None:
+                # starred first, then the biggest that fit: that's where the logic people want to read is
                 fn = db.execute("SELECT * FROM functions WHERE project_id=? AND status='matched' AND readable=0 "
-                                "AND n_insns <= ? AND id NOT IN (SELECT function_id FROM claims) ORDER BY n_insns "
-                                "LIMIT 1", (proj["id"], MAX_INSNS)).fetchone()
+                                "AND n_insns BETWEEN ? AND ? AND id NOT IN (SELECT function_id FROM claims) "
+                                "ORDER BY boost DESC, n_insns DESC LIMIT 1", (proj["id"], MIN_INSNS, MAX_INSNS)).fetchone()
                 if fn is None:
                     return "Every matched function is readable already (or too big for now). 🎉"
                 db.execute("INSERT INTO claims VALUES(?,?,?,?)", (fn["id"], agent.id, now, now + CLAIM_SECONDS))

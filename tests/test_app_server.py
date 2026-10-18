@@ -56,7 +56,7 @@ def test_on_windows_it_stops_updating_and_shows_the_way_back_to_1_0_2(tmp_path, 
     anon = TestClient(mcp.streamable_http_app(transport_security=security, host="127.0.0.1"),
                       base_url=f"http://127.0.0.1:{PORT}")
     page = anon.get("/").text
-    assert "doesn't run on Windows" in page and "v1.0.2-alpha.tar.gz" in page
+    assert "doesn't run on Windows" in page and "v1.0.2-alpha.tar.gz" in page and "DECOMP_TRAY=0" in page
     kernel.write_text("6.12.0-generic\n")
     assert "doesn't run on Windows" not in anon.get("/").text
 

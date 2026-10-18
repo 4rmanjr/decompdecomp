@@ -89,7 +89,11 @@ What changed on the way:
   ```powershell
   wsl --terminate decomp-wtf
   wsl -d decomp-wtf -u decomp --exec /home/decomp/.local/bin/uv tool install --force --python 3.12 "decompnet @ https://github.com/n-delic/decompdecomp/archive/refs/tags/v1.0.2-alpha.tar.gz"
+  wsl -d decomp-wtf -u root --exec sh -c "echo 'export DECOMP_TRAY=0' >> /etc/profile.d/decomp-wtf.sh"
   ```
+
+  The last line turns off 1.0.2's tray icon: with the system packages 1.0.3's window uses, it made 1.0.2 quit at
+  start ("127.0.0.1 refused to connect").
 
   Then start decompdecomp as before. To move to Linux instead: your projects are in
   `\\wsl.localhost\decomp-wtf\home\decomp\Decomp`. Copy that whole folder to `~/Decomp` on a Linux computer, with

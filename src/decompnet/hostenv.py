@@ -14,9 +14,12 @@ KERNEL_RELEASE = Path("/proc/sys/kernel/osrelease")  # "...-microsoft-standard-W
 # 1.0.2 on Windows lived in a WSL distribution of its own; it updates itself into this version, which doesn't run there
 WSL_DISTRO, WSL_USER = "decomp-wtf", "decomp"
 OLD_VERSION_SPEC = "decompnet @ https://github.com/n-delic/decompdecomp/archive/refs/tags/v1.0.2-alpha.tar.gz"
+# (the last line turns off 1.0.2's tray icon: with the system packages this version's window uses, loading it put
+# the system's old websockets ahead of uvicorn's, and 1.0.2 quit at start: GitHub #11)
 WSL_GO_BACK = (f"wsl --terminate {WSL_DISTRO}\n"
                f"wsl -d {WSL_DISTRO} -u {WSL_USER} --exec /home/{WSL_USER}/.local/bin/uv tool install --force "
-               f'--python 3.12 "{OLD_VERSION_SPEC}"')
+               f'--python 3.12 "{OLD_VERSION_SPEC}"\n'
+               f"wsl -d {WSL_DISTRO} -u root --exec sh -c \"echo 'export DECOMP_TRAY=0' >> /etc/profile.d/{WSL_DISTRO}.sh\"")
 
 
 def in_wsl() -> bool:

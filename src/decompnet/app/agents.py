@@ -903,7 +903,10 @@ class Manager:
         if not exe:
             raise RuntimeError(f"{k.name} is not installed")
         cmd, more = k.session_command(exe, workdir, self.mcp_url, token, s.model)
-        return cmd, dict(os.environ, **{HELPER_ENV: str(self.home)}, **more), k.stdin(self.prompt(s))
+        # PWD too: opencode 2 works in $PWD, not the folder it starts in, and the app's PWD was the user's home, so
+        # Mario Kart 64's helpers worked there without their folder's settings: no tools, and a free shell
+        env = dict(os.environ, PWD=str(workdir), **{HELPER_ENV: str(self.home)}, **more)
+        return cmd, env, k.stdin(self.prompt(s))
 
     def _run_cli(self, s: Session, token: str, workdir: Path) -> bool:
         k = agents.get(s.kind)

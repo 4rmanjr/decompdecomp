@@ -47,7 +47,8 @@ class Codex(Agent):
                 cmd += ["-c", f"mcp_servers.{name}.enabled=false"]
         cmd += ["-c", f'mcp_servers.decomp_agent={{url="{mcp_url}", bearer_token_env_var="{TOKEN_ENV}", '
                       f'default_tools_approval_mode="approve", tool_timeout_sec={TOOL_TIMEOUT}}}',
-                "-c", 'approval_policy="never"']
+                "-c", 'approval_policy="never"',
+                "-c", 'web_search="disabled"']  # the read-only sandbox keeps its shell offline; this, its own search
         if model:
             cmd += ["-m", model]
         cmd.append("-")  # the prompt comes from stdin

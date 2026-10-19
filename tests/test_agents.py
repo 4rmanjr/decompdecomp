@@ -140,9 +140,28 @@ def test_opencode_free_models_keep_their_tools_but_never_get_to_use_them(tmp_pat
     # `decomp` server without the session's token, so every helper worked as the user's one chat agent
     for version, standalone in (("opencode v2.0.28", True), ("0.15.4", False)):  # opencode 2's shared service
         monkeypatch.setitem(kinds.known_versions, "opencode", (0, version))
-        assert ("--standalone" in m._command(s, "tok", work)[0]) is standalone
-    mcp = json.loads((work / "opencode.json").read_text())["mcp"]
-    assert list(mcp) == ["decompdecomp"] and mcp["decompdecomp"]["headers"] == {"Authorization": "Bearer tok"}
+        cmd, env, _ = m._command(s, "tok", work)
+        assert ("--standalone" in cmd) is standalone
+        # opencode 2 works in $PWD, whatever folder it starts in: the app's own PWD put helpers in the user's home
+        assert env["PWD"] == str(work)
+        config = json.loads((work / "opencode.json").read_text())
+        mcp = config["mcp"]["servers"] if standalone else config["mcp"]
+        assert list(mcp) == ["decompdecomp"] and mcp["decompdecomp"]["headers"] == {"Authorization": "Bearer tok"}
+    # opencode 2's `execute` ran JavaScript whose fetch() reached the internet: only "deny" removes it, and the
+    # app's tools then have to be offered outside it
+    monkeypatch.setitem(kinds.known_versions, "opencode", (0, "opencode v2.0.32"))
+    m._command(s, "tok", work)
+    config = json.loads((work / "opencode.json").read_text())
+    assert {"execute", "subagent", "external_directory"} <= {p["action"] for p in config["permissions"]
+                                                            if p["effect"] == "deny"}
+    assert config["mcp"]["servers"]["decompdecomp"]["codemode"] is False
+
+
+def test_codex_helpers_cannot_search_the_web(tmp_path, monkeypatch):
+    """Helpers that searched the web pulled a public decomp's code instead of working the function out."""
+    m = _manager(tmp_path, monkeypatch, "codex")
+    cmd, _, _ = m._command(agents.Session("codex-1", "codex", "c", "demo", "codex-1", {}), "t", tmp_path)
+    assert 'web_search="disabled"' in cmd and cmd[cmd.index("-s") + 1] == "read-only"
 
 
 def test_gemini_cli_helpers_carry_on_as_antigravity():

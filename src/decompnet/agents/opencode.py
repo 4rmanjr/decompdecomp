@@ -50,12 +50,22 @@ class Opencode(Agent):
         # used from within OpenCode"). "ask" keeps the usual tools, and `opencode run` rejects every ask itself.
         zen = (model or self.config_model() or ZEN).startswith(ZEN)
         never = "ask" if zen else "deny"
-        (workdir / "opencode.json").write_text(json.dumps({
-            "$schema": "https://opencode.ai/config.json",
-            "mcp": {"decompdecomp": {"type": "remote", "url": mcp_url, "enabled": True,
-                                     "headers": {"Authorization": f"Bearer {token}"}}},
-            "permission": {"edit": never, "bash": never, "webfetch": never},
-        }), encoding="utf-8")
+        headers = {"Authorization": f"Bearer {token}"}
+        if self.standalone(exe):
+            # opencode 2: Mario Kart 64's helpers read the user's home and fetched a public decomp's code. Its own
+            # format, since the old one loses `codemode`: off, the app's tools are the model's own, and `execute` (a
+            # JavaScript runner whose fetch() reaches the internet, and which only "deny" removes) can go, with
+            # subagents; nothing outside the helper's own folder either
+            deny = {"execute", "subagent", "external_directory"}
+            config = {"mcp": {"servers": {"decompdecomp": {"type": "remote", "url": mcp_url, "headers": headers,
+                                                           "codemode": False}}},
+                      "permissions": [{"action": a, "resource": "*", "effect": "deny" if a in deny else never}
+                                      for a in ("edit", "shell", "webfetch", "websearch", *sorted(deny))]}
+        else:
+            config = {"mcp": {"decompdecomp": {"type": "remote", "url": mcp_url, "enabled": True, "headers": headers}},
+                      "permission": {"edit": never, "bash": never, "webfetch": never}}
+        (workdir / "opencode.json").write_text(json.dumps({"$schema": "https://opencode.ai/config.json", **config}),
+                                               encoding="utf-8")
         # --print-logs: opencode's JSON error only says "Unexpected server error"; the log line says what failed.
         # (No --dir: it runs in workdir, and OpenCode before 1.4 stops at the flag. No --log-level either: before
         # 2.0 it took only ERROR, from 2.0 only error, and either stops the other at once.)

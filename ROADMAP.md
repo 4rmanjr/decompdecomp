@@ -113,32 +113,6 @@ Where to start on a gap:
 
 ## Next
 
-### Windows, in 1.0.4-alpha
-
-Windows isn't supported in 1.0.3: many users come from Windows, so it comes back next. The plan is a hybrid. The
-Linux app runs unchanged in its own WSL 2 distribution: every compiler, the sandbox and the helpers' process groups
-work as on Linux. A small native Windows window program (pywebview on WebView2, `app/winwindow.py`) shows its page.
-It keeps the contract of `gtkwindow.py`: its arguments, the stdin words `present` and `close`, the secret in its
-user agent, the close question to the page. The Linux app starts it through WSL interop. Projects live on WSL's own
-disk: the 32-bit compilers fail on `/mnt/c`, and it's about 7 times slower. Games are read from C: once, at import.
-
-Rejected: WSLg's GTK window (blank windows on some GPUs, no tray, a window that looks like Linux), a native Windows
-app (0.9.x tried it, and most Windows releases broke something only Windows has; KMC GCC and EE-GCC run only on
-Linux anyway), and Docker.
-
-In order:
-1. A spike on a Windows 11 VM: a Linux process starts Windows `python.exe winwindow.py` with pipes and WSLENV, and
-   the window loads 127.0.0.1:<port> from WSL. Find out whether GitHub's windows-latest runner has WSL 2.
-2. `app/winwindow.py`, tested on windows-latest against a stub server.
-3. `hostenv.py` becomes the only place that knows about WSL (detection, C:\ paths, explorer.exe for links and
-   folders, the window's command line), with a test that fails when WSL or win32 appears anywhere else.
-4. The native-Windows leftovers go: `wsl.py`, `CompilerConfig.wsl`, `Toolchain.via_wsl`, the `wsl-x86_64` parts.
-5. `install.ps1` again, from the old one (`git show 6d438ca:site/public/install.ps1`) without the agent connection
-   and the browser: the distribution with systemd, the window program, a WebView2 check, Start menu shortcuts,
-   `decomp.cmd`.
-6. release.yml attaches the window program; the docs, a ROADMAP column "Windows (WSL 2)"; a manual pass on a VM;
-   the tag.
-
 ### How much usage each agent has left
 
 A window that shows, for each agent you use, what's left of its limits: the 5-hour and weekly limits of Claude Code

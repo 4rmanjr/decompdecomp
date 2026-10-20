@@ -117,7 +117,8 @@ linting). In short:
   (CI has none of them); small homemade games/objects live in `projects/demo-*` and are built by their own scripts.
 - `uv run ruff check src tests projects` passes (CI runs it). No formatter: don't run `ruff format`.
 - Releases bump the version in four places together: `pyproject.toml`, `src/decompnet/__init__.py`,
-  `site/public/install.sh`, `uv.lock`. Commit subjects read
+  `site/public/install.sh`, `uv.lock`; `packaging/release.sh X.Y.Z "what users get"` does that, commits, tags and
+  pushes (a tag pushed before the bump fails release.yml's version check). Commit subjects read
   `decompdecomp X.Y.Z: <what users get, in one sentence>`, with a body explaining why. Pre-releases are
   `X.Y.Z-alpha` (`-beta`, `-rc`); `updates.version_key` orders them before X.Y.Z.
 - A release is a `vX.Y.Z` tag on main. `.github/workflows/release.yml` builds the `.deb`, the `.rpm`, the AppImage

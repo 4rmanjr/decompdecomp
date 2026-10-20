@@ -210,6 +210,16 @@ def test_claude_offers_each_version_as_well_as_the_latest():
     assert agents.helper_name("claude", "opus", set()) == "claude-opus-1"  # the alias keeps its old record
 
 
+def test_every_helper_with_an_effort_offers_medium_to_max(tmp_path):
+    """The launcher offered max for opencode but not xhigh, xhigh for Codex but not max, and neither for the API
+    helper (a local llama.cpp model's template wants xhigh): each one that takes an effort offers all four now."""
+    for kind in kinds.AGENTS:
+        if kind.takes_effort:
+            assert {"medium", "high", "xhigh", "max"} <= set(kind.describe()["efforts"]), kind.id
+    cmd, _ = kinds.get("codex").session_command("codex", tmp_path, URL, "token", "gpt-5.5#max")
+    assert 'model_reasoning_effort="max"' in cmd
+
+
 def test_claude_helpers_think_as_hard_as_the_launcher_says(tmp_path):
     """The launcher sends an effort with the model's name ("opus#xhigh", as for opencode); Claude Code takes it as
     --effort, and an effort-less helper gets none (the model's default)."""
@@ -663,7 +673,7 @@ def test_codex_and_api_helpers_take_an_effort_too(tmp_path, monkeypatch):
     cmd, _ = codex.session_command("codex", tmp_path, URL, "token", 'gpt-5#"high"')  # its own words only
     assert not any("model_reasoning_effort" in c for c in cmd)
     api = kinds.get("api")
-    assert api.describe()["takes_effort"] and api.describe()["efforts"] == ["minimal", "low", "medium", "high"]
+    assert api.describe()["takes_effort"] and api.describe()["efforts"] == ["minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 def test_an_api_helper_asks_its_model_for_the_effort_it_was_given(tmp_path, monkeypatch):

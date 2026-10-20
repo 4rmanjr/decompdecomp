@@ -61,8 +61,10 @@ class Api(Agent):
     docs = "https://api-docs.deepseek.com"
     recommended = True  # decompdecomp runs its whole loop, and no other program's update can break it
     uses_endpoints = True
-    takes_effort = True  # OpenAI's reasoning_effort, which OpenAI-compatible servers with reasoning models take
-    efforts = ("minimal", "low", "medium", "high")
+    # OpenAI's reasoning_effort, which OpenAI-compatible servers with reasoning models take; which words a model knows
+    # is its own (a llama.cpp model's chat template took xhigh, medium and low, and refused high and max, saying so)
+    takes_effort = True
+    efforts = ("minimal", "low", "medium", "high", "xhigh", "max")
 
     def label(self, name: str, options: dict, used: set[str]) -> str:
         """By its endpoint, numbered: "gpu-box #2" says which machine it runs on."""

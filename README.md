@@ -7,7 +7,8 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="AGPL-3.0 license" src="https://img.shields.io/badge/license-AGPL--3.0-157a49?style=flat-square"></a>
-    <img alt="Linux | Windows" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20-15140f?style=flat-square">
+  <img alt="Linux" src="https://img.shields.io/badge/platform-Linux-15140f?style=flat-square">
+  <img alt="Windows" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-15140f?style=flat-square">
   <a href="https://discord.gg/hhEm3zZagB"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white"></a>
   <img alt="Agents: Claude Code, Codex, opencode, Antigravity, any API model" src="https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20opencode%20%C2%B7%20API%20models-157a49?style=flat-square">
 </p>
@@ -29,7 +30,7 @@ under a tenth of a second (1.4 s before), and agents restart by themselves after
 
 ## Install
 
-decompdecomp runs on **Linux** and **Windows (via WSL)**, on a 64-bit Intel or AMD PC. Install it with one command. The installer also gets
+decompdecomp runs on **Linux and Windows 10/11**, on a 64-bit Intel or AMD PC. On Linux, install it with one command. The installer also gets
 the free compilers and keeps decompdecomp up to date:
 
 ```
@@ -44,7 +45,27 @@ sudo dnf install ./decompdecomp-*.x86_64.rpm       # Fedora
 chmod +x decompdecomp-*-x86_64.AppImage && ./decompdecomp-*-x86_64.AppImage   # any other distribution
 ```
 
-macOS isn't supported (yet).
+On **Windows**, download and open `decompdecomp-<version>-windows-x64-setup.exe` from the
+[releases](https://github.com/n-delic/decompdecomp/releases). Setup installs the Microsoft Edge WebView2 Runtime and
+.NET Framework 4.8 when they are missing, then opens the app installer. It may ask for administrator permission and
+needs an internet connection to download missing Microsoft components. The app installer lets you choose where
+decompdecomp goes and whether to add a desktop shortcut (selected by default); it always adds a shortcut to Start.
+
+To install from source with [uv](https://docs.astral.sh/uv/getting-started/installation/) instead, open a new
+PowerShell window and run:
+
+```powershell
+uv tool install --python 3.12 "decompnet @ https://github.com/n-delic/decompdecomp/archive/refs/heads/main.tar.gz"
+decomp setup
+decomp shortcut
+decomp
+```
+
+The app opens in a native Windows window. Its shortcuts appear on the desktop and in Start, and its tray icon
+brings back a window closed while helpers work. Free tools use Windows builds where available. Linux-only period
+compilers run through **WSL 2**: run `wsl --install` in an administrator PowerShell, restart if asked, and open Ubuntu
+once to finish setup before importing a game that needs one. Projects stay in your Windows `Decomp` folder.
+macOS isn't supported in this version.
 
 ## Start
 
@@ -66,11 +87,18 @@ When you close the window while agents work, decompdecomp asks you: stop them an
 
 ## Coming from an older version (1.0.x)
 
-Your projects stay. The new version opens the same `~/Decomp` folder, with every match, name and note in it.
+Your projects stay. On Linux, the new version opens the same `~/Decomp` folder, with every match, name and note in it.
+The old Windows installer kept its projects inside a WSL distribution. The Windows app now runs natively and uses
+`%USERPROFILE%\Decomp`; it uses WSL for some Linux-only compilers, but doesn't scan WSL for projects automatically.
 
-1. **Install the new version** the same way as before: the install command above, or the new `.deb`, `.rpm` or
-   AppImage. The installer removes an older `.deb` or `.rpm` of decompdecomp, so your apps menu shows one. Going
-   the other way, from the install command to a package? Remove the old copy first: `uv tool uninstall decompnet`.
+To move projects from the old Windows install, close its app, then copy the whole `Decomp` folder from
+`\\wsl.localhost\decomp-wtf\home\decomp\Decomp` to `%USERPROFILE%\Decomp`. Include the hidden `.decomp` folder
+inside it: that holds the project database and saved matches. The app reconnects projects to their copied folders.
+If you only have a project's `progress/` folder, use **Open a saved project** and provide your own copy of the game.
+
+1. **Install the new version** the same way as before: the install command above or the latest `.deb`, `.rpm`,
+   AppImage or Windows setup bundle. The installer removes an older `.deb` or `.rpm` of decompdecomp, so your apps menu shows
+   one. Going the other way, from the install command to a package? Remove the old copy first: `uv tool uninstall decompnet`.
 2. **Start it** with `decomp` or from your apps menu. It opens in its own window now, not in your browser.
 3. **Start your agents again.** Helper agents that were working in the old version don't restart by themselves the
    first time. Open each project and start them; from then on they restart by themselves.
@@ -82,6 +110,10 @@ What changed on the way:
   others), and its home page says what it removed. Before that, those entries started the old app again whenever
   you closed it.
 - **The Source tab is now the Export button** in the project's header.
+- **Windows projects and compilers.** The app server and window run natively on Windows. Linux-only period compilers
+  run through WSL 2, using temporary Linux-side build stages so old 32-bit tools work. Run `decomp shortcut` once to
+  put native shortcuts on the Windows desktop and in Start. Setup installs WebView2 and .NET Framework 4.8 when missing;
+  pywebview is installed with the app.
 
 ## Moving to another computer
 

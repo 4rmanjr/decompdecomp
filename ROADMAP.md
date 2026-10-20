@@ -132,6 +132,11 @@ Where to start on a gap:
 - **Consoles as packages**: one folder per console (`consoles/<id>/`), a template and a conformance test. PS1 and
   GBA are public decomps only now; the git history keeps their code.
 - **Linux packages**: a `.deb`, an `.rpm` and an AppImage with their own Python, built for each release.
+- **Windows native app**: a WebView2 window, Start menu and desktop shortcuts, and a native tray icon.
+  A custom native caption follows the app's theme, with Windows resizing, snapping and drag-to-restore. Scrollbars
+  follow the page's theme too. Closing asks whether to keep helpers working. Kernel jobs end helper children after
+  a session or an app crash. Tools have pinned Windows builds; Linux-only compilers use WSL 2 with Linux-side tool
+  and build caches. Windows CI checks the native and portable code beside the existing Linux checks.
 - **Struct layouts from loads and stores** (MIPS: PlayStation 2, N64). Every load and store through a function's
   pointer arguments, the pointers loaded from them and globals, made into types along the call graph: the brief
   names each pointer argument's likely fields (offset, width, how many functions agree), `guess_struct` writes the
@@ -160,6 +165,11 @@ Where to start on a gap:
   the time against 62% for the rest, because agents guessed the layouts.
 
 ## Next
+
+### Windows distribution
+
+The Windows release MSI bundles Python and the app, creates Start and desktop shortcuts, and updates
+through the app. Next: sign the installer and check for WebView2 and WSL during setup.
 
 ### Better splits reach existing ROM projects
 

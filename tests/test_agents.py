@@ -334,6 +334,46 @@ def test_stopping_a_helper_frees_its_function_at_once(tmp_path, quiet):
     assert net.store.one("SELECT stopped_by FROM helpers WHERE id=?", sid)["stopped_by"] == agents.BY_YOU
 
 
+def test_removing_a_room_helper_releases_its_function_at_the_host(tmp_path, quiet, monkeypatch):
+    """A helper's local claim is only a mirror in a room: the host must hear when it is removed, too."""
+    monkeypatch.setattr(agents, "detect", lambda quick=False: [])
+    monkeypatch.setattr(agents.Manager, "_strays", lambda self: set())
+    guest_root, host_root = tmp_path / "guest", tmp_path / "host"
+    guest_root.mkdir()
+    host_root.mkdir()
+    net, host = _game(guest_root), _game(host_root)
+    m = agents.Manager(net, tmp_path, URL)
+    (sid,) = m.start("api", "game", 1, {"model": "deepseek-chat", "provider_name": "DeepSeek"})
+    helper, _ = net.local_agent(m.sessions[sid].agent_name)
+    with net.store.tx() as db:
+        db.execute("INSERT INTO claims VALUES((SELECT id FROM functions WHERE name='f0'),?,?,?)", (helper.id, 0, 1e12))
+    host_agent, _ = host.local_agent(f"alex.{helper.name}")
+    host.claim_row(host_agent, "game", "f0")
+
+    class RoomLink:
+        def __init__(self):
+            self.releases = []
+
+        def call(self, route, agent, /, **data):
+            assert route == "/collab/release"
+            self.releases.append((route, agent.name, data["function"]))
+            host.release(host_agent, data["function"], data["notes"], "game")
+
+    room = net.links["game"] = RoomLink()
+    m.remove(sid)
+
+    assert room.releases == [("/collab/release", helper.name, "f0")]
+    claims = net.store.one("SELECT COUNT(*) AS n FROM claims")
+    helpers = net.store.one("SELECT COUNT(*) AS n FROM helpers")
+    assert claims is not None and claims["n"] == 0
+    assert helpers is not None and helpers["n"] == 0
+    host_claims = host.store.one("SELECT COUNT(*) AS n FROM claims")
+    released = host.store.one("SELECT kind FROM events WHERE agent_id=? AND detail='f0' ORDER BY id DESC LIMIT 1",
+                              host_agent.id)
+    assert host_claims is not None and host_claims["n"] == 0
+    assert released is not None and released["kind"] == "release"
+
+
 def test_a_failing_helper_starts_again_then_pauses_with_the_error(tmp_path, monkeypatch):
     """Helpers stopped after an error and stayed stopped ("agent stopped, see the message", in a tab nobody looked
     at). Now one starts again by itself, waiting longer after each failure; five fast failures in a row pause it, with

@@ -162,7 +162,7 @@ def game_measures(rep: dict, aside: set[str]) -> dict:
     return m
 
 
-def _sym(obj: dict | None, name: str) -> dict | None:
+def _sym(obj: dict | None, name: str | None) -> dict | None:
     """The symbol `name` an object defines. A function the object only refers to (objdiff lists undefined symbols
     too, with the same name and kind and no size or code) isn't it: an object that calls a function it no longer
     defines (a unit whose definition went missing, a build step that left a call to it behind) had that
@@ -186,7 +186,7 @@ def _fmt(row: dict) -> str:
     if not ins:
         return ""
     text, rel = ins.get("formatted", ""), ins.get("relocation") or {}
-    bias = PC_BIAS.get(rel.get("type_name"))
+    bias = PC_BIAS.get(rel.get("type_name") or "")
     if bias is not None and str(rel.get("addend")) == str(bias):
         text = text.removesuffix(f"-0x{-bias:x}")
     return text
@@ -237,6 +237,10 @@ def diff(target: Path | None, base: Path | None, symbol: str | None, cwd: Path, 
     if left is None and symbol is not None:
         raise ObjdiffError(f"{symbol} isn't in the target object")
     left = left or {}
+    # An extern reference has the same name but no implementation. Its target's unpaired instructions have no
+    # diff markers either: treating those as equal made agents stop on unwritten functions reading "100%".
+    if right is not None and (right.get("kind") != "SYMBOL_FUNCTION" or not right.get("instructions")):
+        right = None
     lrows = left.get("instructions", [])
     rrows = right.get("instructions", []) if right else []
     rows = []
@@ -249,8 +253,9 @@ def diff(target: Path | None, base: Path | None, symbol: str | None, cwd: Path, 
     if symbol is None:
         right = None
     if right is not None and pct is None:
-        pct = 100.0 if all(m == " " for m, _, _ in rows) else 0.0
-    built = {s.get("name") for s in (data.get("right") or {}).get("symbols", [])}
+        pct = 100.0 if lrows and len(lrows) == len(rrows) and all(m == " " for m, _, _ in rows) else 0.0
+    built = {s.get("name") for s in (data.get("right") or {}).get("symbols", [])
+             if s.get("kind") == "SYMBOL_FUNCTION" and s.get("instructions")}
     funcs = [s for s in (data.get("left") or {}).get("symbols", []) if s.get("kind") == "SYMBOL_FUNCTION"]
     scores = {s["name"]: (float(s["match_percent"]) if s.get("match_percent") is not None and s["name"] in built else None)
               for s in funcs}
@@ -259,7 +264,8 @@ def diff(target: Path | None, base: Path | None, symbol: str | None, cwd: Path, 
                        if r.get("instruction") and r["instruction"].get("formatted")] for s in funcs}
     renamed = _renamed(data.get("left"), data.get("right"), lrows, rrows) if right is not None else []
     wrong = []
-    if pct is not None and float(pct) >= 100.0 and target is not None and base is not None and base.exists():
+    if (symbol is not None and pct is not None and float(pct) >= 100.0
+            and target is not None and base is not None and base.exists()):
         from . import literals
 
         insns, at = [], 0

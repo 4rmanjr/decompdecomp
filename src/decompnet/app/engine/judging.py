@@ -167,32 +167,36 @@ class JudgeMixin:
             return
         self._record(fn, agent, score, source, self._context(fn["project_id"], fn["unit"])["version"], via="room")
 
-    def release(self, agent: Agent, function: str, notes: str, project: str | None = None) -> str:
+    def release(self, agent: Agent, function: str, notes: str, project: str | None = None, not_c: bool = False) -> str:
         if (fork := self.fork_slug(project)):
-            return self.forks.release(agent, fork, function, notes)
+            return self.forks.release(agent, fork, function, notes, not_c)
         link = self._link(project)
         if link is not None:
-            link.call("/collab/release", agent, function=self._function(function, project)["name"], notes=notes)
-        said = super().release(agent, function, notes, project)
+            link.call("/collab/release", agent, function=self._function(function, project)["name"], notes=notes,
+                      not_c=not_c)
+        said = super().release(agent, function, notes, project, not_c)
         fn = self._function(function, project)
         self.rangechecks.gave_up(self.store.one("SELECT * FROM projects WHERE id=?", fn["project_id"]), fn)
         return said
 
     def release_function(self, agent: Agent, function: str, notes: str, project: str | None = None,
-                         needs: str = "") -> str:
+                         needs: str = "", not_c: bool = False) -> str:
         """release_function as agents call it (the app's own releases and a room host's go straight to release).
         On a demo fork and a large x86 game, agents released functions seconds after claiming them, untried,
         for reasons a compile would have shown were none (12,565 releases, median 5 s after the claim): so a release
         before compile_and_diff's move-on rule says so is answered once with what to do instead, and goes through
         when asked again. `needs`: another function this one needs done first (a callee whose convention or body it
         depends on, an inlined helper): recorded (it waits, that one goes first) and claimed for the agent when free.
-        A release without a compile doesn't count against the session's claims, and says so."""
+        A release without a compile doesn't count against the session's claims, and says so. `not_c`: the agent's
+        verdict that no C makes it (Network.release), which isn't pushed back: it's a finding, not giving up, and
+        it counts only once agents of two models agree."""
         fn = self._function(function, project)
         need = self._prerequisite(agent, fn, needs, project) if needs.strip() else None
         progress = self.claim_progress(agent, fn)
-        if need is None and progress is not None and (push := self._push_back(agent, fn, progress, project)):
+        if not not_c and need is None and progress is not None and \
+                (push := self._push_back(agent, fn, progress, project)):
             return push
-        said = self.release(agent, function, notes, project)
+        said = self.release(agent, function, notes, project, not_c)
         if need is not None:
             self.wait_for(agent, fn, need)
             said += (f"\n{fn['name']} now waits for {need['name']}: it's claimed after everything else until "

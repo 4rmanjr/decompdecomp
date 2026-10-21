@@ -45,6 +45,9 @@ STALL_LOOKBACK = 16  # compiles stall_note reads back: more than the biggest bud
 # The functions progress counts (an SQL condition on `functions`): not ones the project sets aside as library code,
 # middleware or the C runtime (config/<version>/set_aside.json, objdiff.game_measures), which aren't the game's own
 GAME_CODE = "json_extract(meta, '$.set_aside') IS NULL"
+# The functions still in the game's build: not one a measure found gone (a piece joined to its function, kept for its
+# attempts and notes; ForkEngine.sync marks it), which the map and every count leave out
+IN_BUILD = "json_extract(meta, '$.gone') IS NULL"
 BRIEF_NOTES = 8  # the newest notes on a function its brief shows
 REPEATS_KEPT = 4096  # compile results kept in memory for repeat_of
 # events after which earlier compile results don't stand for a repeat (bump_generation): a header, a name, the
@@ -60,6 +63,28 @@ NOTES_FOUND = 20  # search_notes' answer at most
 # Opus helper claimed at once. After that the function still comes to it last.
 SELF_RELEASE_WINDOW = RELEASE_COOLDOWN
 MACHINE_AGENTS = ("autopilot", "permuter")  # decompdecomp's own workers: their claims never mean "given up on"
+# "No C makes this" (release_function's not_c): on a DS game five to seven agents in turn took each piece of another
+# function, found it couldn't be C and gave it back, saying so in a note that changed nothing. Once this many agents,
+# of this many models (one model's blind spot isn't proof), say so, it's set aside: no one is handed it again, and
+# the user can give it back (reopen).
+NOT_C_AGENTS, NOT_C_MODELS = 3, 2
+# The same verdict in agents' notes, from before release_function took one (Network.not_c_from_notes): words that say
+# no C at all makes the code. Not a note about compiler flags: "flag-blocked" code may match with other flags.
+# On every project of a user (October 2026) no function later matched had three agents' notes saying so.
+NOT_C_NOTE = re.compile(
+    r"\bany\s+(standalone\s+|plain\s+|valid\s+)?C\b[^.;:]{0,40}?\b(can|could|will|would)\s*(not|n't)\s*"
+    r"(produce|emit|express|generate|make|reproduce|compile to|match)"
+    r"|\bno\s+(standalone\s+|plain\s+|valid\s+)?C\b[^.;:]{0,40}?\b((can|could|will|would)\s+)?"
+    r"(produces?|emits?|express(es)?|generates?|makes?|reproduces?|compiles? to|match(es)?)\b"
+    r"|not\s+(expressible|producible|writable|writeable|reproducible|representable|reachable)\s+(in|as|from|with)\s+"
+    r"(plain\s+|standalone\s+)?C\b|not\s+C-(expressible|producible|writable|reproducible)"
+    r"|cannot\s+be\s+(written|expressed|produced|reproduced|represented)\s+(in|as|from)\s+(plain\s+|standalone\s+)?C\b"
+    r"|hand-?written\s+(\w+\s+){0,2}(asm|assembly)|(not|isn't)\s+a\s+(real|standalone|callable)\s+function"
+    r"|unmatchable\s+(standalone|in\s+C|from\s+C|as\s+C)", re.I)
+# (a CPU's condition flags are no compiler's: "reuses the flags of the cmp" is why some code is hand-written)
+FLAG_NOTE = re.compile(r"flag-blocked|\b(compiler|compiler's|project|project's|build|game's|its own|other|different|"
+                       r"right|wrong|these|those|default)\s+flags\b|flags?\s+(search|blocked)|-O[0-3s]\b|-framepointer|"
+                       r"-mips\d|try_compiler|search_flags|compiler range", re.I)
 # Routing between models (claim_row): on an N64 game free models matched 14-25% of the functions they claimed and
 # spent 17-31 compiles a match, stronger ones 42-77% and 3-6, and every model was handed the functions the others
 # gave up on. A model well behind the strongest one at work leaves functions given up on ESCALATE_AFTER times to it;
@@ -239,6 +264,21 @@ class Agent:
     owner: str | None
     trusted: bool = False
 
+
+def model_of(name: str) -> str:
+    """An agent's model: its name less its number (claude-sonnet-5-5-1: claude-sonnet-5-5)."""
+    return re.sub(r"-+\d+$", "", name)  # (some names have two dashes: opencode-minimax-m3.1-flash-free--1)
+
+
+def set_aside(fn) -> dict:
+    """Why a set-aside function is (status asm), for its page: {"set_aside": the reason, "not_c": whether agents
+    agreed no C makes it}, or nothing."""
+    if fn["status"] != "asm":
+        return {}
+    meta = json.loads(fn["meta"] or "{}")
+    why = meta.get("asm_code") or (f"the same code as {meta['asm_twin']}, a matched assembly function"
+                                   if meta.get("asm_twin") else "hand-written assembly")
+    return {"set_aside": why, "not_c": "not_c" in meta}
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -592,7 +632,8 @@ class Network:
                 if fn["status"] == "matched":
                     raise NetworkError(f"{fn['name']} is already matched; use get_function to read its source")
                 if fn["status"] == "asm":
-                    raise NetworkError(f"{fn['name']} is hand-written assembly: no C compiles to it, so it's left out")
+                    raise NetworkError(f"{fn['name']} is set aside, as no C makes it ({set_aside(fn)['set_aside']}): "
+                                       "claim another")
                 other = db.execute("SELECT agent_id, expires_at FROM claims WHERE function_id=?", (fn["id"],)).fetchone()
                 if other is not None:
                     raise NetworkError(f"{fn['name']} is claimed by {self._agent_name(other['agent_id'])} "
@@ -645,25 +686,22 @@ class Network:
         """"weak" for a model at work in the project well behind the strongest one at work, "strong" for that one
         while a weak one works too (see ESCALATE_AFTER), None otherwise: no routing until both are told apart by
         ROUTE_MIN_CLAIMS claims each."""
-        def model(name: str) -> str:
-            return re.sub(r"-\d+$", "", name)  # an agent's model: its name less its number (claude-sonnet-5-5-1)
-
         names = {r["id"]: r["name"] for r in db.execute("SELECT id, name FROM agents")}
-        claims, won, busy = collections.Counter(), collections.Counter(), {model(agent.name)}
+        claims, won, busy = collections.Counter(), collections.Counter(), {model_of(agent.name)}
         for r in db.execute("SELECT agent_id, COUNT(*) AS n, MAX(created_at) AS last FROM events WHERE project_id=? "
                             "AND kind='claim' GROUP BY agent_id", (project_id,)):
             if names.get(r["agent_id"], MACHINE_AGENTS[0]) not in MACHINE_AGENTS:
-                claims[model(names[r["agent_id"]])] += r["n"]
+                claims[model_of(names[r["agent_id"]])] += r["n"]
                 if r["last"] > now - ROUTE_ACTIVE_SECONDS:
-                    busy.add(model(names[r["agent_id"]]))
+                    busy.add(model_of(names[r["agent_id"]]))
         for r in db.execute("SELECT matched_agent_id AS id, COUNT(*) AS n FROM functions WHERE project_id=? "
                             "AND status='matched' GROUP BY matched_agent_id", (project_id,)):
             if names.get(r["id"], MACHINE_AGENTS[0]) not in MACHINE_AGENTS:
-                won[model(names[r["id"]])] += r["n"]
+                won[model_of(names[r["id"]])] += r["n"]
         overall = sum(won.values()) / sum(claims.values()) if sum(claims.values()) else 0.5
         share = {m: (won[m] + ROUTE_PRIOR * overall) / (claims[m] + ROUTE_PRIOR) for m in busy
                  if claims[m] >= ROUTE_MIN_CLAIMS}
-        mine = model(agent.name)
+        mine = model_of(agent.name)
         if mine not in share or len(share) < 2:
             return None
         best = max(share.values())
@@ -672,10 +710,13 @@ class Network:
         weak = any(s < WEAK_SHARE * best for s in share.values())
         return "strong" if share[mine] == best and weak else None
 
-    def release(self, agent: Agent, function: str, notes: str, project: str | None = None) -> str:
+    def release(self, agent: Agent, function: str, notes: str, project: str | None = None, not_c: bool = False) -> str:
         """An agent gives a function back: its claim ends, its notes stay for the next agent, and the function
-        counts one more give-up (the claim order puts those later)."""
+        counts one more give-up (the claim order puts those later). `not_c`: the agent found no C makes its code
+        (NOT_C_AGENTS)."""
         fn = self._function(function, project)
+        if not_c and not notes.strip():
+            raise NetworkError("say in notes why no C makes it: the next agents and the user read it")
         with self.store.tx() as db:
             row = db.execute("SELECT agent_id FROM claims WHERE function_id=?", (fn["id"],)).fetchone()
             if row is None or row["agent_id"] != agent.id:
@@ -686,8 +727,90 @@ class Network:
                 db.execute("INSERT INTO notes(project_id,function_id,agent_id,text,created_at) VALUES(?,?,?,?,?)",
                            (fn["project_id"], fn["id"], agent.id, notes.strip(), time.time()))
             self._event(db, fn["project_id"], agent.id, "release", fn["name"])
+            said = self._not_c(db, fn, agent, notes.strip()) if not_c else ""
         return (f"Released {fn['name']}. Your best attempt and notes are saved so the next agent starts "
-                f"where you left off. Call claim_function for a new one.")
+                f"where you left off.{said} Call claim_function for a new one.")
+
+    def _not_c(self, db, fn, agent: Agent, why: str) -> str:
+        """An agent's verdict that no C makes fn's code; with NOT_C_AGENTS agents of NOT_C_MODELS models agreeing, fn
+        is set aside (status asm). Returns what to tell the agent."""
+        meta = json.loads(db.execute("SELECT meta FROM functions WHERE id=?", (fn["id"],)).fetchone()["meta"] or "{}")
+        said = meta.setdefault("not_c", {})
+        said[agent.name] = {"model": model_of(agent.name), "why": why[:NOTE_CHARS], "t": time.time()}
+        models = sorted({v["model"] for v in said.values()})
+        if len(said) < NOT_C_AGENTS or len(models) < NOT_C_MODELS:
+            db.execute("UPDATE functions SET meta=? WHERE id=?", (json.dumps(meta), fn["id"]))
+            return (f" Your verdict that no C makes it is counted ({len(said)} of {NOT_C_AGENTS} agents, "
+                    f"{len(models)} of {NOT_C_MODELS} models): it's set aside once enough agree.")
+        meta["asm_code"] = f"{len(said)} agents ({', '.join(models)}) found no C makes it: {why}"
+        db.execute("UPDATE functions SET status='asm', meta=? WHERE id=? AND status='open'", (json.dumps(meta), fn["id"]))
+        self._event(db, fn["project_id"], agent.id, "not_c",
+                    f"{fn['name']}: set aside, {len(said)} agents of {len(models)} models found no C makes it")
+        return f" With yours, {len(said)} agents of {len(models)} models agree no C makes it: it's set aside now."
+
+    def not_c_from_notes(self, slug: str) -> int:
+        """Open functions agents' notes agree no C makes (NOT_C_NOTE: NOT_C_AGENTS agents of NOT_C_MODELS models) set
+        aside as the verdict would: a project whose agents said so before release_function took a verdict (a DS game:
+        26 functions, each confirmed by six agents in turn) gets them out of the way when it's checked again. Never a
+        function the user gave back. Returns how many."""
+        pid = self._project(slug)["id"]
+        said: dict[int, dict] = collections.defaultdict(dict)
+        # notes from before pieces were joined to a function were about a piece, not about it (decompdecomp's note
+        # on a join says so): they don't count
+        joined = {r["function_id"]: r["t"] for r in self.store.all(
+            "SELECT n.function_id, MAX(n.created_at) AS t FROM notes n JOIN agents a ON a.id=n.agent_id WHERE "
+            "n.project_id=? AND a.name='decompdecomp' AND n.text LIKE '%joined%' GROUP BY n.function_id", pid)}
+        for r in self.store.all("SELECT n.function_id, n.text, n.created_at, a.name FROM notes n JOIN agents a "
+                                "ON a.id=n.agent_id JOIN functions f ON f.id=n.function_id WHERE f.project_id=? AND "
+                                "f.status='open' AND (f.meta IS NULL OR f.meta NOT LIKE '%\"reopened\"%') ORDER BY n.id",
+                                pid):
+            if r["name"] in ("you", "decompdecomp", *MACHINE_AGENTS) or r["created_at"] <= joined.get(r["function_id"], float("-inf")) \
+                    or not NOT_C_NOTE.search(r["text"]) or FLAG_NOTE.search(r["text"]):
+                continue
+            said[r["function_id"]][r["name"]] = {"model": model_of(r["name"]), "why": r["text"][:NOTE_CHARS],
+                                                 "t": r["created_at"], "from": "note"}
+        n = 0
+        with self.store.tx() as db:
+            for fid, verdicts in said.items():
+                models = sorted({v["model"] for v in verdicts.values()})
+                if len(verdicts) < NOT_C_AGENTS or len(models) < NOT_C_MODELS:
+                    continue
+                meta = json.loads(db.execute("SELECT meta FROM functions WHERE id=?", (fid,)).fetchone()["meta"] or "{}")
+                why = max(verdicts.values(), key=lambda v: v["t"])["why"].split("\n")[0][:300]
+                meta["not_c"] = {**meta.get("not_c", {}), **verdicts}
+                meta["asm_code"] = f"{len(verdicts)} agents ({', '.join(models)}) said in their notes that no C makes it: {why}"
+                db.execute("UPDATE functions SET status='asm', meta=? WHERE id=? AND status='open'", (json.dumps(meta), fid))
+                name = db.execute("SELECT name FROM functions WHERE id=?", (fid,)).fetchone()["name"]
+                self._event(db, pid, None, "not_c", f"{name}: set aside, {len(verdicts)} agents of {len(models)} models "
+                                                    "said in their notes that no C makes it")
+                n += 1
+        return n
+
+    def set_aside_by_you(self, function: str, project: str | None = None, why: str = "") -> None:
+        """The user sets a function aside: no C makes it (hand-written assembly, a piece of another function). Their
+        word needs no agents agreeing (theirs is the project); "Give it back to the agents" undoes it. Never
+        "matched": only the judge says that."""
+        fn = self._function(function, project)
+        if fn["status"] != "open":
+            raise NetworkError(f"{fn['name']} isn't open (it's {fn['status']}): only an open function can be set aside")
+        why = why.strip() or "no C makes it"
+        meta = {k: v for k, v in json.loads(fn["meta"] or "{}").items() if k != "reopened"}
+        meta["not_c"] = {**meta.get("not_c", {}), "you": {"model": "you", "why": why[:NOTE_CHARS], "t": time.time()}}
+        meta["asm_code"] = f"you set it aside: {why}"
+        with self.store.tx() as db:
+            db.execute("DELETE FROM claims WHERE function_id=?", (fn["id"],))
+            db.execute("UPDATE functions SET status='asm', meta=? WHERE id=? AND status='open'", (json.dumps(meta), fn["id"]))
+            self._event(db, fn["project_id"], None, "not_c", f"{fn['name']}: set aside by you ({why[:120]})")
+
+    def reopen(self, function: str, project: str | None = None) -> None:
+        """The user gives a set-aside function back to the agents (they think C makes it after all): the agents'
+        verdicts on it are forgotten, and no check sets it aside again."""
+        fn = self._function(function, project)
+        meta = {k: v for k, v in json.loads(fn["meta"] or "{}").items() if k not in ("not_c", "asm_code", "asm_twin")}
+        with self.store.tx() as db:
+            db.execute("UPDATE functions SET status='open', meta=? WHERE id=? AND status='asm'",
+                       (json.dumps({**meta, "reopened": True}), fn["id"]))
+            self._event(db, fn["project_id"], None, "reopen", f"{fn['name']}: open again (you gave it back to the agents)")
 
     def release_stopped(self, agent_ids, why: str) -> list[str]:
         """The claims of agents whose process is gone, released at once with a note (`why`), instead of holding their

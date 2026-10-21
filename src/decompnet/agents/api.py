@@ -375,6 +375,7 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
         "release_function": ("Give up a function with notes for the next agent, once compile_and_diff says to move "
                              "on (before that it answers once with what to try; call again to release anyway).",
                              s(function=st("function", True), notes=st("what you tried, what is left", True),
+                               not_c=bo("true when you're sure no C makes its code (hand-written assembly); say why in notes"),
                                needs=st("optional: another function this one needs done first (a callee or inlined "
                                         "helper): it then goes first and is handed to you"))),
         "get_context": ("The shared header included in every compile.", s()),
@@ -432,8 +433,14 @@ def api_tool_schemas(fork: bool = False) -> list[dict]:
                                                        new=st("replacement", True), message=st("why", True))),
         "file_status": ("How far a source file (or a function's file) is from being linked: functions left, its data "
                         "next to the original's, why the last link failed.", s(path=st("file or function", True))),
+        "join_functions": ("Forks: two functions are one the game's analysis cut (a piece with no prologue using registers "
+                           "the code before set, an epilogue alone, a switch's cases in the next symbol); joined once "
+                           "agents of two models agree and the game still builds byte for byte.",
+                           s(function=st("function", True), with_function=st("the other part", True),
+                             reason=st("what in the code shows it", True))),
         "split_file": ("Divide a source file at a function: it and the rest of the file's code (and data from the given "
-                       "offsets) go to a new file. Kept only if the game still builds identically.",
+                       "offsets) go to a new file, with the file's compiler (DS: then try_compiler can give the new "
+                       "file its own). Kept only if the game still builds identically.",
                        s(path=st("file", True), at=st("function name or .text offset", True),
                          new_name=st("new file path (optional)"), data=st("e.g. .rodata:0x88 .data:0x28 (optional)"))),
     }

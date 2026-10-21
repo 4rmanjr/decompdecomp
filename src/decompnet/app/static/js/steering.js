@@ -98,7 +98,10 @@ function renderSteering(ov) {
   $("spendLine").textContent = sp && sp.usd ? `· ${money(sp.usd)} spent${n ? ` · ${money(sp.usd / n)}/match` : ""}`
     : sp && sp.tokens ? `· ${(sp.tokens / 1000).toFixed(0)}k tokens` : "";
   $("instrState").textContent = ov.instructions ? "agents get these" : "none yet";
-  $("savePanel").hidden = ov.kind === "fork";  // a project-mode game's work is the files of its own git project
+  // a project-mode game's matched C is its own git project's files: Save now writes its best attempts (#43)
+  $("saveTitle").textContent = ov.kind === "fork" ? "Save the closest attempts" : "Save your progress";
+  $("saveAbout").hidden = ov.kind === "fork";
+  $("saveAboutFork").hidden = ov.kind !== "fork";
   renderKnowledge();
   // what agents can't change themselves: where a function ends, and suggestions; a compiler's are in Settings → Compiler
   const sg = (ov.suggestions || []).filter((s) => !s.toolchain), bd = ov.boundaries || [];
@@ -218,7 +221,7 @@ async function togglePrio(name, on) {
    function's machine draft through the judge; the permuter works on near misses meanwhile. */
 function renderAutopilot(ov) {
   const box = $("autopilot"), ap = ov.autopilot, tw = ov.twins, pm = ov.permuter;
-  const canRun = (ov.kind !== "fork" || ov.ready) && ov.functions - ov.matched > 0;
+  const canRun = (ov.kind !== "fork" || ov.ready) && cFunctions(ov) - ov.matched > 0;
   box.hidden = !ap && !canRun && !tw && !pm;
   if (box.hidden) return;
   const running = ap && ap.state === "running";
@@ -464,13 +467,26 @@ $("folderBtn").onclick = () => openFolder();
 
 /* Save your progress (app/saves.py): the app saves by itself every few minutes into the project's progress folder;
    this saves now, or to a folder of the user's choice (a USB stick, a git checkout). */
+$("recheckBtn").onclick = async () => {
+  const b = $("recheckBtn");
+  b.disabled = true;
+  b.textContent = "Checking…";
+  try {
+    const { job } = await api("/api/recheck", { method: "POST", body: { slug: S.slug } });
+    const r = await followJob(job, null);
+    toast(`Checked again: ${esc(r.said)}.`, "match");
+    await refreshMap(true);
+  } catch (e) { toast(esc(e.message), "err"); } finally { b.disabled = false; b.textContent = "Check again"; }
+};
+
 $("saveGo").onclick = async () => {
   $("saveGo").disabled = true;
   try {
     const r = await api("/api/save", { method: "POST", body: { slug: S.slug, folder: $("saveFolder").value.trim() || undefined } });
     $("saveState").textContent = `saved ${clock(Date.now() / 1000).slice(0, 5)}`;
     $("saveLog").hidden = false;
-    $("saveLog").textContent = `Saved to ${r.folder}: ${plural(r.matched || 0, "matched function")}, ${plural(r.best || 0, "best attempt")}.`;
+    $("saveLog").textContent = S.ov.kind === "fork" ? `Saved ${plural(r.best || 0, "closest attempt")} to ${r.folder}/best.`
+      : `Saved to ${r.folder}: ${plural(r.matched || 0, "matched function")}, ${plural(r.best || 0, "best attempt")}.`;
   } catch (e) { toast(esc(e.message), "err"); } finally { $("saveGo").disabled = false; }
 };
 

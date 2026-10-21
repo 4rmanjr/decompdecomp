@@ -74,7 +74,8 @@ one claim; one function back is normal.)
 5. compile_and_diff says when to move on ({budget}): then
    release_function with precise notes (what you tried, what is left) and claim the next one. Before
    that, compile the next step instead of releasing. Needs another function done first (a callee, an inlined
-   helper)? release_function(needs=that one) hands it to you.
+   helper)? release_function(needs=that one) hands it to you. Sure that
+   no C makes its code at all (hand-written assembly): not_c=true, saying why.
 
 Write plausible original code, pure C (no inline asm). Never fetch or copy code from outside this project
 (another repository, a finished decomp of this game, the internet): a match must come from your own C. Be brief
@@ -142,7 +143,10 @@ neighbours may come along in one claim; one function back is normal.)
    values) with edit_file until file_status says it matches; decompdecomp then links the file.
 6. compile_and_diff says when to move on ({budget}): then
    release_function with precise notes (what you tried, what is left) and claim the next. Before that,
-   compile the next step instead of releasing. Very large functions: get the structure right first; a near miss
+   compile the next step instead of releasing; sure that no C makes its code at all (hand-written
+   assembly): not_c=true, saying why. Part of another function the analysis cut (no prologue, registers
+   the code before set, a switch's cases in the next symbol)? join_functions(it, the other part, why), so it
+   becomes one whole function. Very large functions: get the structure right first; a near miss
    is worth the extra compiles. Another function of the game it needs done first (a callee, an inlined
    helper): release_function(needs=that one) hands it to you.
 
@@ -244,7 +248,7 @@ def _project_info(net: RomNetwork, slug: str) -> str:
 
 # name -> handler(net, agent, slug, **args); every handler returns text for the model
 def _claim(net: RomNetwork, agent: Agent, slug: str, function: str, strategy: str, count: int = 1) -> str:
-    """A claim; one asked for that's matched, hand-written assembly or someone else's is the next free function
+    """A claim; one asked for that's matched, set aside (no C makes it) or someone else's is the next free function
     instead (an agent asking for those has nothing better to do than the next one, and is told why). count > 1: a
     batch of small ones."""
     strategy = strategy or ("finish" if net.fork_slug(slug) else "easiest")
@@ -253,7 +257,7 @@ def _claim(net: RomNetwork, agent: Agent, slug: str, function: str, strategy: st
     try:
         return net.claim(agent, slug, function or None, strategy)
     except NetworkError as e:
-        if not function or not re.search(r"already matched|is hand-written assembly|is claimed by", str(e)):
+        if not function or not re.search(r"already matched|is set aside|is claimed by", str(e)):
             raise
         return f"({e}. Here's the next free function instead.)\n\n" + net.claim(agent, slug, None, strategy)
 
@@ -273,8 +277,8 @@ HANDLERS: dict[str, Callable[..., str]] = {
     "get_function": lambda net, agent, slug, function: net.get_function(function, slug, agent),
     "compile_and_diff": lambda net, agent, slug, function, source: _compile(net, agent, slug, function, source),
     "last_diff": lambda net, agent, slug, function, context=2: net.last_diff(agent, function, slug, context),
-    "release_function": lambda net, agent, slug, function, notes, needs="":
-        net.release_function(agent, function, notes, slug, needs or ""),
+    "release_function": lambda net, agent, slug, function, notes, needs="", not_c=False:
+        net.release_function(agent, function, notes, slug, needs or "", bool(not_c)),
     "get_context": lambda net, agent, slug, function="": net.get_context(slug, function or None),
     "edit_context": lambda net, agent, slug, old, new, message, function="":
         net.edit_context(agent, slug, old, new, message, function or None),
@@ -314,12 +318,14 @@ HANDLERS: dict[str, Callable[..., str]] = {
     "file_status": lambda net, agent, slug, path: net.forks.file_status(_fork(net, slug, "file_status"), path),
     "split_file": lambda net, agent, slug, path, at, new_name="", data="":
         net.forks.split_file(agent, _fork(net, slug, "split_file"), path, at, new_name, data),
+    "join_functions": lambda net, agent, slug, function, with_function, reason:
+        net.forks.propose_join(agent, _fork(net, slug, "join_functions"), function, with_function, reason),
 }
 
 ROM_ONLY = {"get_context", "edit_context", "rename_symbol", "split_function", "report_boundary", "get_class",
             "guess_struct", "redraft",
             "compiler_map", "claim_readable", "make_readable", "search_flags"}
-FORK_ONLY = {"read_file", "search_code", "edit_file", "file_status", "split_file"}
+FORK_ONLY = {"read_file", "search_code", "edit_file", "file_status", "split_file", "join_functions"}
 
 
 def tool_names(fork: bool) -> list[str]:
@@ -413,7 +419,7 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
         return await run(ctx, "last_diff", function=function, context=context)
 
     @mcp.tool(meta=ALWAYS_LOAD)
-    async def release_function(ctx: Context, function: str, notes: str, needs: str = "") -> str:
+    async def release_function(ctx: Context, function: str, notes: str, needs: str = "", not_c: bool = False) -> str:
         """Give up a function you're stuck on, once compile_and_diff says to move on. Notes are required: what you
         tried, what is left. Your best attempt is kept for the next agent. Released before that (fewer compiles than
         the move-on rule), it answers once with what to try instead; call it again to release anyway.
@@ -424,8 +430,10 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
             needs: optional: another function of the game this one needs done first (a callee whose convention or
                 body it depends on, a helper the original inlines). This one then waits, that one goes first in the
                 queue, and you get it when it's free.
+            not_c: true when you're sure no C makes its code at all (hand-written assembly), saying why in notes:
+                once agents of two models agree, it's set aside and no one is handed it again.
         """
-        return await run(ctx, "release_function", function=function, notes=notes, needs=needs)
+        return await run(ctx, "release_function", function=function, notes=notes, needs=needs, not_c=not_c)
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def get_context(ctx: Context, function: str = "") -> str:
@@ -610,13 +618,23 @@ def build_mcp(net: RomNetwork, agent_of: Callable[[Context], tuple[Agent, str]])
 
     @mcp.tool(meta=ALWAYS_LOAD)
     async def split_file(ctx: Context, path: str, at: str, new_name: str = "", data: str = "") -> str:
-        """Forks only (GameCube/Wii): divide a source file in two where the game's original files divided: the
+        """Forks (GameCube, Wii, DS): divide a source file in two where the game's original files divided (DS: or
+        to give a function built by another compiler version a file, and compiler, of its own: split at it and at the
+        one after it, then try_compiler): the
         function `at` (name or .text offset) and every one after it in the file go to a new file `new_name`
         (default: text_<offset> next to it), with their C. `data` moves the end of each data section too
         (".rodata:0x88 .data:0x28": where the new file's part starts; file_status shows the ranges). Kept only if
         the game still builds byte for byte and every match still matches. A file links only when its code and
         data are exactly one original file's."""
         return await run(ctx, "split_file", path=path, at=at, new_name=new_name, data=data)
+
+    @mcp.tool(meta=ALWAYS_LOAD)
+    async def join_functions(ctx: Context, function: str, with_function: str, reason: str) -> str:
+        """Forks: `function` and `with_function` are one function the game's analysis cut in two (or more: the
+        symbols between them too). A piece with no prologue that uses registers the code before it set, an epilogue
+        alone, a switch whose cases are in the next symbol. Say what in the code shows it. Once agents of two models
+        say so of the same two, they're joined, if the game still builds byte for byte; never a matched function."""
+        return await run(ctx, "join_functions", function=function, with_function=with_function, reason=reason)
 
     @mcp.prompt(title="Decompile", description="Work loop: claim functions and match them byte for byte.")
     def work(count: str = "5") -> str:

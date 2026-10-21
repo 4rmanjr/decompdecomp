@@ -376,6 +376,52 @@ def test_two_functions_of_the_same_name_in_one_unit_both_get_a_row(tmp_path, mon
     assert rows["_lang@main/lang"]["vram"] == 1 and rows["_lang@main/lang#2"]["vram"] == 2
 
 
+def test_measuring_again_keeps_what_set_a_function_aside_and_what_gave_it_back(tmp_path, monkeypatch):
+    """Sync rebuilt each function's meta from the report: a function agents agreed no C makes lost its "not C" (red in
+    the map) at the next match anywhere, and one the user gave back lost that, so the next check set it aside again.
+    One agent's verdict alone sets nothing aside."""
+    from types import SimpleNamespace
+
+    from decompnet.forks.project import ForkProject
+
+    net = RomNetwork(tmp_path / "decomp.db", tmp_path / "ws")
+    root = tmp_path / "ws" / "p"
+    root.mkdir(parents=True)
+    (root / "objdiff.json").write_text(json.dumps({"units": []}))
+    net.forks._register("p", "P", "fork", root, {"kind": "fork", "version": "X", "fork_kind": "objdiff", "ready": False}, "x")
+    report = {"measures": {}, "units": [{"name": "main/a", "functions": [
+        {"name": n, "size": "12", "metadata": {"virtual_address": str(k)}} for k, n in enumerate(("stub", "back", "one"))]}]}
+    monkeypatch.setattr(ForkProject, "report", lambda self: report)
+    monkeypatch.setattr(ForkProject, "units", lambda self: [SimpleNamespace(name="main/a", source="src/a.c", target=None)])
+    net.forks.sync("p", log=lambda *_: None)
+    metas = {"stub": {"asm_code": "3 agents found no C makes it", "not_c": {"a-1": {}, "b-1": {}, "c-1": {}}},
+             "back": {"reopened": True}, "one": {"not_c": {"a-1": {}}}}
+    with net.store.tx() as db:
+        for name, extra in metas.items():
+            meta = json.loads(db.execute("SELECT meta FROM functions WHERE name=?", (name,)).fetchone()[0])
+            db.execute("UPDATE functions SET status=?, meta=? WHERE name=?",
+                       ("asm" if "asm_code" in extra else "open", json.dumps({**meta, **extra}), name))
+    net.forks.sync("p", log=lambda *_: None)
+    rows = {r["name"]: (r["status"], json.loads(r["meta"])) for r in net.store.all("SELECT name, status, meta FROM functions")}
+    assert rows["stub"][0] == "asm" and rows["stub"][1]["not_c"] and net.function_map("p")[0]["not_c"]
+    assert rows["back"][0] == "open" and rows["back"][1]["reopened"]
+    assert rows["one"][0] == "open" and rows["one"][1]["not_c"] == {"a-1": {}}
+    # pieces joined to it: its code grew, so what set it aside (about the piece) goes, and agents get it again
+    report["units"][0]["functions"][0]["size"] = "40"
+    net.forks.sync("p", log=lambda *_: None)
+    stub = net.store.one("SELECT status, meta FROM functions WHERE name='stub'")
+    assert stub["status"] == "open" and "asm_code" not in json.loads(stub["meta"]) and "not_c" not in json.loads(stub["meta"])
+    # a function gone from the build (joined to another), with attempts: kept for them, marked gone (IN_BUILD)
+    with net.store.tx() as db:
+        db.execute("INSERT INTO attempts(function_id, agent_id, score, created_at) SELECT id, NULL, 5, 0 FROM functions "
+                   "WHERE name='one'")
+    report["units"][0]["functions"] = report["units"][0]["functions"][:2]
+    net.forks.sync("p", log=lambda *_: None)
+    one = net.store.one("SELECT status, meta FROM functions WHERE name='one'")
+    assert one["status"] == "nosource" and json.loads(one["meta"])["gone"] == 1
+    assert [r["name"] for r in net.function_map("p")] == ["stub", "back"]
+
+
 @needs_tools
 def test_a_public_decomp_together(tmp_path):
     """A room on a fork of a public decomp: the member gets the public project from its own host (here a local

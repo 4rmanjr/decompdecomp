@@ -111,6 +111,21 @@ def register(app: App) -> None:
             pass  # not yours (any more): nothing to give back
         return {"ok": True}
 
+    def p_recheck(slug, request, data):
+        """Check again: the project looked at with what this version knows (Core.recheck), in the background."""
+        return {"job": jobs.start("recheck", lambda log: {
+            "said": net.recheck(slug, log=log) or "nothing to do on this computer, as the room's host checks the game"})}
+
+    def p_set_aside(slug, request, data):
+        """You set a function aside: no C makes it (Network.set_aside_by_you)."""
+        net.set_aside_by_you(str(data.get("name", "")), slug, str(data.get("why", "")))
+        return {"ok": True}
+
+    def p_reopen(slug, request, data):
+        """You give a set-aside function back to the agents."""
+        net.reopen(str(data.get("name", "")), slug)
+        return {"ok": True}
+
     def p_instructions(slug, request, data):
         net.set_instructions(slug, str(data.get("text", "")))
         return net.overview(slug)
@@ -195,7 +210,8 @@ def register(app: App) -> None:
                                                         r.query_params.get("which", "latest")), ["GET"]),
         "/api/compiler": (p_compiler, ["POST"]), "/api/export": (p_export, ["POST"]), "/api/open": (p_open, ["POST"]),
         "/api/delete": (p_delete, ["POST"]),
-        "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]),
+        "/api/try": (p_try, ["POST"]), "/api/release": (p_release, ["POST"]), "/api/reopen": (p_reopen, ["POST"]), "/api/setaside": (p_set_aside, ["POST"]),
+        "/api/recheck": (p_recheck, ["POST"]),
         "/api/autopilot": (p_autopilot, ["POST"]), "/api/instructions": (p_instructions, ["POST"]), "/api/title": (p_title, ["POST"]),
         "/api/priority": (p_priority, ["POST"]), "/api/note": (p_note, ["POST"]), "/api/scope": (p_scope, ["POST"]),
         "/api/unanalysed": (p_unanalysed, ["POST"]),

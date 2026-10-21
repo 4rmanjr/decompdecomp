@@ -27,9 +27,9 @@ from pathlib import Path
 from .. import arch, consoles, similarity, toolchains
 from ..forks import csource, datadiff, drafts, dtksplits, ghidra, objdiff
 from ..forks.objdiff import ObjdiffError
-from ..forks.project import EDITABLE, STATE, ForkError, ForkProject
+from ..forks.project import EDITABLE, GAME, PROGRAM, SCOPES, STATE, ForkError, ForkProject
 from ..hostenv import NO_WINDOW
-from ..network import Agent, Network, NetworkError, move_on_brief
+from ..network import GAME_CODE, Agent, Network, NetworkError, move_on_brief
 from ..scoring import percent_text
 from ..textedit import replace_once
 
@@ -167,6 +167,23 @@ def _floor_pct(pct: float, matched: bool) -> float:
 def _digest(code: str) -> str:
     """A function's text, whitespace aside."""
     return hashlib.sha1(re.sub(r"\s+", " ", code).strip().encode()).hexdigest()
+
+
+def _set_aside(fp: ForkProject) -> dict[str, str]:
+    """Symbol -> why it's set aside, for functions a project says aren't the game's own (library code, middleware,
+    an SDK, the C runtime): config/<version>/set_aside.json, or the file the manifest names (`set_aside`)."""
+    manifest = fp.manifest or {}
+    rel = manifest.get("set_aside") or (f"config/{manifest['version']}/set_aside.json" if manifest.get("version") and (
+        fp.root / "config" / str(manifest["version"]) / "set_aside.json").is_file() else None)
+    if not rel:
+        return {}
+    try:
+        data = json.loads((fp.root / rel).read_text(encoding="utf-8"))
+        info = json.loads((fp.root / rel).with_name("functions.json").read_text(encoding="utf-8")) \
+            if isinstance(data.get("ranges"), list) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return objdiff.expand_set_aside(data, info)
 
 
 def _matched_in(rep: dict, broken: set[str] = frozenset()) -> set[tuple[str, str]]:
@@ -566,10 +583,15 @@ class ForkEngine:
                        "VALUES(?,?,?,?,?,?,?)", (pid, 1, "", None, "projects keep their headers in the tree", time.time(), ""))
             self.net._event(db, pid, None, "fork", event)
 
-    def create_scratch(self, game: Path, console: consoles.Console, *, compiler: str | None = None, log=print) -> str:
+    def create_scratch(self, game: Path, console: consoles.Console, *, compiler: str | None = None, log=print,
+                       scope: str | None = None) -> str:
         """A game of a PROJECT-mode console (GameCube, Wii, PC, DS), from scratch: the console generates the
         community's kind of project for it (Console.create_project: dtk-template; for PC, decompdecomp's own from
-        Ghidra's analysis; for DS, ds-decomp's), opened like a fork."""
+        Ghidra's analysis; for DS, ds-decomp's), opened like a fork. `scope`: what the project covers (SCOPES), for
+        a console whose import sets library code aside (Console.sets_aside); kept in the project's manifest."""
+        if scope is not None and scope not in SCOPES:
+            raise NetworkError(f"a project covers the game's own code ({GAME!r}) or the whole program, not {scope!r}")
+        scoped = {"scope": scope or GAME} if console.sets_aside else {}
         info = console.game_info(game)
         sha1 = info["sha1"]
         for p in self.net.store.all("SELECT slug, config FROM projects"):
@@ -579,7 +601,9 @@ class ForkEngine:
         slug = self._free_slug(_slug(f"{info['title']} {info['id']}" if info.get("kind") != "dol" else info["title"]))
         dest = self.net.workspace / slug
         try:
-            facts = console.create_project(dest, game, compiler=compiler, log=log)
+            facts = console.create_project(dest, game, compiler=compiler, log=log, **scoped)
+            if scoped:  # (before the first measuring, which reads it)
+                ForkProject(dest).update_manifest(**scoped)
         except BaseException:
             shutil.rmtree(dest, ignore_errors=True)
             raise
@@ -655,6 +679,42 @@ class ForkEngine:
         manifest["rebuild"] = result | {"t": time.time()}
         (fp.root / ".decomp.wtf.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return result
+
+    def set_scope(self, slug: str, scope: str, log=print) -> dict:
+        """What the project covers (forks/project.py SCOPES): the game's own code, or the whole program. Kept in its
+        manifest, so it travels with the project's folder; measuring again then opens its set-aside functions to
+        agents and counts them (or keeps them out again). Hand-written assembly stays assembly either way. The whole
+        program also brings in what the project's import left unanalysed (Console.unanalysed), once. Returns the new
+        measures."""
+        if scope not in SCOPES:
+            raise NetworkError(f"a project covers the game's own code ({GAME!r}) or the whole program, not {scope!r}")
+        proj, fp, cfg = self.get(slug)
+        if not fp.manifest:
+            raise NetworkError("this project has no decompdecomp manifest, so it has no set-aside code to choose for")
+        if fp.scope != scope:
+            fp.update_manifest(scope=scope)
+            with self.net.store.tx() as db:
+                self.net._event(db, proj["id"], None, "scope", "this project covers the whole program now"
+                                if scope != GAME else "this project covers the game's own code now")
+        if scope == PROGRAM and self._unanalysed(fp, cfg) and self.analyse_unanalysed(slug, log=log) is not None:
+            return self.get(slug)[2].get("measures") or {}  # (measured again with what it brought in)
+        return self.sync(slug, log=log)
+
+    def _unanalysed(self, fp: ForkProject, cfg: dict) -> str | None:
+        """What the project's import left unanalysed that a new analysis can bring in (Console.unanalysed), or None.
+        A console that can't tell (its program missing, say) has nothing to offer."""
+        try:
+            return consoles.get(cfg.get("platform")).unanalysed(fp) if fp.manifest else None
+        except Exception:  # noqa: BLE001  Settings shows without it rather than failing
+            return None
+
+    def analyse_unanalysed(self, slug: str, log=print) -> str | None:
+        """Bring in what the project's import left unanalysed (Console.analyse_unanalysed: a new analysis of that code
+        alone, through reanalyse, keeping every match, note and name). Returns what changed (None: nothing)."""
+        proj, fp, cfg = self.get(slug)
+        if not self._unanalysed(fp, cfg):
+            return None
+        return consoles.get(cfg.get("platform")).analyse_unanalysed(self.net, slug, log=log)
 
     def reanalyse(self, slug: str, step, paths=("config",), fix=False, log=print) -> str | None:
         """A console's improved analysis of its games, applied to a project made before it (Console.on_start): `step`
@@ -745,6 +805,8 @@ class ForkEngine:
         data = {n: _data_symbols(u.target) for n, u in units.items()}
         rows = [(u["name"], f) for u in rep.get("units", []) for f in u.get("functions", [])
                 if f["name"] not in data.get(u["name"], ())]
+        listed = _set_aside(fp)
+        aside = listed if fp.scope == GAME else {}  # the whole program: set-aside code is worked on and counted
         counts: dict[str, int] = defaultdict(int)
         for _, f in rows:
             counts[f["name"]] += 1
@@ -791,7 +853,12 @@ class ForkEngine:
                     if sym in held.get(uname, ()):
                         fuzzy = None if fuzzy is None else min(fuzzy, 99.99)
                 if old is not None:
-                    meta.update({k: v for k, v in self._meta(old).items() if k in _ASM_KEYS})
+                    was = self._meta(old)
+                    meta.update({k: v for k, v in was.items() if k in _ASM_KEYS
+                                 and not (k == "asm_code" and was.get("set_aside"))})  # (set aside: decided below)
+                if sym in aside:  # code the project says isn't the game's own (library code, middleware)
+                    meta["asm_code"] = aside[sym]
+                    meta["set_aside"] = True  # and progress leaves it out (network.GAME_CODE)
                 status = "matched" if fuzzy is not None and fuzzy >= 100 else "open" if u and u.source else "nosource"
                 if status == "open" and any(meta.get(k) for k in _ASM_KEYS):
                     status = "asm"  # hand-written assembly (here or in its twin elsewhere): not for agents
@@ -836,12 +903,16 @@ class ForkEngine:
                         for table in ("claims", "notes"):
                             db.execute(f"DELETE FROM {table} WHERE function_id=?", (fid,))
                         db.execute("DELETE FROM functions WHERE id=?", (fid,))
-            m = rep.get("measures", {})
+            m = objdiff.game_measures(rep, set(aside))  # % of the game's own code: set-aside code doesn't count
             self.net._event(db, proj["id"], None, "sync", f"{float(m.get('matched_code_percent', 0)):.2f}% of code matches")
         log(f"{m.get('matched_functions', 0)}/{m.get('total_functions', 0)} functions match, "
             f"{float(m.get('matched_code_percent', 0)):.2f}% of code")
         cfg["measures"] = m
         cfg["uncovered"] = self._count_uncovered(rep)
+        # what the project's set-aside list names, whatever its scope: the Settings panel's choice says how many
+        mine = [uname for uname, f in rows if f["name"] in listed]
+        cfg["set_aside"] = {"functions": len(mine), "without_source": sum(
+            1 for uname in mine if not (units.get(uname) and units[uname].source))} if mine else None
         self._save_cfg(proj, cfg)
         if cfg.get("ready"):
             self.start_indexing(slug)
@@ -2754,7 +2825,7 @@ class ForkEngine:
         agg = self.net.store.one(
             "SELECT COUNT(*) AS total, SUM(status='matched') AS matched, SUM(size) AS bytes, "
             "SUM(CASE WHEN status='matched' THEN size ELSE 0 END) AS matched_bytes, SUM(attempts) AS attempts "
-            "FROM functions WHERE project_id=?", proj["id"])
+            f"FROM functions WHERE project_id=? AND {GAME_CODE}", proj["id"])
         m = cfg.get("measures") or {}
         need = fp.needs(cfg.get("version")) if not cfg.get("ready") else None
         return {
@@ -2774,9 +2845,22 @@ class ForkEngine:
             "context_version": 0, "folder": proj["root"], "room": self.net._room_info(slug),
             "measures": m, "uncovered": self.uncovered(slug) if cfg.get("ready") and fp.linkable() else None,
             "rebuild": (fp.manifest or {}).get("rebuild") if cfg.get("origin") == "scratch" else None,
+            **self._scope_facts(proj, fp, cfg),
             # why it doesn't build on this computer (preflight; checked once a run when its page first opens)
             "build_problem": cfg.get("build_problem") if cfg.get("ready") else None,
         }
+
+    def _scope_facts(self, proj, fp: ForkProject, cfg: dict) -> dict:
+        """What the project covers, for its page and Settings: `scope`, `left_out` (functions its progress leaves
+        out now), `set_aside` (what its set-aside list names: {functions, without_source}, None: nothing) and
+        `unanalysed` (code its import left unanalysed that a new analysis can bring in, Console.unanalysed's words).
+        (An older import's manifest may say what it left out as `set_aside_unimported`: the console's own check
+        replaces it, so it's no longer read.)"""
+        manifest = fp.manifest or {}
+        left = self.net.store.one(f"SELECT COUNT(*) AS n FROM functions WHERE project_id=? AND NOT ({GAME_CODE})",
+                                  proj["id"])["n"]
+        return {"scope": fp.scope if manifest else None, "left_out": left or 0, "set_aside": cfg.get("set_aside"),
+                "unanalysed": self._unanalysed(fp, cfg) if cfg.get("origin") == "scratch" else None}
 
     def _file_parts(self, fp: ForkProject, cfg: dict) -> tuple[str, list[dict]] | None:
         """(the project's own compiler, the parts built with another: one per source file, with its address range),

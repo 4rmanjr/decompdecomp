@@ -508,6 +508,56 @@ def test_a_from_scratch_brief_says_what_the_data_it_uses_is(fork, monkeypatch):
     assert net.forks._data_used(proj, ["add_score"]) == []
 
 
+def test_progress_counts_the_games_own_code_with_middleware_set_aside_by_range(tmp_path):
+    from decompnet.app.forkengine import _set_aside
+    from decompnet.forks import objdiff
+    from decompnet.forks.project import ForkProject
+
+    conf = tmp_path / "config" / "v"
+    conf.mkdir(parents=True)
+    fns = [{"name": f"_func_{a:08X}", "addr": a, "size": 0x10} for a in (0x11000, 0x11010, 0x200000, 0x200010)]
+    (conf / "functions.json").write_text(json.dumps({"units": {"game": fns[:2], "engine": fns[2:3], "lib": fns[3:]}}))
+    (conf / "set_aside.json").write_text(json.dumps({
+        "_func_00200010": "library code (libc.lib)",  # what an import writes: symbol -> why
+        "ranges": [{"from": "0x200000", "to": "0x200010", "why": "middleware engine 3.1"}]}))
+    (tmp_path / ".decomp.wtf.json").write_text(json.dumps({"version": "v", "platform": "pc"}))
+    aside = _set_aside(ForkProject(tmp_path))  # found beside functions.json, even without the manifest naming it
+    assert aside == {"_func_00200010": "library code (libc.lib)", "_func_00200000": "middleware engine 3.1"}
+    rep = {"measures": {"total_functions": 4, "matched_functions": 2, "total_code": "64", "matched_code": "32",
+                        "matched_code_percent": 50.0},
+           "units": [{"name": "game", "functions": [{"name": "_func_00011000", "size": "16", "fuzzy_match_percent": 100},
+                                                    {"name": "_func_00011010", "size": "48", "fuzzy_match_percent": 50}]},
+                     {"name": "engine", "functions": [{"name": "_func_00200000", "size": "16", "fuzzy_match_percent": 100}]},
+                     {"name": "lib", "functions": [{"name": "_func_00200010", "size": "16"}]}]}
+    m = objdiff.game_measures(rep, set(aside))
+    assert (m["total_functions"], m["matched_functions"], m["total_code"], m["matched_code"]) == (2, 1, "64", "16")
+    assert m["matched_code_percent"] == 25.0 and m["all_functions"] == 4 and m["set_aside_functions"] == 2
+    assert objdiff.game_measures(rep, set()) == rep["measures"]
+    assert objdiff.expand_set_aside({"functions": {"0x11010": "CRT"}}, {"units": {"game": fns}}) == \
+        {"_func_00011010": "CRT"}
+
+
+def test_the_progress_the_app_shows_leaves_set_aside_code_out(tmp_path):
+    """The measures left set-aside code out, but the project list and header add up the function rows: one project
+    still showed 3115/21237 (middleware, the CRT and an SDK counted). Measuring marks those rows set_aside."""
+    from decompnet.network import GAME_CODE
+    from decompnet.store import Store
+
+    store = Store(tmp_path / "t.db")
+    with store.tx() as db:
+        for i, (status, size, meta) in enumerate([("matched", 16, {}), ("open", 48, {}),
+                                                  ("matched", 16, {"asm_code": "middleware engine 3.1", "set_aside": True}),
+                                                  ("asm", 16, {"asm_code": "library code (libc.lib)", "set_aside": True}),
+                                                  ("asm", 8, {"asm_code": "hand-written assembly"})]):
+            db.execute("INSERT INTO functions(id,project_id,name,size,status,meta) VALUES(?,7,?,?,?,?)",
+                       (i + 1, f"f{i}", size, status, json.dumps(meta)))
+    row = store.one("SELECT COUNT(*) AS total, SUM(status='matched') AS matched, SUM(size) AS bytes, "
+                    f"SUM(CASE WHEN status='matched' THEN size ELSE 0 END) AS done FROM functions "
+                    f"WHERE project_id=7 AND {GAME_CODE}")
+    # the game's own three (hand-written assembly is still the game's), not the two set aside
+    assert (row["total"], row["matched"], row["bytes"], row["done"]) == (3, 1, 72, 16)
+
+
 def test_a_match_that_is_lost_gets_its_score_back_so_the_queue_doesnt_say_it_is_done(tmp_path):
     # A reopened match kept best_score 0 (identical): briefs said "score 0" and agents released it as done.
     from types import SimpleNamespace

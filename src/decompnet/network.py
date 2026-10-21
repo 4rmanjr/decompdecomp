@@ -42,6 +42,9 @@ MODEL_FAMILIES = {"opus": "claude", "sonnet": "claude", "haiku": "claude", "fabl
 STALL_BUDGET = ((32, 3), (64, 4), (128, 6), (256, 8))
 STALL_BUDGET_BIGGEST = 10
 STALL_LOOKBACK = 16  # compiles stall_note reads back: more than the biggest budget
+# The functions progress counts (an SQL condition on `functions`): not ones the project sets aside as library code,
+# middleware or the C runtime (config/<version>/set_aside.json, objdiff.game_measures), which aren't the game's own
+GAME_CODE = "json_extract(meta, '$.set_aside') IS NULL"
 BRIEF_NOTES = 8  # the newest notes on a function its brief shows
 REPEATS_KEPT = 4096  # compile results kept in memory for repeat_of
 # events after which earlier compile results don't stand for a repeat (bump_generation): a header, a name, the

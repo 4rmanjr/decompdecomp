@@ -92,16 +92,23 @@ You can also continue a community decomp: paste the address of its repository an
 When you close the window while agents work, decompdecomp asks you: stop them and quit, or keep them working.
 **Quit** ends the app and everything it started.
 
-## Coming from an older version (1.0.x)
+## Coming from decomp.wtf or an older version (1.0.x)
 
-Your projects stay. On Linux, the new version opens the same `~/Decomp` folder, with every match, name and note in it.
+Your projects stay, decomp.wtf's too: decompdecomp continues decomp.wtf and reads the same folder and database. On
+Linux, the new version opens the same `~/Decomp` folder, with every match, name and note in it.
 The old Windows installer kept its projects inside a WSL distribution. The Windows app now runs natively and uses
 `%USERPROFILE%\Decomp`; it uses WSL for some Linux-only compilers, but doesn't scan WSL for projects automatically.
 
 To move projects from the old Windows install, close its app, then copy the whole `Decomp` folder from
 `\\wsl.localhost\decomp-wtf\home\decomp\Decomp` to `%USERPROFILE%\Decomp`. Include the hidden `.decomp` folder
 inside it: that holds the project database and saved matches. The app reconnects projects to their copied folders.
-If you only have a project's `progress/` folder, use **Open a saved project** and provide your own copy of the game.
+Did you keep a project outside the `Decomp` folder, in `Documents` for example? Move that project's folder into
+`%USERPROFILE%\Decomp` too, and keep its folder name: the app finds a moved project by its name there.
+
+**Open a saved project** is for something else: a `progress/` folder that decompdecomp saved, with a
+`decompdecomp.json` in it. Use it if you only have a project's `progress/` folder, with your own copy of the game.
+A project's own folder isn't a save, and neither is its `.decomp.wtf.json`: that file says how the project builds.
+Keep that file's name as it is. decompdecomp still reads it as `.decomp.wtf.json`.
 
 1. **Install the new version** the same way as before: the install command above or the latest `.deb`, `.rpm`,
    AppImage or Windows setup bundle. The installer removes an older `.deb` or `.rpm` of decompdecomp, so your apps menu shows

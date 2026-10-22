@@ -3,7 +3,9 @@ named by SYSTEM.CNF's BOOT2 line). Usually stripped, sometimes still with symbol
 
 from __future__ import annotations
 
+import collections
 import hashlib
+import io
 import re
 import struct
 
@@ -51,18 +53,20 @@ def _sections(data: bytes) -> dict[str, bytes]:
     return out
 
 
-def code_style(data: bytes) -> tuple[int, float, float, float]:
+def code_style(data: bytes, within: list[tuple[int, int]] | None = None) -> tuple[int, float, float, float]:
     """(returns, share of returns with a nop in the delay slot, `daddu rd, rs, $zero` moves per return, share of
-    $ra saves made with sq) over the program's executable code."""
+    $ra saves made with sq) over the program's executable code, or only its code between the addresses `within`."""
     phoff, = struct.unpack_from("<I", data, PHOFF_AT)
     phentsize, phnum = struct.unpack_from("<HH", data, PHENTSIZE_AT)
     returns = nops = moves = sd = sq = 0
     for i in range(phnum):
-        kind, off, _, _, size, _, flags, _ = struct.unpack_from("<8I", data, phoff + phentsize * i)
+        kind, off, vaddr, _, size, _, flags, _ = struct.unpack_from("<8I", data, phoff + phentsize * i)
         if kind != PT_LOAD or not flags & PF_X:
             continue
         words = struct.unpack_from(f"<{min(size, len(data) - off) // 4}I", data, off)
         for k, w in enumerate(words):
+            if within is not None and not any(a <= vaddr + 4 * k < b for a, b in within):
+                continue
             op, rs, rt = w >> OPCODE_SHIFT, (w >> RS_SHIFT) & REGISTER_BITS, (w >> RT_SHIFT) & REGISTER_BITS
             if w == JR_RA and k + 1 < len(words):
                 returns += 1
@@ -75,12 +79,75 @@ def code_style(data: bytes) -> tuple[int, float, float, float]:
     return returns, nops / (returns or 1), moves / (returns or 1), sq / ((sd + sq) or 1)
 
 
+def _object_starts(data: bytes) -> tuple[dict[int, bool], dict[int, int]]:
+    """Where each object file's code starts, whether GCC 2.x compiled it, and where the section it's in ends, from the
+    symbol table: CodeWarrior's linker keeps a local .text section symbol at the start of every object's code, and GCC
+    2.x leaves gcc2_compiled. there. ({}, {}) when the program has no symbol table."""
+    from elftools.common.exceptions import ELFError
+    from elftools.elf.elffile import ELFFile
+
+    starts: dict[int, bool] = {}
+    ends: dict[int, int] = {}
+    try:
+        elf = ELFFile(io.BytesIO(data))
+        table = elf.get_section_by_name(".symtab")
+        for s in table.iter_symbols() if table is not None else ():
+            at, index = s["st_value"], s["st_shndx"]
+            if isinstance(index, int) and (s.name == "gcc2_compiled." or (s.name == ".text"
+                                                                           and s["st_info"]["type"] == "STT_SECTION")):
+                starts[at] = starts.get(at, False) or s.name == "gcc2_compiled."
+                section = elf.get_section(index)
+                ends[at] = section["sh_addr"] + section["sh_size"]
+    except (ELFError, ValueError, struct.error):
+        return {}, {}
+    return starts, ends
+
+
+def object_compilers(data: bytes) -> list[tuple[int, int, str]]:
+    """(start, end, compiler guess) of each stretch of object files one compiler built, for a program that kept its
+    symbols and mixes GCC with CodeWarrior; [] otherwise. A 2002 game's 183 object files: 170 GCC's, with 2,128 of its
+    2,284 functions (a nop after 14% of their returns, GCC's habit), and 13 without the mark, CodeWarrior's C library
+    (memcpy, strlen: a nop after 87%) and hand-written kernel stubs. Objects without the mark count as CodeWarrior's
+    only in a program that shows it (.mwcats from its linker, or its note): elsewhere they're hand-written."""
+    sections = _sections(data)
+    comment = sections.get(".comment", b"")
+    if ".mwcats" not in sections and b"MW MIPS C Compiler" not in comment:
+        return []
+    starts, ends = _object_starts(data)
+    if all(starts.values()) or not any(starts.values()):
+        return []
+    order = sorted(starts)
+    spans = [(start, min(order[i + 1], ends[start]) if i + 1 < len(order) else ends[start]) for i, start in enumerate(order)]
+    # which GCC: a version note, else SN's 2.95.2 by its $ra saved with sq in the GCC objects' own code (93% of a
+    # 2001 game's, 0% of a launch game's Sony GCC; CodeWarrior's objects save it with sq too, so they don't count)
+    sq = code_style(data, [s for s in spans if starts[s[0]]])[3]
+    gcc = next((guess for pattern, guess in _GCC if re.search(pattern, comment)),
+               "EEGCC-2.95.2" if sq > SN_SQ_SAVES else "EEGCC")
+    mw = "MWCPS2-2" if re.search(rb"MW MIPS C Compiler \(2\.", comment) else "MWCPS2-3"
+    out: list[tuple[int, int, str]] = []
+    for start, end in spans:
+        guess = gcc if starts[start] else mw
+        if out and out[-1][2] == guess and out[-1][1] == start:
+            out[-1] = (out[-1][0], end, guess)
+        else:
+            out.append((start, end, guess))
+    return out
+
+
 def guess_compiler(data: bytes) -> str:
     """Which compiler built the game. Its code says it best (what agents saw on GTA San Andreas, whose one
     "MW MIPS C Compiler" note comes from a library while its own code is EE-GCC 2.96's): CodeWarrior leaves the delay
     slot of a return empty (a nop after 94% of them in its demo builds; GCC 9-19%, GTA SA 11%), 2.x moves registers
     without daddu, and SN's EE-GCC 2.95.2 saves $ra with sq. A GCC version note picks among the GCCs; without one,
-    EE-GCC 2.96, the PS2 SDK's (the import then tests the GCCs on the code). Too little code: the notes alone."""
+    EE-GCC 2.96, the PS2 SDK's (the import then tests the compilers on the code). Too little code: the notes alone.
+    The style is only a first guess: a 2001 game's GCC objects (its symbols say so) leave 85% of those delay slots
+    empty, as CodeWarrior does, and the import's test of every installed compiler decides. A program that kept its symbols and mixes compilers says which built each object file (object_compilers): the
+    one that built most of the code is the game's."""
+    if parts := object_compilers(data):
+        built: collections.Counter = collections.Counter()
+        for start, end, guess in parts:
+            built[guess] += end - start
+        return built.most_common(1)[0][0]
     sections = _sections(data)
     comment = sections.get(".comment", b"")
     gcc = next((guess for pattern, guess in _GCC if re.search(pattern, comment)), None)
@@ -110,4 +177,5 @@ def read_elf(data: bytes, boot_name: str = "") -> tuple[bytes, dict]:
         "version": 0, "entrypoint": entry, "gp": 0, "crc1": 0, "crc2": 0, "size": len(data),
         "sha1": hashlib.sha1(data).hexdigest(), "byte_order": "elf", "compiler_guess": guess_compiler(data), "platform": "ps2",
         "boot": boot_name, "symbols": has_symbols,
+        "compiler_parts": [list(part) for part in object_compilers(data)],  # after_import gives them their ranges
     }

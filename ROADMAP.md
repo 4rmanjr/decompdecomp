@@ -295,6 +295,28 @@ The export rebuilds the game byte for byte; mods need code that can move. Build 
 and report every address that is still hard-coded ("93% movable, 41 addresses left"). The matching build stays as
 it is.
 
+### A list of open rooms (to investigate)
+
+Asked for by a user: a page where you see the rooms running now and join one. Hosts would still host their own
+rooms, as now (the host's decompdecomp is the room, through its tunnel or address); a small directory server would
+only list the public rooms whose hosts chose to list them: the game's name and hash, the platform, % matched, members,
+and the room's address, dropped when the host stops answering. Joining is unchanged: the guest's own copy of the game
+must have the host's SHA-1, and only the work travels.
+
+Before building it, find out:
+
+- **Is it allowed?** What a public directory of rooms means legally for the project, in the places it's used: what
+  it may show (titles are trademarks: name only, no box art or screenshots), whether listing a room makes the
+  directory responsible for what the room does, and what notice-and-takedown it needs. Check that nothing a listed
+  room sends is the game's code or data, for git projects too (forkroom.py: what a joining guest gets of the host's
+  tree).
+- **Who runs it, and for what cost.** The site is static (GitHub Pages), so the list needs a host of its own; a
+  small worker with a heartbeat per room may be enough.
+- **Abuse and privacy.** Listing is opt-in per room and off by default; a room on a plain address shows the host's
+  IP, so only tunnelled rooms could be listed; room names need limits, and a host or the directory can delist one.
+
+The answer goes here: build it, build part of it, or not, and why.
+
 ### A shareable progress card
 
 An image with % matched, functions and platform, for READMEs and posts. No game code in it.

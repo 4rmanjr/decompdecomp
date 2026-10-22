@@ -146,6 +146,9 @@ a.ghost, a.primary { text-decoration: none; }
 .nav-item.on { background: var(--panel); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 .nav-item.on svg { fill: var(--match); }
 .nav-foot { border-top: 1px solid var(--line-soft); padding-top: 8px; display: grid; gap: 1px; }
+/* installed from a branch: said where it can't be missed, for the user and for whoever answers their report */
+.nav-branch { margin: 2px 6px; padding: 3px 7px; border-radius: 5px; background: var(--work-bg); color: var(--work); font: 600 11px/1.4 var(--mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 .nav-meta { display: flex; align-items: center; gap: 2px; padding: 6px 4px 0 9px; }
 .nav-update { margin-left: 6px; font: 600 10.5px/1 var(--mono); padding: 4px 7px; border-radius: var(--r-sm); background: var(--hl); color: var(--hl-ink); }
 .nav-update:hover { filter: brightness(1.08); }
@@ -404,7 +407,8 @@ a.ghost, a.primary { text-decoration: none; }
 .st.working { background: var(--hl); color: var(--hl-ink); border-color: transparent; }
 .st.tried { color: var(--ink-2); }
 .st.not-c, .badge.not-c { background: var(--miss-bg); color: var(--miss); border-color: transparent; }
-.not-c { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--not-c); vertical-align: baseline; }
+/* the feed's red square: the empty span alone (the "not C" badges have the class too, squeezed into it) */
+.not-c:empty { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--not-c); vertical-align: baseline; }
 .set-aside { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--miss-bg); color: var(--ink-2); }
 .list-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; }
 

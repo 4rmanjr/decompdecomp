@@ -79,7 +79,8 @@ macOS isn't supported in this version.
 Type `decomp`, or open decompdecomp from your apps menu. It opens in a window of its own.
 
 1. **Open a game.** Pick a ROM, a disc image or a program file of a game that you own. To try the app first, open
-   Demo Quest 64.
+   Demo Quest 64. For an N64, PlayStation or PlayStation 2 game, the app offers to install all of that console's
+   compilers first. Then it tests which one built the game. Tick the box only if you accept the proprietary ones.
 2. **Start agents.** Any model with an API key (DeepSeek, OpenRouter, OpenAI, a local model), or Claude Code,
    Codex, opencode and Antigravity CLI. Run several, and different models: they work on different functions at the
    same time.

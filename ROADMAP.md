@@ -46,6 +46,7 @@ folder, `src/decompnet/consoles/<id>/`; a new console adds a column (CONTRIBUTIN
 | Save and restore (`progress/`, Open a saved project) | ✓ | ✓ | ✓ | the project's git; best attempts saved | the project's git; best attempts saved | the project's git; best attempts saved | the project's git; best attempts saved |
 | Reimport: a new split, matched work kept (Settings) | ✓ | ✓ | ✓ | — | — | — | — |
 | Rebuildable export | ✓ | ✓ | ✓ | the project | — | the project | the project |
+| Progress bars for foreground jobs | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Rooms: decompile together | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 Where to start on a gap:
@@ -63,14 +64,18 @@ Where to start on a gap:
 
 ## Recently done
 
+- **Visible progress while waiting.** Saved projects, room setup, exports, project checks, compiler changes and
+  installations show a labelled work bar beside their logs. The bar clears on completion or failure; saved-project
+  cancellation clears it too. Each action says when it starts and finishes, or why it stopped. Upload percentages
+  still measure bytes transferred.
 - **Names in project mode.** rename_symbol renames a function or a global in a project too: in the game's symbols
   (DS: ds-decomp's symbols.txt; GameCube, Wii: dtk's) and in every source and header file, kept only when the game
   still rebuilds byte for byte and every match holds. Polishing's names were local only before (func_0205d0f4,
   data_0222f194 stayed). Windows PC's names come from addresses (`names.py`): it says it can't rename yet.
 - **Polishing on every console.** Helpers that make matched code readable (real names, types, a comment) worked on
-  ROM projects only: a DS game at 57% had nothing to choose. In project mode a rewrite goes through the project's own
-  file and is judged like any compile of a matched function: committed when it and the file's other matches still
-  match, else the file is put back. Helpers there keep the function's name and describe types in the project's
+  ROM projects only: a DS game at 57% had nothing to choose. In project mode a rewrite goes through the project's
+  own file and is judged like any compile of a matched function: committed when it and the file's other matches
+  still match, else the file is put back. Helpers there keep the function's name and describe types in the project's
   headers (edit_file).
 - **Agents join what the rules miss** (project mode). `join_functions(function, with_function, reason)`: once 3
   agents of 2 models say two functions are one the analysis cut, the console joins them (DS: `recover.join_functions`,
@@ -142,6 +147,9 @@ Where to start on a gap:
   has a colour on its agents' names, the same on every screen, and the Agents tab lists what the room's other
   computers' agents are on. A git project's join waits to be let in (with approval on, it failed), and a declined
   or removed guest is told so.
+- **Room presence during slow syncs.** A separate heartbeat keeps members online while importing the host's work
+  or rebuilding a source project. Sync failures and recovery are logged, and syncing continues automatically
+  after a temporary connection failure. Applies to ROM and project rooms on every console.
 - **A standalone app.** Its own window (GTK and WebKitGTK) and a tray icon, so closing the window doesn't stop
   helper agents; **Quit** ends everything the app started. Only helpers the app starts work on projects: the old
   `decomp mcp` bridge is gone, and the first start removes its registrations from your agents. A development copy is

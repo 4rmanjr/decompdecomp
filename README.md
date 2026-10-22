@@ -62,9 +62,16 @@ decomp
 ```
 
 The app opens in a native Windows window. Its shortcuts appear on the desktop and in Start, and its tray icon
-brings back a window closed while helpers work. Free tools use Windows builds where available. Linux-only period
-compilers run through **WSL 2**: run `wsl --install` in an administrator PowerShell, restart if asked, and open Ubuntu
-once to finish setup before importing a game that needs one. Projects stay in your Windows `Decomp` folder.
+brings back a window closed while helpers work. Free tools use Windows builds where available. Projects stay in your Windows `Decomp` folder.
+
+> [!IMPORTANT]
+> **PS1, PS2 and most N64 games need WSL 2 on Windows.** Their period compilers (GCC for PlayStation, EE-GCC and
+> CodeWarrior for PS2, KMC GCC for N64) exist only for Linux, so decompdecomp runs them inside WSL 2. Without it,
+> every compile of such a game fails. Set it up before you import one: run `wsl --install` in an administrator
+> PowerShell, restart if asked, then open Ubuntu once to finish its setup.
+>
+> GameCube, Wii, DS and Windows PC games, and N64 games built with IDO, don't need WSL: their compilers run on
+> Windows itself.
 macOS isn't supported in this version.
 
 ## Start

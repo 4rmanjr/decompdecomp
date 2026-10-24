@@ -302,6 +302,79 @@ def _drop_leading_gap(program: Path, image: Path, config: Path) -> None:
                       encoding="utf-8")
 
 
+LAYOUT_CHECK_BYTES = 256  # how much of each section must be where the image is thought to keep it
+_SEGMENT = re.compile(r"^(?=  - )", re.M)  # each segment of splat's config, and its end (subsegments sit deeper)
+_SEGMENT_START = re.compile(r"^(    start: )0x([0-9A-Fa-f]+)", re.M)
+_SEGMENT_VRAM = re.compile(r"^    vram: 0x([0-9A-Fa-f]+)", re.M)
+_SUBSEGMENT_START = re.compile(r"^(      - \[)0x([0-9A-Fa-f]+)", re.M)
+_CONFIG_END = re.compile(r"^(  - \[)0x[0-9A-Fa-f]+(\])", re.M)
+
+
+def _starts_by_address(program: Path, image: Path, config: Path) -> None:
+    """splat's config places each section by its offset in the ELF file (from the first section), but the flat image
+    objcopy makes lays the program out by address: the two agree only until a stretch of addresses with no bytes in
+    the file. A PS2 game keeps its engine at 0x01000000, above a 4.6 MB .bss: its config sent splat into the image's
+    zeros there (3.5 MB of engine split as three "functions" of nops), and every section after the .bss to the wrong
+    bytes. Each segment and section starts where the image keeps it, once every section's bytes are seen there."""
+    from elftools.elf.constants import SH_FLAGS
+    from elftools.elf.elffile import ELFFile
+
+    data = program.read_bytes()
+    with open(program, "rb") as f:
+        counted = [s for s in ELFFile(f).iter_sections() if s["sh_flags"] & SH_FLAGS.SHF_ALLOC and s["sh_size"]
+                   and s["sh_type"] in ("SHT_PROGBITS", "SHT_NOBITS") and s.name != ".mwcats"]
+    with_bytes = [(s["sh_addr"], s["sh_offset"], s["sh_size"]) for s in counted if s["sh_type"] == "SHT_PROGBITS"]
+    if not with_bytes:
+        return
+    first_offset = min(s["sh_offset"] for s in counted)  # where splat counts from (ps2elfinfo)
+    base = min(addr for addr, _, _ in with_bytes)  # the image's first byte (_drop_leading_gap)
+    flat = image.read_bytes()
+    for addr, offset, size in with_bytes:
+        head = data[offset:offset + min(size, LAYOUT_CHECK_BYTES)]
+        if flat[addr - base:addr - base + len(head)] != head:
+            return  # (not an image laid out by address: leave the config as splat wrote it)
+    by_offset = {offset - first_offset: addr - base for addr, offset, _ in with_bytes}
+    text = config.read_text(encoding="utf-8")
+    end = _CONFIG_END.search(text)
+    pieces = _SEGMENT.split(text)
+    moved = False
+    places = []  # (piece index, start in the file's layout, start in the image's)
+    for i, piece in enumerate(pieces):
+        start, vram = _SEGMENT_START.search(piece), _SEGMENT_VRAM.search(piece)
+        if start is None or vram is None:
+            continue
+        shift = int(vram[1], 16) - base - int(start[2], 16) if int(vram[1], 16) >= base else 0
+        places.append((i, int(start[2], 16), int(start[2], 16) + shift))
+        if shift == 0:
+            continue
+
+        def placed(m, shift=shift):
+            old = int(m[2], 16)
+            return f"{m[1]}0x{by_offset.get(old, old + shift):06X}"
+        pieces[i] = _SUBSEGMENT_START.sub(placed, _SEGMENT_START.sub(lambda m, shift=shift: f"{m[1]}0x{int(m[2], 16) + shift:06X}", piece))
+        moved = True
+    if not moved or end is None:
+        return
+    # A segment is its sections' bytes, then its .bss; what lies between it and the next segment in the image is
+    # padding. Left to the segment, the padding stretched its addresses over the next one's (the engine's first
+    # functions taken for the .bss in front of it) and the zeros after the engine became "functions"; and a
+    # .bss as long as its sections' sizes added up (splat's bss_size) overran the gaps between them into the next.
+    sections = [(s["sh_addr"], s["sh_size"], s["sh_type"] == "SHT_NOBITS") for s in counted]
+    for k, (i, _, new_start) in enumerate(places):
+        vram = int(_SEGMENT_VRAM.search(pieces[i])[1], 16)
+        limit = int(_SEGMENT_VRAM.search(pieces[places[k + 1][0]])[1], 16) if k + 1 < len(places) else 1 << 32
+        inside = [s for s in sections if vram <= s[0] < limit]
+        code_end = max((a + n for a, n, nobits in inside if not nobits), default=vram)
+        bss_end = max((a + n for a, n, nobits in inside if nobits), default=code_end)
+        pieces[i] = re.sub(r"^(    bss_size: )0x[0-9A-Fa-f]+", rf"\g<1>0x{max(0, bss_end - code_end):X}", pieces[i], flags=re.M)
+        content_end = new_start + (code_end - vram)
+        new_next = places[k + 1][2] if k + 1 < len(places) else len(flat)
+        if content_end < new_next:
+            pieces[i] += f"  - [0x{content_end:06X}, pad]\n"
+    text = _CONFIG_END.sub(lambda m: f"{m[1]}0x{len(flat):X}{m[2]}", "".join(pieces))  # the image's end
+    config.write_text(text, encoding="utf-8")
+
+
 def _patch_config(path: Path) -> tuple[str, str, int]:
     """Disassemble code segments as one C file per segment, so every function gets its own .s file,
     and keep empty functions as asm too (we want every function to be a target).
@@ -471,6 +544,7 @@ def split_rom(workdir: Path, rom_name: str = "rom.z64", console=None, picked: Pi
     image = (yaml.safe_load(config.read_text(encoding="utf-8")).get("options") or {}).get("target_path") or rom_name
     if objcopy:
         _drop_leading_gap(workdir / rom_name, workdir / image, config)
+        _starts_by_address(workdir / rom_name, workdir / image, config)
     compiler, platform, gp = _patch_config(config)
     console = console or consoles.get(platform)
     big_endian = console.big_endian

@@ -28,6 +28,7 @@ from ..hostenv import NO_WINDOW, stop_process_tree
 from ..network import NetworkError
 from ..rom.symbols import AUTO_NAME
 from ..scoring import percent_text
+from . import save_readme
 
 FORMAT = 1
 MANIFEST = "decompdecomp.json"
@@ -93,7 +94,9 @@ def save(net, slug: str, folder: Path | None = None) -> dict:
     compiler = cfg.get("compiler") or {}
     compiler_name = compiler.get("toolchain") if isinstance(compiler, dict) else str(compiler)
     compiler_name = compiler_name or "not recorded"
-    (folder / "README.md").write_text(f"""# {proj['name']}: decompdecomp progress
+    details = (f"- **Game:** {proj['name']}\n- **Platform:** {cfg.get('platform') or 'not recorded'}\n"
+               f"- **Compiler:** {compiler_name}")
+    readme = f"""# {proj['name']}: decompdecomp progress
 
 This is a saved decompilation project created with [decompdecomp](https://github.com/n-delic/decompdecomp).
 AI agents were used during the decompilation; their C attempts were kept only when decompdecomp's byte-for-byte
@@ -101,9 +104,7 @@ judge accepted them as matches.
 
 ## Project details
 
-- **Game:** {proj['name']}
-- **Platform:** {cfg.get('platform') or 'not recorded'}
-- **Compiler:** {compiler_name}
+{save_readme.block('details', details)}
 - **Progress:** {matched} matching function(s), {len(functions) - matched} best attempt(s)
 
 ## What's in this folder
@@ -126,7 +127,8 @@ README.md             this file
 Open decompdecomp, choose **New project → Open a saved project**, then pick this folder (or paste its git
 repository's address) and your own copy of the game. decompdecomp checks it's the same game and judges every saved
 function again: a match counts because it matches, not because a file says so.
-""", encoding="utf-8")
+"""
+    save_readme.update(net, proj, folder, readme, len(functions) - matched, details)
     return {"folder": str(folder), "matched": matched, "best": len(functions) - matched}
 
 
@@ -146,15 +148,16 @@ def _save_best(net, proj, folder: Path) -> dict:
             f"/* {r['name']}: the closest attempt so far, {percent_text(pct)} match, by "
             f"{names.get(r['best_agent_id'], '?')}; it belongs in {source} */\n\n" + r["best_source"].strip() + "\n",
             encoding="utf-8")
-    (folder / "README.md").write_text(f"""# {proj['name']}: the closest attempts so far
+    readme = f"""# {proj['name']}: the closest attempts so far
 
 Saved by [decompdecomp](https://github.com/n-delic/decompdecomp). Each file in `best/` is the closest C an agent wrote
-for a function of the game that doesn't match byte for byte yet ({len(rows)} of them): its comment says how close,
+for a function of the game that doesn't match byte for byte yet: its comment says how close,
 who wrote it and which source file it belongs in. They compile, but they're not the original's code.
 
 The matched functions aren't here: they're in the project's own source files (and its git history), where every
 match was judged byte for byte. No game data is in this folder.
-""", encoding="utf-8")
+"""
+    save_readme.update(net, proj, folder, readme, len(rows))
     return {"folder": str(folder), "matched": 0, "best": len(rows)}
 
 

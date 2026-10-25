@@ -185,11 +185,12 @@ def _describe(info: DebugInfo, sources: list[stabs.SourceInfo], reserved: set[st
     info.header = header.text(variables)
 
 
-def brief_lines(debug: dict) -> list[str]:
-    """What a function's brief says from the game's debug information (kept in the function's meta at import)."""
+def brief_lines(debug: dict, header: str = "context.h") -> list[str]:
+    """What a function's brief says from the game's debug information (kept in the function's meta at import);
+    `header`: where the game's types are (a PC project's are in include/debug_types.h)."""
     lines = ["", "### From the game's debug information",
              f"source file {debug['source']}" + (f", from line {debug['line']}" if debug.get("line") else "")
-             + "; its types are in context.h already",
+             + f"; its types are in {header} already",
              f"prototype: {debug['prototype']};"]
     if debug.get("params"):
         lines.append("parameters live in: " + ", ".join(debug["params"]))

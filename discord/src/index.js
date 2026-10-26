@@ -54,8 +54,12 @@ export async function verified(request, body, publicKey) {
   const signature = request.headers.get("x-signature-ed25519");
   const timestamp = request.headers.get("x-signature-timestamp");
   if (!signature || !timestamp) return false;
-  const key = await crypto.subtle.importKey("raw", hex(publicKey), { name: "Ed25519" }, false, ["verify"]);
-  return crypto.subtle.verify("Ed25519", key, hex(signature), new TextEncoder().encode(timestamp + body));
+  try {  // a malformed signature is refused, not a crash: Discord tests the endpoint with one
+    const key = await crypto.subtle.importKey("raw", hex(publicKey), { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify("Ed25519", key, hex(signature), new TextEncoder().encode(timestamp + body));
+  } catch {
+    return false;
+  }
 }
 
 const reply = (data) => new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
@@ -65,8 +69,13 @@ export default {
   async fetch(request, env) {
     if (request.method !== "POST") return new Response("decompdecomp's Discord interactions endpoint", { status: 405 });
     const body = await request.text();
+    // a key pasted with a space or newline around it, or not set: say which, the dashboard is where it's fixed
+    const publicKey = (env.DISCORD_PUBLIC_KEY ?? "").trim();
+    if (!/^[0-9a-f]{64}$/i.test(publicKey)) {
+      return new Response("DISCORD_PUBLIC_KEY isn't set to the Discord app's Public Key (64 hex digits)", { status: 500 });
+    }
     // Discord checks the endpoint rejects bad signatures before it accepts it, and anyone can POST here
-    if (!(await verified(request, body, env.DISCORD_PUBLIC_KEY))) return new Response("bad signature", { status: 401 });
+    if (!(await verified(request, body, publicKey))) return new Response("bad signature", { status: 401 });
     const interaction = JSON.parse(body);
 
     if (interaction.type === PING) return reply({ type: PONG });

@@ -26,3 +26,9 @@ test("only requests Discord signed get through", async () => {
   assert.equal(await verified(req(sig), body, pub), true);
   assert.equal(await verified(req(sig.replace(/^./, sig[0] === "0" ? "1" : "0")), body, pub), false);
 });
+
+test("a malformed signature or key is refused, not a crash", async () => {
+  const { verified } = await import("./src/index.js");
+  const req = new Request("https://x", { method: "POST", headers: { "x-signature-ed25519": "00", "x-signature-timestamp": "1" } });
+  assert.equal(await verified(req, "{}", "zz"), false);
+});

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 from . import toolchains, wsl
@@ -62,7 +63,10 @@ def compiler_config(root: Path, cfg: dict) -> CompilerConfig:
             base = [x for a in tc.cmd for x in (flags if a == "{flags}" else [a])]
         else:
             base = [*tc.cc, *flags, "-I{include}", "{src}", "-o", "{obj}"]
-        cmd = [a.replace("{tc}", tc_dir) for a in base]
+        # The bundled Mac app owns a supported Python; /usr/bin/python3 may still be 3.9 and cannot run maspsx.
+        # Linux sandboxes and WSL use their own python3, not a host interpreter outside their mounts.
+        python = sys.executable if sys.platform == "darwin" else "python3"
+        cmd = [a.replace("{tc}", tc_dir).replace("{python}", python) for a in base]
         for dep, where in zip(tc.requires, where_tools[1:]):  # {tc:<id>} is another toolchain this one needs
             cmd = [a.replace(f"{{tc:{dep}}}", where) for a in cmd]
     else:

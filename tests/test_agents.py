@@ -328,6 +328,32 @@ def test_helpers_are_records_that_outlive_the_app(tmp_path, quiet):
     assert other not in later.sessions and net.store.one("SELECT COUNT(*) AS n FROM helpers")["n"] == 1
 
 
+def test_remove_paused_stops_and_deletes_only_paused_helpers_on_the_project(tmp_path, quiet):
+    net = _game(tmp_path)
+    m = agents.Manager(net, tmp_path, URL)
+    paused_ids = [
+        m.start("claude", "game", 1, {"model": "paused-a"})[0],
+        m.start("claude", "game", 1, {"model": "paused-b"})[0],
+    ]
+    (working_id,) = m.start("claude", "game", 1, {"model": "working"})
+    (elsewhere_id,) = m.start("claude", "other", 1, {"model": "paused-elsewhere"})
+    for sid in paused_ids + [elsewhere_id]:
+        m.sessions[sid].state = "paused"
+        m._save(m.sessions[sid])
+    m.sessions[working_id].state = "working"
+    m._save(m.sessions[working_id])
+
+    assert m.remove_paused("game") == 2
+
+    assert all(sid not in m.sessions for sid in paused_ids)
+    assert working_id in m.sessions and m.sessions[working_id].state == "working"
+    assert elsewhere_id in m.sessions and m.sessions[elsewhere_id].state == "paused"
+    rows = net.store.all("SELECT id, state FROM helpers ORDER BY id")
+    assert {str(row["id"]): row["state"] for row in rows} == {
+        working_id: "working", elsewhere_id: "paused",
+    }
+
+
 def test_an_api_helper_starts_again_with_its_endpoints_key(tmp_path, quiet):
     """An API helper's key is never in its record: started again by hand, it gets it from its saved endpoint, and one
     whose endpoint is gone says so."""

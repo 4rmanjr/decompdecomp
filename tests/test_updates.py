@@ -3,6 +3,7 @@ it with uv and restarts in place. Offline: GitHub's answers are stand-ins."""
 
 import json
 import os
+import re
 import socket
 import stat
 import sys
@@ -42,6 +43,18 @@ def test_release_update(monkeypatch):
     assert found["spec"] == f"decompnet @ https://github.com/n-delic/decompdecomp/archive/refs/tags/v{newer}.tar.gz"
     monkeypatch.setattr(updates, "_get", lambda url, timeout=15: f'VERSION="{__version__}"\n'.encode())
     assert not updates.check()["available"]
+
+
+def test_the_installer_names_the_same_version_as_the_code():
+    """The updater parses VERSION out of install.sh on main as the newest release: a drifted installer version
+    would offer a wrong update, or hide a real one."""
+    repo = Path(__file__).resolve().parent.parent
+    install_sh = (repo / "site" / "public" / "install.sh").read_text()
+    m = re.search(r'^VERSION="([^"]+)"', install_sh, re.M)
+    assert m, "install.sh lost its VERSION= line"
+    pyproject = (repo / "pyproject.toml").read_text()
+    assert f'version = "{m.group(1)}"' in pyproject
+    assert m.group(1) == __version__
 
 
 def test_branch_update(monkeypatch):

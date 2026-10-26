@@ -28,6 +28,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0  # setup-uv has published no major tags since v7
       - run: uv sync
       - run: uv run ruff check src tests projects
+      # shellcheck isn't pinned here on purpose: the syntax check is the stable part, style stays in review
+      - name: The installer's syntax
+        run: bash -n site/public/install.sh
       - name: The N64 demo's linker (ld.lld, llvm-objcopy)
         run: sudo apt-get install -y --no-install-recommends lld llvm
       - name: Cache the compilers (again when toolchains.toml changes)

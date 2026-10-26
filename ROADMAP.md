@@ -15,11 +15,11 @@ Each feature and the platforms it covers today. A — is a gap: pick one up (the
 start). Keep this table true when a feature ships or reaches another platform. Each column's code is its console's
 folder, `src/decompnet/consoles/<id>/`; a new console adds a column (CONTRIBUTING.md, "Consoles").
 
-| Feature | N64 | PS1 | PS2 | GameCube · Wii | Windows PC | DS | Public decomps |
-| :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-| Status | recommended | beta | beta | beta | beta | beta | the project's own |
-| Start from your own copy | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | fork by address |
-| Judge | link · compare | link · compare | link · compare | objdiff | objdiff | objdiff | objdiff |
+| Feature | N64 | PS1 | PS2 | GameCube · Wii | Windows PC | DS | GBA | Public decomps |
+| :-- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| Status | recommended | beta | beta | beta | beta | beta | beta | the project's own |
+| Start from your own copy | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | fork by address |
+| Judge | link · compare | link · compare | link · compare | objdiff | objdiff | objdiff | link · compare | objdiff |
 | Machine drafts (m2c, Ghidra for x86) | ✓ | ✓ | ✓ | ✓ | ✓ Ghidra | — | by architecture |
 | Autopilot: free matches from drafts | ✓ | ✓ | ✓ | ✓ | — | — | — |
 | Drafts follow the header, made in the background; `redraft` | ✓ | ✓ | ✓ | — | — | — | — |
@@ -46,7 +46,7 @@ folder, `src/decompnet/consoles/<id>/`; a new console adds a column (CONTRIBUTIN
 | Save and restore (`progress/`, Open a saved project) | ✓ | ✓ | ✓ | the project's git; best attempts saved | the project's git; best attempts saved | the project's git; best attempts saved | the project's git; best attempts saved |
 | Saved README preserves notes, with completion bar and function map | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reimport: a new split, matched work kept (Settings) | ✓ | ✓ | ✓ | — | — | — | — |
-| Rebuildable export | ✓ | ✓ | ✓ | the project | — | the project | the project |
+| Rebuildable export | ✓ | ✓ | ✓ | the project | — | the project | ✓ |
 | Progress bars for foreground jobs | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Rooms: decompile together | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
@@ -208,8 +208,8 @@ Where to start on a gap:
   carries only the declarations the function uses.
 - **PS2 kernel calls named**: the stubs (`addiu v1, N; syscall; jr ra`) get the kernel call's name: 154 in GTA San
   Andreas, 129 in Ridge Racer V.
-- **Consoles as packages**: one folder per console (`consoles/<id>/`), a template and a conformance test. PS1 and
-  GBA are public decomps only now; the git history keeps their code.
+- **Consoles as packages**: one folder per console (`consoles/<id>/`), a template and a conformance test. PS1 is
+  public-decomps only; GBA has ROM import, ARM/Thumb matching and byte-identical export via luvdis and agbcc.
 - **Linux packages**: a `.deb`, an `.rpm` and an AppImage with their own Python, built for each release.
 - **Windows native app**: a WebView2 window, Start menu and desktop shortcuts, and a native tray icon.
   A custom native caption follows the app's theme, with Windows resizing, snapping and drag-to-restore. Scrollbars

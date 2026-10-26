@@ -49,6 +49,8 @@ class RomTarget:
     relocs: list[tuple[int, int, int]]  # (offset in function, reloc type, absolute address)
     big_endian: bool = True
     gp: int = 0  # $gp, for $gp-relative references (PlayStation small data)
+    arch: str = "mips"
+    thumb: bool = False
 
     @property
     def order(self) -> str:
@@ -125,6 +127,8 @@ def significant(mine: bytes, addr: int, width: int | None, next_start: Callable[
 def target_from_split(fn: RomFunction, resolve: Callable[[str], int | None], big_endian: bool = True,
                       gp: int = 0) -> RomTarget:
     """The function's bytes from the ROM plus the address behind every annotated reference."""
+    if hasattr(fn, "code") and hasattr(fn, "refs"):
+        return RomTarget(fn.name, fn.vram, fn.code, list(fn.refs or ()), big_endian, gp, "arm", getattr(fn, "thumb", False))
     code = b"".join(ln.word.to_bytes(4, "big" if big_endian else "little") for ln in fn.lines)
     relocs: list[tuple[int, int, int]] = []
     for ln in fn.lines:
@@ -156,7 +160,7 @@ def canonical_target(t: RomTarget, symbols: SymbolTable) -> FunctionObj:
         if t.vram <= addr < t.vram + len(t.code):
             name, residual = t.name, addr - t.vram
         relocs.append(Reloc(off, rtype, name, encode(rtype, residual)))
-    return FunctionObj(t.name, "mips", t.big_endian, t.code, relocs)
+    return FunctionObj(t.name, "thumb" if t.arch == "arm" and t.thumb else t.arch, t.big_endian, t.code, relocs)
 
 
 # -------------------------------------------------------------------------------- candidate
@@ -412,6 +416,10 @@ class _Linker:
 
 
 def link(obj: bytes, name: str, target: RomTarget, symbols: SymbolTable, read: ReadFn) -> LinkResult:
+    if target.arch == "arm":
+        from . import match_arm
+
+        return match_arm.link(obj, name, match_arm.ArmTarget(name, target.vram, target.code, target.thumb), symbols, read)
     """Link a compiled candidate at the target's address and compare it with the ROM."""
     obj = unmangle(obj, lambda n: n in symbols.by_name or bool(AUTO_NAME.match(n)))  # C++ names: the game's
     return _Linker(obj, name, target, symbols, read).run()

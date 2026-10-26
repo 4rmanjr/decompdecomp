@@ -143,6 +143,13 @@ class Console:
         Returns the image splat reads."""
         return image
 
+    def split_rom(self, workdir: Path, rom_name: str = "rom.z64", picked=None, log=print, symbols=None):
+        """Split this console's program into functions and data. ROM consoles override this for non-splat pipelines
+        (such as GBA's luvdis); the default runs splat."""
+        from ..rom import split
+
+        return split.split_rom(workdir, rom_name, self, picked, log=log, symbols=symbols)
+
     def find_gp(self, image: bytes, program: bytes, segments: list) -> int:
         """$gp as the game sets it, when splat didn't say (0: the game keeps no data $gp-relative)."""
         return 0
@@ -297,6 +304,7 @@ class Console:
 
 
 def _registry() -> list[Console]:
+    from .gba import GBA
     from .gc_wii import GAMECUBE, WII
     from .n64 import N64
     from .nds import NDS
@@ -307,7 +315,7 @@ def _registry() -> list[Console]:
 
     # the order sniff is asked in: a file is the first console's that says it's its own (the PS1 before the PS2,
     # whose sniff takes any ISO 9660 disc)
-    return [N64, PS1, PS2, GAMECUBE, WII, PC, NDS, *PUBLIC_ONLY]
+    return [N64, PS1, PS2, GAMECUBE, WII, PC, NDS, GBA, *[c for c in PUBLIC_ONLY if c.id != "gba"]]
 
 
 CONSOLES: list[Console] = _registry()

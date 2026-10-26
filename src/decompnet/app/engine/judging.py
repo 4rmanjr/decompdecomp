@@ -19,8 +19,11 @@ from .common import _AUTO_TOKEN, BATCH_INSNS
 class JudgeMixin:
     def _rom_target(self, fn) -> match.RomTarget:
         cfg = self.cfg(self.store.one("SELECT config FROM projects WHERE id=?", fn["project_id"]))
+        console = self.console(self.store.one("SELECT config FROM projects WHERE id=?", fn["project_id"]))
+        is_arm = console.arch == "arm"
+        thumb = is_arm and "arm_func_start" not in (fn["asm"] or "")
         return match.RomTarget(fn["name"], fn["vram"], fn["target"], match.RomTarget.relocs_from_json(json.loads(fn["relocs"])),
-                               cfg.get("big_endian", True), cfg.get("gp", 0))
+                               cfg.get("big_endian", True), cfg.get("gp", 0), console.arch, thumb)
 
     def _make_target(self, proj, rf: split.RomFunction, syms: SymbolTable) -> match.RomTarget:
         cfg = self.cfg(proj)

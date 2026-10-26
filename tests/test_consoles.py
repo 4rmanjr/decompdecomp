@@ -59,7 +59,7 @@ def test_ids_are_unique_and_public_decomps_have_their_guides():
     ids = [key for c in consoles.CONSOLES for key in (c.id, *c.aliases)]
     assert len(ids) == len(set(ids))
     assert all(_guide_exists(t) for c in consoles.CONSOLES for t in (*c.guides, c.compiler_guide) if t)
-    assert {c.id for c in consoles.CONSOLES if c.status == consoles.PUBLIC} >= {"gba"}  # forks only
+    assert {c.id for c in consoles.CONSOLES if c.status == consoles.PUBLIC} >= {"psp", "3ds"}  # forks only
 
 
 def test_the_ids_older_projects_stored_still_open_them(tmp_path):
@@ -125,7 +125,10 @@ def _missing(console) -> list[str]:
             return toolchains.installed(tool) is not None or not toolchains.get(tool).supported
         except toolchains.ToolchainError:  # a program on PATH, not a toolchain
             return shutil.which(tool) is not None
-    return [t for t in console.demo_tools if not there(t)] + ([] if ZLIB.exists() else ["zlib (projects/zlib-n64/prepare.py)"])
+    missing = [t for t in console.demo_tools if not there(t)]
+    if console.id == "n64" and not ZLIB.exists():
+        missing.append("zlib (projects/zlib-n64/prepare.py)")
+    return missing
 
 
 @pytest.fixture(scope="module", params=DEMOS, ids=[c.id for c in DEMOS])

@@ -12,6 +12,22 @@
 # through WSL 2 (wsl.py). A part for wsl-x86_64 replaces the Linux archive there (a .deb Windows can unpack).
 # The macos-* parts stay for a later macOS version.
 
+[agbcc]
+name = "agbcc"
+platform = "GBA"
+arch = "arm"
+license = "GPL-2.0"
+source = "pret/agbcc release"
+description = "The GCC 2.95-based compiler behind most Game Boy Advance games, as rebuilt by the pret community."
+cc = ["{tc}/bin/agbcc"]
+flags = ["-mthumb-interwork", "-O2"]
+requires = ["arm-gnu"]
+cmd = ["/bin/sh", "-c", "src=\"$1\"; obj=\"$2\"; inc=\"$3\"; shift 3; \"{tc:arm-gnu}/bin/arm-none-eabi-cpp\" -nostdinc -undef -I \"{tc}/include\" -I \"$inc\" \"$src\" -o \"$obj.i\" && \"{tc}/bin/agbcc\" \"$@\" \"$obj.i\" -o \"$obj.s\" && \"{tc:arm-gnu}/bin/arm-none-eabi-as\" -mcpu=arm7tdmi -o \"$obj\" \"$obj.s\"", "agbcc", "{src}", "{obj}", "{include}", "{flags}"]
+[[agbcc.parts]]
+url = "https://github.com/pret/agbcc/releases/download/release/agbcc.tar.gz"
+sha256 = "bcf0197e3e27d8e08506a142e25fa68ea7f6679a98347a6406804eb3f9ff4d29"
+platforms = ["linux-x86_64"]
+
 [runtime-i386]
 name = "32-bit x86 C runtime (glibc 2.44)"
 kind = "runtime"
@@ -568,6 +584,16 @@ url = "https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/ar
 sha256 = "864c0c8815857d68a1bbba2e5e2782255bb922845c71c97636004a3d74f60986"
 platforms = ["windows-x86_64"]  # the Windows zip has bin/, lib/, ... at its top, no folder around them
 
+[luvdis]
+name = "Luvdis"
+kind = "tool"
+license = "MIT"
+source = "aarant/luvdis @ ec3a4e3e"
+description = "Game Boy Advance disassembler: finds functions in a ROM and writes rebuildable assembly."
+git = "https://github.com/aarant/luvdis"
+commit = "ec3a4e3ee3afe3e9b4a9c7ae8fffc65e1ea2096c"
+pip_extra = ["setuptools<70"]
+
 [msvc]
 name = "Microsoft Visual C++ 6.0, 7.0 and 7.1 (PC)"
 kind = "compiler-pack"
@@ -611,4 +637,3 @@ description = "The community's project template for GameCube and Wii decomps, us
 url = "https://github.com/encounter/dtk-template/archive/95a941f755919ebe50c1725a4ce73524470e7a02.tar.gz"
 sha256 = "c49f889a4e092388beef4867340887ec6f0410bd1055d79a8f8850bea89ada61"
 subdir = "dtk-template-95a941f755919ebe50c1725a4ce73524470e7a02"
-

@@ -32,6 +32,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0
       - run: uv sync --locked
       - run: uv run ruff check src tests projects
+      # shellcheck isn't pinned here on purpose: the syntax check is the stable part, style stays in review
+      - name: The installer's syntax
+        run: bash -n site/public/install.sh
       - name: Demo linker and object tools
         run: |
           brew install llvm lld

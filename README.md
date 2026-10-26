@@ -46,11 +46,14 @@ sudo dnf install ./decompdecomp-*.x86_64.rpm       # Fedora
 chmod +x decompdecomp-*-x86_64.AppImage && ./decompdecomp-*-x86_64.AppImage   # any other distribution
 ```
 
-On **Windows**, download and open `decompdecomp-<version>-windows-x64-setup.exe` from the
-[releases](https://github.com/n-delic/decompdecomp/releases). Setup installs the Microsoft Edge WebView2 Runtime and
-.NET Framework 4.8 when they are missing, then opens the app installer. It may ask for administrator permission and
-needs an internet connection to download missing Microsoft components. The app installer lets you choose where
-decompdecomp goes and whether to add a desktop shortcut (selected by default); it always adds a shortcut to Start.
+On **Windows 10/11**, download `decompdecomp-<version>-windows-x64-setup.exe` (the file name
+starts with `decompdecomp-`, then the version number, and ends with `-windows-x64-setup.exe`) from the
+[releases](https://github.com/n-delic/decompdecomp/releases) and open it. Setup installs the Microsoft Edge WebView2 Runtime and
+.NET Framework 4.8 when they are missing (they are skipped when already installed), needs an internet connection
+to download missing Microsoft components, and shows one installer screen after another: license, install location,
+desktop shortcut (selected by default), and install. The app installer itself is per-user; the downloaded
+Microsoft components install for the whole machine, which can ask for administrator permission. A restart can be
+needed when they were missing, before the app opens.
 
 To install from source with [uv](https://docs.astral.sh/uv/getting-started/installation/) instead, open a new
 PowerShell window and run:

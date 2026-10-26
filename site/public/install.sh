@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # decompdecomp installer for Linux and macOS (Intel and Apple Silicon).
+# On Windows 10/11, download decompdecomp-<version>-windows-x64-setup.exe from
+# https://github.com/n-delic/decompdecomp/releases and open it instead.
 #
 #   curl -fsSL https://decomp.ndelic.com/install.sh | bash
+#   curl -fsSL https://decomp.ndelic.com/install.sh | bash -s -- --yes   # answer every question with yes
 #
 # decompdecomp installs on this computer, with uv:
 #   1. installs uv, Astral's Python tool manager, if you don't have it (asks first)
@@ -15,6 +18,7 @@
 #
 # Options:
 #   --no-start          install only
+#   --yes               answer every question with yes (unattended install; keeps the old .deb/.rpm package, if any)
 #   --source <what>     where decompdecomp comes from: "release" (default), "branch:<name>" (a branch on GitHub, for
 #                       testing; its updates follow that branch) or a folder with decompdecomp's source. Run from a
 #                       git checkout, the checkout is used (and updates follow its branch; main's are releases).
@@ -24,11 +28,13 @@ set -euo pipefail
 VERSION="1.0.7-alpha.1"
 REPO="n-delic/decompdecomp"
 START=1
+YES=0
 SOURCE="${DECOMP_SOURCE:-}"
 [ -z "$SOURCE" ] && [ -n "${DECOMP_BRANCH:-}" ] && SOURCE="branch:${DECOMP_BRANCH}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-start) START=0 ;;
+    --yes) YES=1 ;;  # non-interactive: every ask() below answers yes, except keeping the old .deb/.rpm package
     --source) shift; SOURCE="${1:-}" ;;
     --source=*) SOURCE="${1#--source=}" ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -42,10 +48,15 @@ step() { printf '\033[32m▸\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 ask() {
   local reply
+  [ "$YES" = 1 ] && return 0
   has_tty || return 0
   printf '%s [Y/n] ' "$1" > /dev/tty
   read -r reply < /dev/tty || true
   [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
+}
+ask_keep() {  # --yes skips removing the old .deb/.rpm package: keeping it is the safe answer for beginners
+  [ "$YES" = 1 ] && return 1
+  ask "$1"
 }
 
 # Run from a checkout (site/public/install.sh in the repository): install that checkout
@@ -61,7 +72,7 @@ bold "decompdecomp setup"
 OS="$(uname -s)"
 case "$OS" in
   Linux|Darwin) ;;
-  *) fail "This installer supports Linux x86-64 and macOS Intel/Apple Silicon. Use the Windows installer on Windows." ;;
+  *) fail "This installer supports Linux x86-64 and macOS on Intel and Apple Silicon. On Windows 10/11, download decompdecomp-<version>-windows-x64-setup.exe from https://github.com/$REPO/releases and open it instead (not this file: Git Bash can't run it)." ;;
 esac
 if [ -z "$SOURCE" ]; then
   if [ -n "$CHECKOUT" ]; then SOURCE="$CHECKOUT"
@@ -74,7 +85,21 @@ case "$(uname -m)" in
   arm64) [ "$OS" = Darwin ] || fail "ARM is supported on macOS only" ;;
   *) fail "decompdecomp needs a 64-bit Intel or AMD PC for now: the games' compilers are x86 programs, and this computer's processor is $(uname -m)" ;;
 esac
-command -v curl >/dev/null || fail "curl is required"
+command -v curl >/dev/null || {  # the distro's one-liner to get it, next to the GTK block's per-distro pattern
+  if [ "$OS" = Darwin ]; then
+    fail "curl isn't installed: install it (Xcode Command Line Tools: xcode-select --install, or brew install curl), then run this installer again"
+  fi
+  . /etc/os-release 2>/dev/null || true
+  case " ${ID:-} ${ID_LIKE:-} " in
+    *" debian "*|*" ubuntu "*) GET_CURL="sudo apt install -y curl" ;;
+    *" fedora "*|*" rhel "*) GET_CURL="sudo dnf install -y curl" ;;
+    *" arch "*) GET_CURL="sudo pacman -S --needed curl" ;;
+    *suse*) GET_CURL="sudo zypper install -y curl" ;;
+    *) GET_CURL="" ;;
+  esac
+  [ -n "$GET_CURL" ] && fail "curl isn't installed: run \`$GET_CURL\`, then run this installer again"
+  fail "curl isn't installed: install curl from your package manager, then run this installer again"
+}
 
 # ------------------------------------------------------------------------------------------- where it comes from
 # CHANNEL/BRANCH/COMMIT are remembered (decomp install-info): the app's updates come from the same place.
@@ -118,7 +143,7 @@ if [ "$OS" = Darwin ] && ! command -v uv >/dev/null; then
   done
 fi
 if ! command -v uv >/dev/null; then
-  ask "decompdecomp is installed with uv (Astral's Python tool manager). Install uv now?" || fail "uv is needed: https://docs.astral.sh/uv/"
+  ask "decompdecomp is installed with uv (Astral's Python tool manager; this runs: curl -LsSf https://astral.sh/uv/install.sh | sh). Install uv now?" || fail "uv is needed: https://docs.astral.sh/uv/"
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
   command -v uv >/dev/null || fail "uv installed, but it isn't on PATH yet; open a new terminal and run this again"
@@ -144,6 +169,12 @@ BIN="$(uv tool dir --bin)"
 uv tool update-shell >/dev/null 2>&1 || true
 "$BIN/decomp" install-info --channel "$CHANNEL" --branch "$BRANCH" --commit "$COMMIT" --repo "$REPO" >/dev/null
 
+# the install asked uv to put `decomp` somewhere it isn't found yet (uv's shell fix runs above, best effort)
+if ! command -v decomp >/dev/null; then
+  echo "  decompdecomp is installed, but \`decomp\` isn't on PATH yet in this terminal."
+  echo "  Open a new terminal (or run: export PATH=\"$HOME/.local/bin:\$PATH\"), then run: decomp"
+fi
+
 # the window: GTK and WebKitGTK 4.1 with their Python bindings, from the system (no browser involved)
 if [ "$OS" = Linux ] && ! /usr/bin/python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1")' 2>/dev/null; then
   . /etc/os-release 2>/dev/null || true
@@ -154,7 +185,7 @@ if [ "$OS" = Linux ] && ! /usr/bin/python3 -c 'import gi; gi.require_version("Gt
     *suse*) WINDOW_PACKAGES="sudo zypper install -y python3-gobject typelib-1_0-Gtk-3_0 typelib-1_0-WebKit2-4_1" ;;
     *) WINDOW_PACKAGES="" ;;
   esac
-  if [ -n "$WINDOW_PACKAGES" ] && ask "decompdecomp's window needs GTK and WebKitGTK from your system. Install them now? ($WINDOW_PACKAGES)"; then
+  if [ -n "$WINDOW_PACKAGES" ] && ask "decompdecomp's window needs GTK and WebKitGTK 4.1 from your system (this runs: $WINDOW_PACKAGES). Install them now?"; then
     $WINDOW_PACKAGES || echo "  couldn't install them: run $WINDOW_PACKAGES"
   else
     echo "  decompdecomp's window needs PyGObject and WebKitGTK 4.1 (with GObject introspection) from your package manager"
@@ -162,7 +193,18 @@ if [ "$OS" = Linux ] && ! /usr/bin/python3 -c 'import gi; gi.require_version("Gt
 fi
 
 step "downloading the compilers and tools"
-"$BIN/decomp" setup
+SETUP_OUT="$("$BIN/decomp" setup 2>&1)" && SETUP_OK=1 || SETUP_OK=0
+printf '%s\n' "$SETUP_OUT" | sed 's/^/  /'
+if [ "$SETUP_OK" = 1 ]; then  # `decomp setup` keeps going per toolchain and reports misses itself: recap, don't scare
+  if printf '%s\n' "$SETUP_OUT" | grep -q '^  ! '; then
+    echo "  Some compilers or tools are missing: open decompdecomp, then Compilers & tools, to install what's left."
+  else
+    step "compilers and tools are ready"
+  fi
+else
+  echo "  The compilers couldn't be downloaded now (no network, or a toolchain changed)."
+  echo "  decompdecomp itself is installed: open it, then Compilers & tools, to try again."
+fi
 
 # an older decompdecomp still running from before this upgrade: stop it, so the new version takes over
 "$BIN/decomp" stop >/dev/null 2>&1 || true
@@ -172,7 +214,7 @@ if [ "$OS" = Linux ] && [ -d /opt/decompdecomp ]; then
   if command -v dpkg >/dev/null && dpkg -s decompdecomp >/dev/null 2>&1; then REMOVE="sudo apt remove -y decompdecomp"
   elif command -v rpm >/dev/null && rpm -q decompdecomp >/dev/null 2>&1; then REMOVE="sudo dnf remove -y decompdecomp"
   else REMOVE=""; fi
-  if [ -n "$REMOVE" ] && ask "An older decompdecomp package is installed too. Remove it? ($REMOVE)"; then
+  if [ -n "$REMOVE" ] && ask_keep "An older decompdecomp package is installed too (two copies in the apps menu and on PATH). Remove it? ($REMOVE)"; then
     $REMOVE >/dev/null && step "removed the older decompdecomp package" || echo "  couldn't remove it: run $REMOVE"
   fi
 fi
@@ -181,6 +223,9 @@ fi
 
 bold "Done."
 echo "  Start it any time from your apps menu, or with: decomp"
+echo "  Your projects go to: ~/Decomp"
+echo "  Keep it up to date with: decomp update (or from the app's Settings)"
+echo "  Uninstall with: uv tool uninstall decompnet"
 if [ "$START" = 1 ]; then
   if [ "$OS" = Darwin ] || [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     nohup "$BIN/decomp" >/dev/null 2>&1 &
